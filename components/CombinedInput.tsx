@@ -198,7 +198,7 @@ export default function CombinedInput({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="w-full resize-none border-none outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-base leading-6 min-h-[24px] max-h-[200px] overflow-y-auto"
+            className="w-full resize-none border-none outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-base leading-6 min-h-[24px] max-h-[200px] overflow-y-auto focus:ring-0 focus:outline-none"
           />
         </div>
 

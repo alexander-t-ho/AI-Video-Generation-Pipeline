@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import CombinedInput from './CombinedInput';
 import { StartingScreenProps } from '@/lib/types/components';
 import { useProjectStore } from '@/lib/state/project-store';
-import { createProject } from '@/lib/api-client';
+import { createProject, uploadImages } from '@/lib/api-client';
 
 export default function StartingScreen({
   onCreateProject,
@@ -36,6 +36,27 @@ export default function StartingScreen({
 
       // Create project in store (this already adds the user message)
       createProjectInStore(message, targetDuration);
+      const projectId = useProjectStore.getState().project?.id;
+
+      // Upload images if provided
+      if (images && images.length > 0 && projectId) {
+        try {
+          addChatMessage({
+            role: 'agent',
+            content: `Uploading ${images.length} image(s)...`,
+            type: 'status',
+          });
+          await uploadImages(images, projectId);
+          addChatMessage({
+            role: 'agent',
+            content: '✓ Images uploaded successfully',
+            type: 'status',
+          });
+        } catch (err) {
+          console.error('Failed to upload images:', err);
+          // Continue with storyboard generation even if image upload fails
+        }
+      }
 
       // Add agent message
       addChatMessage({
@@ -67,9 +88,9 @@ export default function StartingScreen({
       }
 
       // Navigate to workspace
-      const projectId = useProjectStore.getState().project?.id;
-      if (projectId) {
-        router.push(`/workspace?projectId=${projectId}`);
+      const finalProjectId = useProjectStore.getState().project?.id || projectId;
+      if (finalProjectId) {
+        router.push(`/workspace?projectId=${finalProjectId}`);
       } else {
         router.push('/workspace');
       }
@@ -116,7 +137,7 @@ export default function StartingScreen({
 
           {/* Error Message */}
           {error && (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg animate-shake">
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             </div>
           )}

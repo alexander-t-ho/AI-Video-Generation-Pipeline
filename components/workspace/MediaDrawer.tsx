@@ -150,7 +150,7 @@ export default function MediaDrawer() {
       <div className="mb-4">
         <button
           onClick={() => toggleSection(sectionKey)}
-          className="w-full flex items-center justify-between px-2 py-2 text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
         >
           <div className="flex items-center gap-2">
             {isExpanded ? (
@@ -188,7 +188,7 @@ export default function MediaDrawer() {
   return (
     <div className="h-full flex flex-col">
       {/* Search and Filter */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-2">
+      <div className="px-3 py-3 border-b border-gray-200 dark:border-gray-700 space-y-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -230,7 +230,7 @@ export default function MediaDrawer() {
       </div>
 
       {/* Media Sections */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto px-3 py-3">
         {/* Generated Images */}
         {renderSection(
           'Generated Images',

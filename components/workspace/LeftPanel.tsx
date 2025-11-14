@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import AgentChat from './AgentChat';
 import ChatInput from './ChatInput';
 import { useProjectStore } from '@/lib/state/project-store';
+import { useGenerationStatus } from '@/lib/hooks/useGenerationStatus';
 import { ChevronLeft } from 'lucide-react';
 
 interface LeftPanelProps {
@@ -12,7 +13,14 @@ interface LeftPanelProps {
 
 export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { chatMessages, addChatMessage } = useProjectStore();
+  const { project, chatMessages, addChatMessage } = useProjectStore();
+
+  // Enable real-time status updates
+  useGenerationStatus({
+    projectId: project?.id || null,
+    enabled: !!project && project.status !== 'completed',
+    interval: 5000, // Poll every 5 seconds
+  });
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
