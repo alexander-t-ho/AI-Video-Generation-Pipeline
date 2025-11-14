@@ -94,7 +94,7 @@ export async function GET(
     }
 
     // If projectId and sceneIndex are provided, download and save the video
-    if (projectId && sceneIndex !== undefined) {
+    if (projectId && sceneIndex !== null) {
       try {
         const sceneIndexNum = parseInt(sceneIndex);
         if (isNaN(sceneIndexNum) || sceneIndexNum < 0 || sceneIndexNum > 4) {
