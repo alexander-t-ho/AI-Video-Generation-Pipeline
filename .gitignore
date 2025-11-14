@@ -22,6 +22,11 @@
 .env.production.local
 .env*.local
 
+# Test UI (not for production, another person is working on the UI)
+test-ui/
+app/\(test-ui\)/
+app/\(test-ui\).disabled/
+
 # Configuration files that might contain secrets
 config/secrets.yml
 config/credentials.yml.enc
@@ -29,10 +34,9 @@ config/credentials.yml.enc
 secrets.json
 credentials.json
 
-# Markdown files (except README.md and memory bank files)
+# Markdown files (except README.md - another person created it)
 *.md
 !README.md
-!memory-bank/*.md
 
 # Dependencies
 node_modules/
@@ -44,6 +48,7 @@ bundle/
 # Build outputs
 dist/
 build/
+/build
 /.next/
 /out/
 *.tsbuildinfo
@@ -56,6 +61,10 @@ temp/
 *.temp
 /tmp/
 /public/uploads/
+
+# Test files (not for production)
+test photos/
+test videos/
 
 # Cache
 .cache/
@@ -105,3 +114,11 @@ yarn-error.log*
 
 # Project-specific
 /docs/andy/
+/alexis-docs/
+
+# AWS deployment artifacts
+.aws-sam/
+.serverless/
+cdk.out/
+*.zip
+.aws/

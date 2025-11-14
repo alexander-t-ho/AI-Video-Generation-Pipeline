@@ -1,0 +1,52 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next
+out
+
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Documentation
+README.md
+docs
+alexis-docs
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage
+
+# Build artifacts
+*.tsbuildinfo
+build
+
+# Project-specific
+tmp
+public/uploads
+
+# Misc
+*.md
+*.pem
+.vercel
+.pnp
+.pnp.js
