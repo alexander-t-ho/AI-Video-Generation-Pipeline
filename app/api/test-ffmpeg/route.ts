@@ -26,11 +26,18 @@ export async function GET() {
         path: ffmpegPath,
       });
     } catch (error) {
-      // Try npm package path (optional - only if package is installed)
-      // Note: This requires @ffmpeg-installer/ffmpeg to be installed
-      // If not installed, this will fail gracefully
+      // FFmpeg not found in system PATH
+      // Note: To use @ffmpeg-installer/ffmpeg, install it: npm install @ffmpeg-installer/ffmpeg
+      // Then uncomment the code below
+      return Response.json({
+        success: false,
+        error: 'FFmpeg not found in system PATH',
+        details: String(error),
+        suggestion: 'Install FFmpeg system-wide or install @ffmpeg-installer/ffmpeg package',
+      }, { status: 500 });
+      
+      /* Uncomment this section if @ffmpeg-installer/ffmpeg is installed:
       try {
-        // Use require with try-catch to handle missing module gracefully
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
         if (ffmpegInstaller && ffmpegInstaller.path) {
@@ -43,7 +50,6 @@ export async function GET() {
             path: ffmpegPath,
           });
         }
-        throw new Error('Package not installed');
       } catch (packageError) {
         return Response.json({
           success: false,
@@ -55,6 +61,7 @@ export async function GET() {
           suggestion: 'Install @ffmpeg-installer/ffmpeg or configure FFmpeg in Vercel',
         }, { status: 500 });
       }
+      */
     }
   } catch (error) {
     return Response.json({

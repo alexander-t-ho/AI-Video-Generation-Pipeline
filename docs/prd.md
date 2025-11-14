@@ -75,45 +75,83 @@ Available API Keys:
 
 ## Core User Flow
 
-### Phase 1: Project Creation
-1. User enters product/ad prompt
-2. User specifies duration preference (optional: 15s, 30s, 60s)
-3. System creates project with unique ID
+### Phase 1: Project Creation (Starting Screen - Claude-like)
+1. User lands on starting screen with chat-style interface
+2. User enters product/ad prompt in the text input area
+3. User can optionally drag images into the interface for reference
+4. User can specify duration preference via chat (optional: 15s, 30s, 60s)
+5. System creates project with unique ID
+6. Interface transitions to main workspace (three-panel layout)
 
-### Phase 2: Storyboard Generation
-1. LLM generates exactly 5 scene descriptions
-2. Each scene includes:
+### Phase 2: Storyboard Generation (Main Workspace)
+1. **Left Panel**: Agent responds with "Generating storyboard..." status
+2. LLM generates exactly 5 scene descriptions
+3. Each scene includes:
    - Scene description (narrative)
    - Image generation prompt (detailed visual description)
    - Suggested duration (2-4 seconds)
-3. User reviews storyboard (can regenerate entire storyboard if needed)
+4. **Middle Panel**: Storyboard view displays all 5 scenes in grid/list
+5. **Right Panel**: Media drawer shows storyboard data (no media yet)
+6. **Left Panel**: Agent confirms "Storyboard generated with 5 scenes"
+7. User can review storyboard in middle panel
+8. User can regenerate storyboard via left panel chat or middle panel action
 
 ### Phase 3: Sequential Scene Generation (Repeat for Scenes 0-4)
+**Location**: Main Workspace (three-panel layout)
 
 **For Scene 0 (First Scene):**
-1. Generate image from storyboard prompt
-2. User can:
-   - Accept image → proceed to video
-   - Modify prompt → regenerate image
-   - Generate multiple variations → pick one
-3. Generate video from selected image
-4. Extract 5 frames from last 0.5 seconds
-5. User selects 1 frame as seed for Scene 1
+1. **Left Panel**: Agent updates "Starting Scene 1/5: Generating image..."
+2. Generate image from storyboard prompt
+3. **Right Panel**: Generated image appears in media drawer under "Scene 1"
+4. **Middle Panel**: Switch to Editor mode to view image
+5. User can:
+   - Accept image → proceed to video (via left panel chat or editor controls)
+   - Modify prompt → regenerate image (via left panel chat or editor)
+   - Generate multiple variations → pick one (variations appear in media drawer)
+6. **Left Panel**: Agent updates "Image approved. Generating video..."
+7. Generate video from selected image
+8. **Right Panel**: Generated video appears in media drawer
+9. **Middle Panel**: Video preview available in Editor mode
+10. Extract 5 frames from last 0.5 seconds
+11. **Right Panel**: Seed frames appear in "Seed Frames" section
+12. **Middle Panel**: Editor mode shows 5 frame options for selection
+13. User selects 1 frame as seed for Scene 1 (click in editor or drag from media drawer)
 
 **For Scenes 1-4 (Subsequent Scenes):**
-1. Generate image using:
+1. **Left Panel**: Agent updates "Starting Scene X/5: Generating image..."
+2. Generate image using:
    - Storyboard prompt
    - Selected seed frame from previous scene (image-to-image guidance)
-2. User approval/regeneration loop (same as Scene 0)
-3. Generate video from selected image + seed frame
-4. Extract 5 frames from last 0.5 seconds (except Scene 4)
-5. User selects seed frame for next scene (except Scene 4)
+3. **Right Panel**: Generated image appears in media drawer under respective scene
+4. **Middle Panel**: Editor mode shows image preview
+5. User approval/regeneration loop (same as Scene 0)
+6. **Left Panel**: Agent provides status updates throughout
+7. Generate video from selected image + seed frame
+8. **Right Panel**: Video added to media drawer
+9. Extract 5 frames from last 0.5 seconds (except Scene 4)
+10. **Right Panel**: Seed frames added to drawer
+11. User selects seed frame for next scene (except Scene 4)
+12. **Middle Panel**: Can switch between Storyboard/Timeline/Editor views at any time
+13. **Left Panel**: Agent tracks progress and provides context-aware guidance
+
+**Interface Interactions**:
+- User can switch between Storyboard/Timeline/Editor modes in middle panel at any time
+- Media drawer shows all generated assets organized by scene
+- Left panel provides conversational interface for all actions
+- Drag-and-drop from media drawer to editor/timeline supported
+- Visual progress indicators update across all three panels
 
 ### Phase 4: Finalization
-1. System stitches all 5 video clips
-2. User previews final video
-3. User downloads/exports MP4
-4. Optional: Upload to S3 for sharing
+1. **Left Panel**: Agent updates "All scenes complete. Stitching final video..."
+2. System stitches all 5 video clips
+3. **Right Panel**: Final stitched video appears in "Final Output" section
+4. **Middle Panel**: Switch to Timeline mode to preview final video
+5. **Middle Panel**: Full video player with playback controls available
+6. User previews final video in timeline or dedicated preview
+7. **Left Panel**: Agent confirms "Video complete. Ready for download."
+8. User downloads/exports MP4 (via middle panel or media drawer)
+9. Optional: Upload to S3 for sharing (action available in left panel or media drawer)
+10. User can start new project via left panel chat or "Generate New Video" button
 
 ---
 
@@ -395,24 +433,43 @@ POST https://openrouter.ai/api/v1/chat/completions
 **Responsibility**: Build user interface and coordinate backend APIs
 
 **Deliverables**:
-1. `/app/page.tsx` - Main generation UI
-2. `/components/ProjectCreation.tsx` - Initial prompt input
-3. `/components/StoryboardView.tsx` - Display 5 scenes
-4. `/components/SceneEditor.tsx` - Image generation & approval
-5. `/components/SeedFrameSelector.tsx` - Frame selection UI
-6. `/components/VideoPreview.tsx` - Final video player
-7. `/components/ProgressIndicator.tsx` - Generation status
-8. `/lib/state/project-store.ts` - Zustand state management
-9. `/lib/api-client.ts` - API wrapper functions
+
+**Screen 1: Starting Screen (Claude-like)**
+1. `/app/page.tsx` - Starting screen with chat-style interface
+2. `/components/StartingScreen.tsx` - Claude-like prompt input with drag-and-drop
+3. `/components/ChatInput.tsx` - Chat-style text input component
+4. `/components/ImageDropZone.tsx` - Drag-and-drop image upload area
+
+**Screen 2: Main Workspace (Cursor-like Three-Panel Layout)**
+5. `/app/workspace/page.tsx` - Main workspace layout with three panels
+6. `/components/workspace/LeftPanel.tsx` - Agent/typing section (chat interface)
+7. `/components/workspace/MiddlePanel.tsx` - Toggleable middle panel container
+8. `/components/workspace/RightPanel.tsx` - Media drawer component
+9. `/components/workspace/AgentChat.tsx` - Chat interface for agent communication
+10. `/components/workspace/StoryboardView.tsx` - Storyboard mode (grid/list of scenes)
+11. `/components/workspace/TimelineView.tsx` - Timeline mode (horizontal timeline)
+12. `/components/workspace/EditorView.tsx` - Editor mode (scene editing)
+13. `/components/workspace/MediaDrawer.tsx` - Media library with organization
+14. `/components/workspace/SceneCard.tsx` - Individual scene card component
+15. `/components/workspace/VideoPlayer.tsx` - Video playback component
+16. `/components/workspace/SeedFrameSelector.tsx` - Frame selection interface
+17. `/components/workspace/ModeToggle.tsx` - Toggle between Storyboard/Timeline/Editor
+
+**State & API Management**
+18. `/lib/state/project-store.ts` - Zustand state management
+19. `/lib/api-client.ts` - API wrapper functions
+20. `/lib/hooks/useMediaDragDrop.ts` - Drag-and-drop hook for media
 
 **Key Functions**:
-- `createProject(prompt: string): void`
+- `createProject(prompt: string, images?: File[]): void`
 - `generateStoryboard(): Promise<void>`
 - `generateImageForScene(sceneIndex: number): Promise<void>`
 - `selectImage(sceneIndex: number, imageId: string): void`
 - `generateVideoForScene(sceneIndex: number): Promise<void>`
 - `selectSeedFrame(sceneIndex: number, frameIndex: number): void`
 - `stitchFinalVideo(): Promise<void>`
+- `switchViewMode(mode: 'storyboard' | 'timeline' | 'editor'): void`
+- `handleMediaDragDrop(files: File[]): void`
 
 **Dependencies**:
 - Needs API contracts from Person 1 & 2
@@ -518,47 +575,188 @@ Response: { finalVideoPath: string, s3Url?: string }
 
 ## UI/UX Requirements
 
-### Project Creation Screen
-- Single text input for prompt (large textarea)
-- Duration selector (15s / 30s / 60s) - default 15s
-- "Generate Storyboard" CTA button
-- Show example prompts for inspiration
+### Screen 1: Starting Screen (Claude-like Interface)
+**Design**: Chat-style interface similar to Claude AI
 
-### Storyboard View
-- Display all 5 scenes in grid/list
-- Each scene shows:
+**Features**:
+- Large, prominent text input area for prompt entry
+- Drag-and-drop zone for images (users can drag images directly into the interface)
+- Conversation-style interaction where users can:
+  - Enter product/ad prompt
+  - Optionally specify duration preference (15s / 30s / 60s) via chat
+  - Attach reference images via drag-and-drop
+- Clean, minimal design focused on the input experience
+- Show example prompts for inspiration (subtle, non-intrusive)
+- "Generate Storyboard" action available after prompt input
+
+**User Flow**:
+1. User types prompt in chat-style input
+2. User can drag images into the interface (optional)
+3. System responds with storyboard generation
+4. Transitions to main workspace after storyboard is created
+
+---
+
+### Screen 2: Main Workspace (Cursor-like Interface)
+**Design**: Three-panel layout similar to Cursor IDE
+
+**Layout Structure**:
+```
+┌─────────────┬──────────────────────────┬─────────────┐
+│             │                          │             │
+│   Left      │        Middle            │    Right   │
+│   Panel     │        Panel             │    Panel   │
+│             │                          │             │
+│ Agent/      │  Toggleable Views:      │  Media     │
+│ Typing      │  - Storyboard            │  Drawer    │
+│ Section     │  - Timeline              │            │
+│             │  - Editor                │            │
+│             │                          │            │
+└─────────────┴──────────────────────────┴─────────────┘
+```
+
+#### Left Panel: Agent/Typing Section
+**Purpose**: Real-time communication and status updates
+
+**Features**:
+- Chat interface showing conversation history
+- Agent responses and status updates
+- Generation progress indicators
+- Interactive commands:
+  - "Regenerate storyboard"
+  - "Generate image for Scene X"
+  - "Regenerate image with new prompt"
+  - "Generate video"
+  - "Select seed frame"
+- Real-time feedback during generation:
+  - "Generating image for Scene 1..."
+  - "Video generation in progress (2:30 remaining)..."
+  - "Extracting seed frames..."
+- Error messages and retry options
+- Context-aware suggestions based on current workflow state
+
+#### Middle Panel: Toggleable Views
+**Purpose**: Primary workspace with three distinct modes
+
+**Mode 1: Storyboard View**
+- Visual grid/list of all 5 scenes
+- Each scene card displays:
   - Scene number (1-5)
   - Description
   - Image prompt
   - Suggested duration
-- "Regenerate Storyboard" button
-- "Start Generation" CTA to begin Scene 0
+  - Current status (pending, generating, ready)
+- Interactive scene cards (click to focus/edit)
+- "Regenerate Storyboard" action available
+- Visual indicators for completed scenes
 
-### Scene Editor (Active Scene)
-- Large image preview area
-- "Generate Image" button
-- "Regenerate Image" button with prompt input
-- Image generation status (loading spinner)
-- Once image approved: "Generate Video" button
-- Video generation status (loading spinner + ETA)
-- Once video complete: Show 5 seed frame options
-- "Select & Continue" for each frame
+**Mode 2: Timeline View**
+- Horizontal timeline showing all 5 video clips
+- Visual representation of scene durations
+- Playhead for preview navigation
+- Drag-to-reorder scenes (future enhancement)
+- Click scene to jump to editor mode
+- Final stitched video preview at bottom
+- Timeline scrubbing for frame-accurate navigation
 
-### Progress Indicator
+**Mode 3: Editor Mode**
+- Large preview area for active scene
+- Image preview with generation controls:
+  - "Generate Image" button
+  - "Regenerate Image" with prompt input
+  - Image generation status (loading spinner)
+- Video preview once generated:
+  - Playback controls
+  - Frame extraction visualization
+  - Seed frame selection interface (5 frame options)
+- Scene-specific editing tools
+- "Approve & Continue" workflow
+
+**Mode Toggle**:
+- Tabs or buttons to switch between Storyboard/Timeline/Editor
+- Current mode clearly indicated
+- Smooth transitions between modes
+- Context preserved when switching
+
+#### Right Panel: Media Drawer
+**Purpose**: Centralized media library and asset management
+
+**Features**:
+- Organized sections:
+  - **Generated Images**: All scene images (grouped by scene)
+  - **Generated Videos**: All scene videos (grouped by scene)
+  - **Seed Frames**: Extracted frames from videos
+  - **Uploaded Media**: User-dragged images from starting screen
+  - **Final Output**: Stitched final video
+- Thumbnail grid view for easy browsing
+- Drag-and-drop support:
+  - Drag images to editor for reference
+  - Drag frames to timeline
+  - Drag media between scenes
+- Filtering and search:
+  - Filter by scene number
+  - Filter by media type (image/video/frame)
+  - Search by prompt or description
+- Media metadata display:
+  - Generation timestamp
+  - Associated prompt
+  - Scene assignment
+- Download/export options for individual media items
+- Visual indicators for:
+  - Selected media (highlighted)
+  - Media in use (badge/indicator)
+  - Generation status (loading, ready, error)
+
+**Media Organization**:
+- Collapsible sections by scene
+- Expandable folders for variations
+- Quick preview on hover
+- Click to view full-size in middle panel
+
+---
+
+### Progress Indicator (Integrated)
+**Location**: Left panel (agent section) + visual indicators in middle panel
+
+**Display**:
+- Chat-style progress updates in left panel
+- Visual status badges on scene cards (storyboard view)
+- Timeline progress indicators (timeline view)
+- Loading states in editor mode
+
+**Example Flow in Left Panel**:
 ```
-✓ Storyboard Generated
-→ Scene 1/5: Generating Image...
-  Scene 2/5: Waiting
-  Scene 3/5: Waiting
-  Scene 4/5: Waiting
-  Scene 5/5: Waiting
+User: "Create a luxury watch ad"
+Agent: "Generating storyboard..."
+Agent: "✓ Storyboard generated with 5 scenes"
+Agent: "Starting Scene 1/5: Generating image..."
+Agent: "✓ Image generated. Generating video..."
+Agent: "✓ Video complete. Extracting seed frames..."
+Agent: "Please select a seed frame for Scene 2"
 ```
+
+---
 
 ### Final Preview
-- Video player with playback controls
-- "Download MP4" button
+**Location**: Middle panel (Timeline mode) or dedicated view
+
+**Features**:
+- Full video player with playback controls
+- Timeline scrubbing
+- "Download MP4" button (prominent)
 - "Generate New Video" button (start over)
 - Optional: "Share Link" (S3 URL)
+- Quality indicators and metadata
+
+---
+
+### Responsive Design Considerations
+- Three-panel layout adapts to screen size:
+  - Large screens: All three panels visible
+  - Medium screens: Collapsible side panels
+  - Small screens: Stacked layout or tabbed interface
+- Touch-friendly drag-and-drop on mobile/tablet
+- Media drawer can be toggled to full-screen overlay
 
 ---
 
