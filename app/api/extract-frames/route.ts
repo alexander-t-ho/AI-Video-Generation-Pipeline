@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Extract frames
-    const frames = await extractFrames(absoluteVideoPath);
+    const frames = await extractFrames(absoluteVideoPath, projectId, sceneIndex);
 
     // Verify we got exactly 5 frames
     if (!frames || frames.length !== 5) {
