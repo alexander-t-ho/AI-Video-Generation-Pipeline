@@ -18,26 +18,67 @@ interface UseGenerationStatusOptions {
  * Hook for polling project status and updating UI in real-time
  */
 export function useGenerationStatus(options: UseGenerationStatusOptions) {
-  const { projectId, enabled = true, interval = 5000, onStatusUpdate } = options;
+  const { projectId, enabled = true, onStatusUpdate } = options;
+  const interval = 5000; // Fixed interval to avoid dependency issues
   const { project, addChatMessage, setSceneStatus, setFinalVideo } = useProjectStore();
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastStatusRef = useRef<string | null>(null);
+  const shouldStopRef = useRef<boolean>(false);
+  const isPollingActiveRef = useRef<boolean>(false);
+  const isInitialPollingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!enabled || !projectId || !project) {
+      // Stop polling when disabled (Phase 10.1.1)
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      shouldStopRef.current = true;
+      isPollingActiveRef.current = false;
+      isInitialPollingRef.current = false;
       return;
     }
 
+    // Prevent multiple polling instances (check both interval and initial poll)
+    if (pollingRef.current || isInitialPollingRef.current) {
+      return;
+    }
+
+    // Reset stop flag and mark as polling
+    shouldStopRef.current = false;
+    isPollingActiveRef.current = true;
+    isInitialPollingRef.current = true;
+
     const pollStatus = async () => {
+      // Check if we should stop before making the request
+      if (shouldStopRef.current || !isPollingActiveRef.current) {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+        return;
+      }
+
       try {
         const status = await getProjectStatus(projectId);
 
         // Check if status changed
         const statusKey = JSON.stringify(status);
         if (statusKey === lastStatusRef.current) {
-          return; // No change, skip update
+          return; // No change, skip update (Phase 10.1.1 - reduce unnecessary updates)
         }
         lastStatusRef.current = statusKey;
+        
+        // Stop polling if project is completed (Phase 10.1.1)
+        if (status.status === 'completed' || project.status === 'completed') {
+          shouldStopRef.current = true;
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          return;
+        }
 
         // Call callback if provided
         if (onStatusUpdate) {
@@ -73,7 +114,7 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
         }
 
         // Update final video if available
-        if (status.finalVideoUrl && project.status !== 'completed') {
+        if (status.finalVideoUrl && status.status !== 'completed') {
           setFinalVideo(status.finalVideoUrl, status.finalVideoS3Key);
           addChatMessage({
             role: 'agent',
@@ -81,25 +122,54 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
             type: 'status',
           });
         }
-      } catch (error) {
+      } catch (error: any) {
+        // Stop polling on 404 (project not found) - endpoint doesn't exist or project not found
+        const is404 = error?.statusCode === 404 || 
+                     error?.status === 404 ||
+                     error?.message?.includes('404') || 
+                     error?.message?.includes('not found');
+        
+        if (is404) {
+          console.warn('Project status endpoint not found (404). Stopping polling.');
+          shouldStopRef.current = true;
+          isPollingActiveRef.current = false;
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          return;
+        }
+        
         console.error('Error polling project status:', error);
         // Don't show error to user on every poll failure
       }
     };
 
-    // Initial poll
-    pollStatus();
-
-    // Set up polling interval
-    pollingRef.current = setInterval(pollStatus, interval);
+    // Initial poll - stop immediately on 404
+    pollStatus().then(() => {
+      // Only set up interval if we didn't stop polling
+      if (!shouldStopRef.current && isPollingActiveRef.current && !pollingRef.current) {
+        pollingRef.current = setInterval(pollStatus, interval);
+      }
+      isInitialPollingRef.current = false; // Mark initial poll as complete
+    }).catch(() => {
+      // If initial poll fails, don't set up interval
+      shouldStopRef.current = true;
+      isPollingActiveRef.current = false;
+      isInitialPollingRef.current = false; // Mark initial poll as complete
+    });
 
     // Cleanup
     return () => {
+      isPollingActiveRef.current = false;
+      isInitialPollingRef.current = false;
+      shouldStopRef.current = true;
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
     };
-  }, [projectId, enabled, interval, project, addChatMessage, setSceneStatus, setFinalVideo, onStatusUpdate]);
+  }, [projectId, enabled, project, addChatMessage, setSceneStatus, setFinalVideo, onStatusUpdate]);
 
   return {
     isPolling: enabled && projectId !== null,

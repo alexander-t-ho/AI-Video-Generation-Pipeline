@@ -3,7 +3,8 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
 import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
 interface MediaItem {
   id: string;
@@ -16,7 +17,17 @@ interface MediaItem {
 }
 
 export default function MediaDrawer() {
-  const { project, mediaDrawer, updateMediaDrawer } = useProjectStore();
+  const { 
+    project, 
+    scenes, 
+    mediaDrawer, 
+    setMediaFilter: setFilter,
+    setMediaSearchQuery: setSearchQuery,
+    selectMediaItem: selectItem,
+    setCurrentSceneIndex,
+    setViewMode,
+    selectImage,
+  } = useProjectStore();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     images: true,
     videos: true,
@@ -25,12 +36,80 @@ export default function MediaDrawer() {
     final: true,
   });
 
-  // TODO: Get actual media from project state
-  const generatedImages: GeneratedImage[] = [];
-  const generatedVideos: any[] = [];
-  const seedFrames: SeedFrame[] = [];
-  const uploadedMedia: File[] = [];
+  // Get actual media from project state
+  const generatedImages = useMemo(() => {
+    const allImages: MediaItem[] = [];
+    scenes.forEach((scene, sceneIndex) => {
+      scene.generatedImages?.forEach((img) => {
+        allImages.push({
+          id: img.id,
+          type: 'image' as const,
+          url: img.url,
+          sceneIndex,
+          prompt: img.prompt,
+          timestamp: img.createdAt,
+        });
+      });
+    });
+    return allImages;
+  }, [scenes]);
+
+  const generatedVideos = useMemo(() => {
+    const allVideos: MediaItem[] = [];
+    scenes.forEach((scene, sceneIndex) => {
+      if (scene.videoLocalPath) {
+        allVideos.push({
+          id: `video-${sceneIndex}`,
+          type: 'video' as const,
+          url: scene.videoLocalPath,
+          sceneIndex,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+    return allVideos;
+  }, [scenes]);
+
+  const seedFrames = useMemo(() => {
+    const allFrames: MediaItem[] = [];
+    scenes.forEach((scene, sceneIndex) => {
+      scene.seedFrames?.forEach((frame) => {
+        allFrames.push({
+          id: frame.id,
+          type: 'frame' as const,
+          url: frame.url,
+          sceneIndex,
+          timestamp: frame.timestamp.toString(),
+        });
+      });
+    });
+    return allFrames;
+  }, [scenes]);
+
+  const uploadedMedia: MediaItem[] = []; // TODO: Get from project state when available
   const finalVideo = project?.finalVideoUrl;
+
+  // Drag and drop handler
+  const handleMediaDrop = (itemId: string, itemType: 'image' | 'video' | 'frame', targetSceneIndex?: number) => {
+    // Handle dropping media on editor/timeline
+    if (targetSceneIndex !== undefined) {
+      setCurrentSceneIndex(targetSceneIndex);
+      setViewMode('editor');
+      
+      // If it's an image, select it for the scene
+      if (itemType === 'image') {
+        const scene = scenes[targetSceneIndex];
+        const image = scene?.generatedImages?.find(img => img.id === itemId);
+        if (image) {
+          selectImage(targetSceneIndex, itemId);
+        }
+      }
+    }
+  };
+
+  const { handleDragStart, handleDragEnd } = useMediaDragDrop({
+    onDrop: handleMediaDrop,
+  });
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
@@ -40,16 +119,30 @@ export default function MediaDrawer() {
   };
 
   const handleSearch = (query: string) => {
-    updateMediaDrawer({ searchQuery: query });
+    setSearchQuery(query);
   };
 
   const handleFilter = (filterType: 'scene' | 'type', value: any) => {
-    updateMediaDrawer({
-      filters: {
-        ...mediaDrawer.filters,
-        [filterType]: value,
-      },
+    setFilter({
+      ...mediaDrawer.filters,
+      [filterType]: value,
     });
+  };
+
+  const handleMediaClick = (item: MediaItem) => {
+    // Select media item
+    selectItem(item.id);
+    
+    // If it's from a scene, switch to that scene in editor view
+    if (item.sceneIndex !== undefined) {
+      setCurrentSceneIndex(item.sceneIndex);
+      setViewMode('editor');
+      
+      // If it's an image, select it for the scene
+      if (item.type === 'image') {
+        selectImage(item.sceneIndex, item.id);
+      }
+    }
   };
 
   const handleDownload = (url: string, filename: string) => {
@@ -67,23 +160,22 @@ export default function MediaDrawer() {
     return (
       <div
         key={item.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, item.id, item.type)}
+        onDragEnd={handleDragEnd}
         className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
           isSelected
             ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-200 dark:ring-blue-800'
             : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
         }`}
-        onClick={() => {
-          const newSelected = isSelected
-            ? mediaDrawer.selectedItems.filter((id) => id !== item.id)
-            : [...mediaDrawer.selectedItems, item.id];
-          updateMediaDrawer({ selectedItems: newSelected });
-        }}
+        onClick={() => handleMediaClick(item)}
       >
         {item.type === 'image' || item.type === 'frame' ? (
           <img
             src={item.url}
             alt={item.prompt || 'Media'}
             className="w-full h-full object-cover aspect-video"
+            loading="lazy"
           />
         ) : (
           <div className="aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
@@ -235,13 +327,7 @@ export default function MediaDrawer() {
         {renderSection(
           'Generated Images',
           'images',
-          generatedImages.map((img) => ({
-            id: img.id,
-            type: 'image' as const,
-            url: img.url,
-            prompt: img.prompt,
-            timestamp: img.createdAt,
-          })),
+          generatedImages,
           <ImageIcon className="w-4 h-4" />,
           'No images generated yet'
         )}
@@ -250,13 +336,7 @@ export default function MediaDrawer() {
         {renderSection(
           'Generated Videos',
           'videos',
-          generatedVideos.map((vid) => ({
-            id: vid.id,
-            type: 'video' as const,
-            url: vid.url,
-            sceneIndex: vid.sceneIndex,
-            timestamp: vid.createdAt,
-          })),
+          generatedVideos,
           <Video className="w-4 h-4" />,
           'No videos generated yet'
         )}
@@ -265,12 +345,7 @@ export default function MediaDrawer() {
         {renderSection(
           'Seed Frames',
           'frames',
-          seedFrames.map((frame) => ({
-            id: frame.id,
-            type: 'frame' as const,
-            url: frame.url,
-            timestamp: frame.timestamp.toString(),
-          })),
+          seedFrames,
           <ImageIcon className="w-4 h-4" />,
           'No seed frames extracted yet'
         )}
@@ -279,12 +354,7 @@ export default function MediaDrawer() {
         {renderSection(
           'Uploaded Media',
           'uploaded',
-          uploadedMedia.map((file, index) => ({
-            id: `uploaded-${index}`,
-            type: 'image' as const,
-            url: URL.createObjectURL(file),
-            metadata: { filename: file.name },
-          })),
+          uploadedMedia,
           <ImageIcon className="w-4 h-4" />,
           'No media uploaded'
         )}

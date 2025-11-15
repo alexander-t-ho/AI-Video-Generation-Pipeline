@@ -11,6 +11,7 @@ interface CombinedInputProps {
   autoFocus?: boolean;
   maxFiles?: number;
   maxSizeMB?: number;
+  preserveValueOnSubmit?: boolean; // Keep value visible after submit (useful during loading)
 }
 
 export default function CombinedInput({
@@ -20,6 +21,7 @@ export default function CombinedInput({
   autoFocus = true,
   maxFiles = 5,
   maxSizeMB = 10,
+  preserveValueOnSubmit = false,
 }: CombinedInputProps) {
   const [value, setValue] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -45,15 +47,21 @@ export default function CombinedInput({
 
   const handleSubmit = () => {
     if ((value.trim() || images.length > 0) && !disabled) {
-      onSubmit(value.trim(), images.length > 0 ? images : undefined);
-      setValue('');
-      setImages([]);
-      // Clean up preview URLs
-      previewUrls.forEach(url => URL.revokeObjectURL(url));
-      setPreviewUrls([]);
-      // Reset textarea height
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+      const messageText = value.trim();
+      const filesToSubmit = images.length > 0 ? images : undefined;
+      onSubmit(messageText, filesToSubmit);
+      // Only clear if preserveValueOnSubmit is false (default behavior)
+      // This keeps the text visible while generating when preserveValueOnSubmit is true
+      if (!preserveValueOnSubmit) {
+        setValue('');
+        setImages([]);
+        // Clean up preview URLs
+        previewUrls.forEach(url => URL.revokeObjectURL(url));
+        setPreviewUrls([]);
+        // Reset textarea height
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
       }
     }
   };

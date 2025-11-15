@@ -79,6 +79,9 @@ Available API Keys:
 1. User lands on starting screen with chat-style interface
 2. User enters product/ad prompt in the text input area
 3. User can optionally drag images into the interface for reference
+   - Images are uploaded to `/tmp/projects/{projectId}/uploads/`
+   - Image URLs are passed to storyboard generation for visual context
+   - Supported formats: JPEG, PNG, WebP (max 10MB per file)
 4. User can specify duration preference via chat (optional: 15s, 30s, 60s)
 5. System creates project with unique ID
 6. Interface transitions to main workspace (three-panel layout)
@@ -86,12 +89,14 @@ Available API Keys:
 ### Phase 2: Storyboard Generation (Main Workspace)
 1. **Left Panel**: Agent responds with "Generating storyboard..." status
 2. LLM generates exactly 5 scene descriptions
+   - If reference images were uploaded, GPT-4o vision analyzes them for visual style
+   - Storyboard incorporates visual elements from reference images (color palette, composition, lighting, aesthetic)
 3. Each scene includes:
    - Scene description (narrative)
    - Image generation prompt (detailed visual description)
    - Suggested duration (2-4 seconds)
 4. **Middle Panel**: Storyboard view displays all 5 scenes in grid/list
-5. **Right Panel**: Media drawer shows storyboard data (no media yet)
+5. **Right Panel**: Media drawer shows storyboard data and uploaded reference images
 6. **Left Panel**: Agent confirms "Storyboard generated with 5 scenes"
 7. User can review storyboard in middle panel
 8. User can regenerate storyboard via left panel chat or middle panel action
@@ -102,6 +107,8 @@ Available API Keys:
 **For Scene 0 (First Scene):**
 1. **Left Panel**: Agent updates "Starting Scene 1/5: Generating image..."
 2. Generate image from storyboard prompt
+   - If reference images were uploaded, they're used for style guidance
+   - Reference images enhance the prompt with visual context
 3. **Right Panel**: Generated image appears in media drawer under "Scene 1"
 4. **Middle Panel**: Switch to Editor mode to view image
 5. User can:
@@ -122,6 +129,7 @@ Available API Keys:
 2. Generate image using:
    - Storyboard prompt
    - Selected seed frame from previous scene (image-to-image guidance)
+   - Reference images (if uploaded) for style consistency
 3. **Right Panel**: Generated image appears in media drawer under respective scene
 4. **Middle Panel**: Editor mode shows image preview
 5. User approval/regeneration loop (same as Scene 0)
@@ -224,6 +232,9 @@ interface SeedFrame {
 ### Local Storage (During Generation)
 ```
 /tmp/projects/{projectId}/
+  ├── uploads/              # User-uploaded reference images
+  │   ├── {imageId}.jpg
+  │   └── {imageId}.png
   ├── images/
   │   ├── scene-0-{imageId}.png
   │   ├── scene-1-{imageId}.png
@@ -240,9 +251,10 @@ interface SeedFrame {
       └── output.mp4
 ```
 
-### S3 Storage (Final Outputs Only)
+### S3 Storage (Final Outputs + Future: Uploaded Images)
 ```
 outputs/{projectId}/final.mp4
+uploads/{projectId}/{imageId}.{ext}  # Future: When S3 is enabled
 ```
 
 ### Cleanup Strategy
@@ -361,7 +373,17 @@ POST https://openrouter.ai/api/v1/chat/completions
     },
     {
       "role": "user",
-      "content": "Create exactly 5 scenes for: {user_prompt}"
+      "content": [
+        {
+          "type": "text",
+          "text": "Create exactly 5 scenes for: {user_prompt}"
+        },
+        // Reference images included if provided
+        {
+          "type": "image_url",
+          "image_url": { "url": "data:image/jpeg;base64,..." }
+        }
+      ]
     }
   ],
   "response_format": { "type": "json_object" }
@@ -533,14 +555,21 @@ POST https://openrouter.ai/api/v1/chat/completions
 ### Storyboard Routes
 ```
 POST /api/storyboard
-Body: { prompt: string, targetDuration: number }
+Body: { prompt: string, targetDuration: number, referenceImageUrls?: string[] }
 Response: { scenes: Scene[] }
+```
+
+### Image Upload Routes
+```
+POST /api/upload-images
+Body: FormData { projectId: string, images: File[] }
+Response: { images: UploadedImage[] }
 ```
 
 ### Image Generation Routes
 ```
 POST /api/generate-image
-Body: { prompt: string, seedImage?: string }
+Body: { prompt: string, projectId: string, sceneIndex: number, seedImage?: string, referenceImageUrls?: string[] }
 Response: { image: GeneratedImage, predictionId: string }
 
 GET /api/generate-image/[predictionId]
@@ -941,6 +970,8 @@ jobs:
 - ✅ Luma Ray for videos (supports image-to-video)
 - ✅ Local storage during generation, S3 for finals
 - ✅ FFmpeg server-side (not client-side)
+- ✅ Image upload support with local storage (S3 ready for future)
+- ✅ Reference images used in storyboard generation via GPT-4o vision
 
 ### Open Questions
 - [ ] How to handle user leaving page during generation?

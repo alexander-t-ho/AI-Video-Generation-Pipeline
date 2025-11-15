@@ -3,9 +3,10 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import SceneCard from './SceneCard';
 import { RefreshCw } from 'lucide-react';
+import { generateStoryboard } from '@/lib/api-client';
 
 export default function StoryboardView() {
-  const { project, currentSceneIndex } = useProjectStore();
+  const { project, currentSceneIndex, scenes, setStoryboard, addChatMessage } = useProjectStore();
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -16,10 +17,41 @@ export default function StoryboardView() {
     );
   }
 
-  const handleRegenerateStoryboard = () => {
-    // TODO: Implement storyboard regeneration
-    console.log('Regenerate storyboard');
+  const handleRegenerateStoryboard = async () => {
+    if (!project) return;
+    
+    addChatMessage({
+      role: 'agent',
+      content: 'Regenerating storyboard...',
+      type: 'status',
+    });
+
+    try {
+      const response = await generateStoryboard(project.prompt, project.targetDuration);
+      
+      if (response.success && response.scenes) {
+        setStoryboard(response.scenes);
+        addChatMessage({
+          role: 'agent',
+          content: '✓ Storyboard regenerated with 5 scenes',
+          type: 'status',
+        });
+      } else {
+        throw new Error(response.error || 'Failed to regenerate storyboard');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to regenerate storyboard';
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Error: ${errorMessage}`,
+        type: 'error',
+      });
+    }
   };
+
+  // Calculate progress
+  const completedScenes = scenes.filter(s => s.status === 'completed').length;
+  const progressPercent = Math.round((completedScenes / project.storyboard.length) * 100);
 
   return (
     <div className="h-full flex flex-col p-4">
@@ -30,7 +62,7 @@ export default function StoryboardView() {
             Storyboard
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {project.storyboard.length} scenes
+            {project.storyboard.length} scenes • {completedScenes} completed
           </p>
         </div>
         <button
@@ -45,27 +77,39 @@ export default function StoryboardView() {
       {/* Scene Grid */}
       <div className="flex-1 overflow-y-auto">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
-          {project.storyboard.map((scene, index) => (
-            <SceneCard
-              key={scene.id}
-              scene={scene}
-              sceneIndex={index}
-              isSelected={currentSceneIndex === index}
-              status="pending" // TODO: Get actual status from scene state
-            />
-          ))}
+          {project.storyboard.map((scene, index) => {
+            // Get actual status from scene state
+            const sceneState = scenes[index];
+            const status = sceneState?.status || 'pending';
+            
+            return (
+              <SceneCard
+                key={scene.id}
+                scene={scene}
+                sceneIndex={index}
+                isSelected={currentSceneIndex === index}
+                status={status}
+              />
+            );
+          })}
         </div>
       </div>
 
       {/* Progress Indicator */}
       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between text-sm mb-2">
           <span className="text-gray-600 dark:text-gray-400">
-            Progress: {project.storyboard.length} / 5 scenes
+            Progress: {completedScenes} / {project.storyboard.length} scenes
           </span>
           <span className="text-gray-500 dark:text-gray-500">
-            {Math.round((project.storyboard.length / 5) * 100)}% complete
+            {progressPercent}% complete
           </span>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+          <div
+            className="bg-blue-500 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
       </div>
     </div>

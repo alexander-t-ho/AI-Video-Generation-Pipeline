@@ -77,6 +77,10 @@ test videos/
 coverage/
 .nyc_output/
 *.lcov
+playwright-report/
+test-results/
+/tests
+playwright.config.ts
 
 # OS files
 .DS_Store
@@ -122,3 +126,5 @@ yarn-error.log*
 cdk.out/
 *.zip
 .aws/
+
+.playwright-mcp

@@ -5,6 +5,7 @@ import ModeToggle from './ModeToggle';
 import StoryboardView from './StoryboardView';
 import TimelineView from './TimelineView';
 import EditorView from './EditorView';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface MiddlePanelProps {
   children?: React.ReactNode;
@@ -16,13 +17,29 @@ export default function MiddlePanel({ children }: MiddlePanelProps) {
   const renderView = () => {
     switch (viewMode) {
       case 'storyboard':
-        return <StoryboardView />;
+        return (
+          <ErrorBoundary>
+            <StoryboardView />
+          </ErrorBoundary>
+        );
       case 'timeline':
-        return <TimelineView />;
+        return (
+          <ErrorBoundary>
+            <TimelineView />
+          </ErrorBoundary>
+        );
       case 'editor':
-        return <EditorView />;
+        return (
+          <ErrorBoundary>
+            <EditorView />
+          </ErrorBoundary>
+        );
       default:
-        return <StoryboardView />;
+        return (
+          <ErrorBoundary>
+            <StoryboardView />
+          </ErrorBoundary>
+        );
     }
   };
 

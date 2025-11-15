@@ -22,25 +22,71 @@ const DEFAULT_RETRY_CONFIG = {
 };
 
 /**
- * Retry helper function
+ * Enhanced error structure for better error handling
+ */
+export interface APIError {
+  message: string;
+  code?: string;
+  statusCode?: number;
+  retryable: boolean;
+  context?: Record<string, any>;
+}
+
+/**
+ * Create structured error from various error types
+ */
+function createAPIError(error: unknown, context?: Record<string, any>): APIError {
+  if (error instanceof Response) {
+    return {
+      message: `HTTP ${error.status}: ${error.statusText}`,
+      statusCode: error.status,
+      retryable: [408, 429, 500, 502, 503, 504].includes(error.status),
+      context,
+    };
+  }
+  
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      retryable: false,
+      context,
+    };
+  }
+  
+  return {
+    message: String(error),
+    retryable: false,
+    context,
+  };
+}
+
+/**
+ * Retry helper function with enhanced error handling
  */
 async function retryRequest<T>(
   fn: () => Promise<T>,
   config = DEFAULT_RETRY_CONFIG
 ): Promise<T> {
-  let lastError: Error | null = null;
+  let lastError: APIError | null = null;
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      lastError = createAPIError(error, { attempt: attempt + 1, maxRetries: config.maxRetries });
 
       // Check if error is retryable
       if (error instanceof Response) {
         if (!config.retryableStatusCodes.includes(error.status)) {
-          throw error;
+          throw lastError;
         }
+      }
+
+      // Log error for debugging (Phase 6.1.2)
+      if (attempt < config.maxRetries) {
+        console.warn(`[API] Retry attempt ${attempt + 1}/${config.maxRetries}:`, lastError.message);
+      } else {
+        console.error('[API] Request failed after retries:', lastError);
       }
 
       // Don't retry on last attempt
@@ -48,12 +94,12 @@ async function retryRequest<T>(
         break;
       }
 
-      // Wait before retrying
-      await new Promise((resolve) => setTimeout(resolve, config.retryDelay * (attempt + 1)));
+      // Wait before retrying with exponential backoff
+      await new Promise((resolve) => setTimeout(resolve, config.retryDelay * Math.pow(2, attempt)));
     }
   }
 
-  throw lastError || new Error('Request failed after retries');
+  throw lastError || createAPIError(new Error('Request failed after retries'));
 }
 
 /**
@@ -61,7 +107,8 @@ async function retryRequest<T>(
  */
 export async function generateStoryboard(
   prompt: string,
-  targetDuration: number = 15
+  targetDuration: number = 15,
+  referenceImageUrls?: string[]
 ): Promise<StoryboardResponse> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/storyboard`, {
@@ -72,6 +119,7 @@ export async function generateStoryboard(
       body: JSON.stringify({
         prompt,
         targetDuration,
+        referenceImageUrls,
       } as StoryboardRequest),
     });
 
@@ -89,9 +137,10 @@ export async function generateStoryboard(
  */
 export async function createProject(
   prompt: string,
-  targetDuration: number = 15
+  targetDuration: number = 15,
+  referenceImageUrls?: string[]
 ): Promise<{ projectId: string; storyboard: StoryboardResponse }> {
-  const storyboard = await generateStoryboard(prompt, targetDuration);
+  const storyboard = await generateStoryboard(prompt, targetDuration, referenceImageUrls);
 
   if (!storyboard.success || !storyboard.scenes) {
     throw new Error(storyboard.error || 'Failed to generate storyboard');
@@ -110,7 +159,7 @@ export async function createProject(
 export async function uploadImages(
   files: File[],
   projectId: string
-): Promise<{ urls: string[]; paths: string[] }> {
+): Promise<{ urls: string[]; paths: string[]; images?: Array<{ id: string; url: string; localPath: string }> }> {
   const formData = new FormData();
   files.forEach((file) => {
     formData.append('images', file);
@@ -128,7 +177,17 @@ export async function uploadImages(
       throw new Error(error.error || 'Failed to upload images');
     }
 
-    return response.json();
+    const result = await response.json();
+    
+    // Extract URLs from uploaded images
+    const urls = result.images?.map((img: any) => img.url) || [];
+    const paths = result.images?.map((img: any) => img.localPath) || [];
+
+    return {
+      ...result,
+      urls,
+      paths,
+    };
   });
 }
 
@@ -165,9 +224,12 @@ export async function pollImageStatus(
     interval?: number;
     timeout?: number;
     onProgress?: (status: ImageStatusResponse) => void;
+    projectId?: string;
+    sceneIndex?: number;
+    prompt?: string;
   } = {}
 ): Promise<ImageStatusResponse> {
-  const { interval = 2000, timeout = 300000, onProgress } = options; // 5 min default timeout
+  const { interval = 2000, timeout = 300000, onProgress, projectId, sceneIndex, prompt } = options; // 5 min default timeout
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -179,7 +241,25 @@ export async function pollImageStatus(
           return;
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/generate-image/${predictionId}`);
+        // Build URL with query parameters if provided
+        let url: string;
+        if (API_BASE_URL) {
+          const urlObj = new URL(`${API_BASE_URL}/api/generate-image/${predictionId}`);
+          if (projectId) urlObj.searchParams.set('projectId', projectId);
+          if (sceneIndex !== undefined) urlObj.searchParams.set('sceneIndex', sceneIndex.toString());
+          if (prompt) urlObj.searchParams.set('prompt', prompt);
+          url = urlObj.toString();
+        } else {
+          // Relative URL - build query string manually
+          const params = new URLSearchParams();
+          if (projectId) params.set('projectId', projectId);
+          if (sceneIndex !== undefined) params.set('sceneIndex', sceneIndex.toString());
+          if (prompt) params.set('prompt', prompt);
+          const queryString = params.toString();
+          url = `/api/generate-image/${predictionId}${queryString ? `?${queryString}` : ''}`;
+        }
+
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error('Failed to fetch image status');
         }
@@ -370,6 +450,10 @@ export async function getProjectStatus(projectId: string): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/project/${projectId}/status`);
 
     if (!response.ok) {
+      // For 404, throw a Response object so statusCode is preserved
+      if (response.status === 404) {
+        throw response;
+      }
       const error = await response.json().catch(() => ({ error: 'Failed to get project status' }));
       throw new Error(error.error || 'Failed to get project status');
     }

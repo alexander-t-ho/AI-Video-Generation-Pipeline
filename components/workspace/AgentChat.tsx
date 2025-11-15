@@ -7,7 +7,35 @@ import { AlertCircle, Lightbulb, Loader2 } from 'lucide-react';
 export default function AgentChat() {
   const { chatMessages } = useProjectStore();
 
-  const renderMessage = (message: ChatMessage) => {
+  // Check if a message has been superseded by a completion message
+  const isSuperseded = (messageIndex: number, message: ChatMessage): boolean => {
+    if (message.type !== 'status') return false;
+    const contentLower = message.content.toLowerCase();
+    
+    // Check if this is a "generating" message
+    if (contentLower.includes('generating') && contentLower.endsWith('...')) {
+      // Look for a later completion message
+      for (let i = messageIndex + 1; i < chatMessages.length; i++) {
+        const laterMessage = chatMessages[i];
+        if (laterMessage.type === 'status') {
+          const laterContent = laterMessage.content.toLowerCase();
+          // Check if later message indicates completion
+          if (laterContent.includes('storyboard generated') && contentLower.includes('storyboard')) {
+            return true; // This "generating storyboard" has been completed
+          }
+          if (laterContent.includes('image generated') && contentLower.includes('image')) {
+            return true; // This "generating image" has been completed
+          }
+          if (laterContent.includes('video generated') && contentLower.includes('video')) {
+            return true; // This "generating video" has been completed
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const renderMessage = (message: ChatMessage, messageIndex: number) => {
     const isUser = message.role === 'user';
     const isStatus = message.type === 'status';
     const isError = message.type === 'error';
@@ -38,7 +66,38 @@ export default function AgentChat() {
       } else if (isSuggestion) {
         return <Lightbulb className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />;
       } else if (isStatus) {
-        return <Loader2 className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 animate-spin" />;
+        // Only show spinner for "in progress" messages, not completed ones
+        const contentLower = message.content.toLowerCase();
+        
+        // Check if this message has been superseded by a completion message
+        if (isSuperseded(messageIndex, message)) {
+          return null; // Don't show spinner for superseded messages
+        }
+        
+        // Check for completion indicators first (these take priority)
+        const hasCheckmark = message.content.includes('✓');
+        const isCompleted = hasCheckmark || 
+                           contentLower.includes('complete') ||
+                           (contentLower.includes('generated') && !contentLower.includes('generating')) ||
+                           contentLower.includes('ready') ||
+                           contentLower.includes('success') ||
+                           contentLower.includes('finished');
+        
+        // Only show spinner if NOT completed AND contains in-progress indicators
+        if (!isCompleted) {
+          const isInProgress = contentLower.includes('generating') || 
+                              contentLower.includes('uploading') ||
+                              contentLower.includes('processing') ||
+                              contentLower.includes('extracting') ||
+                              contentLower.includes('progress') ||
+                              contentLower.endsWith('...');
+          if (isInProgress) {
+            return <Loader2 className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 animate-spin" />;
+          }
+        }
+        
+        // For completed status messages, show no icon (or could show checkmark)
+        return null;
       }
       return null;
     };
@@ -103,7 +162,7 @@ export default function AgentChat() {
 
   return (
     <div className="py-2">
-      {chatMessages.map(renderMessage)}
+      {chatMessages.map((message, index) => renderMessage(message, index))}
     </div>
   );
 }

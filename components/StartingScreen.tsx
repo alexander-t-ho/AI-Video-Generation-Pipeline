@@ -38,7 +38,8 @@ export default function StartingScreen({
       createProjectInStore(message, targetDuration);
       const projectId = useProjectStore.getState().project?.id;
 
-      // Upload images if provided
+      // Upload images if provided and get URLs for storyboard generation
+      let referenceImageUrls: string[] = [];
       if (images && images.length > 0 && projectId) {
         try {
           addChatMessage({
@@ -46,14 +47,20 @@ export default function StartingScreen({
             content: `Uploading ${images.length} image(s)...`,
             type: 'status',
           });
-          await uploadImages(images, projectId);
+          const uploadResult = await uploadImages(images, projectId);
+          referenceImageUrls = uploadResult.urls || [];
           addChatMessage({
             role: 'agent',
-            content: '✓ Images uploaded successfully',
+            content: `✓ ${uploadResult.urls.length} image(s) uploaded successfully`,
             type: 'status',
           });
         } catch (err) {
           console.error('Failed to upload images:', err);
+          addChatMessage({
+            role: 'agent',
+            content: 'Warning: Image upload failed. Continuing without reference images.',
+            type: 'error',
+          });
           // Continue with storyboard generation even if image upload fails
         }
       }
@@ -65,8 +72,8 @@ export default function StartingScreen({
         type: 'status',
       });
 
-      // Generate storyboard
-      const result = await createProject(message, targetDuration);
+      // Generate storyboard with reference images
+      const result = await createProject(message, targetDuration, referenceImageUrls);
 
       if (!result.storyboard.success || !result.storyboard.scenes) {
         throw new Error(result.storyboard.error || 'Failed to generate storyboard');
@@ -133,6 +140,7 @@ export default function StartingScreen({
             autoFocus={true}
             maxFiles={5}
             maxSizeMB={10}
+            preserveValueOnSubmit={loading} // Keep text visible during loading
           />
 
           {/* Error Message */}
