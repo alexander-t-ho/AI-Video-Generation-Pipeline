@@ -60,10 +60,10 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Enable real-time status updates
+  // Disabled for now since the endpoint doesn't exist - will enable when API is ready
   useGenerationStatus({
     projectId: project?.id || null,
-    enabled: !!project && project.status !== 'completed',
-    interval: 5000, // Poll every 5 seconds
+    enabled: false, // Disabled until /api/project/[projectId]/status endpoint is implemented
   });
 
   // Auto-scroll to bottom when new messages arrive
@@ -174,6 +174,55 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   };
 
   /**
+   * Get product reference image from Scene 1 for consistency
+   * This takes priority over seed frames for maintaining product consistency
+   */
+  const getProductReferenceImage = (sceneIndex: number): string | undefined => {
+    // For Scene 0, no reference needed
+    if (sceneIndex === 0) return undefined;
+    
+    // Use Scene 0's first generated image as the product reference
+    if (scenes[0]?.generatedImages?.length > 0) {
+      const firstSceneImage = scenes[0].generatedImages[0];
+      if (firstSceneImage?.url) {
+        return firstSceneImage.url;
+      }
+    }
+    
+    return undefined;
+  };
+
+  /**
+   * Get reference image URLs from previous scenes for consistency
+   */
+  const getReferenceImageUrls = (sceneIndex: number): string[] => {
+    const referenceUrls: string[] = [];
+    
+    // Use the first scene's generated image as the primary reference for product consistency
+    if (sceneIndex > 0 && scenes[0]?.generatedImages?.length > 0) {
+      const firstSceneImage = scenes[0].generatedImages[0];
+      if (firstSceneImage?.url) {
+        referenceUrls.push(firstSceneImage.url);
+      }
+    }
+    
+    // Also include the previous scene's selected image if available (for visual continuity)
+    if (sceneIndex > 0) {
+      const previousScene = scenes[sceneIndex - 1];
+      if (previousScene?.selectedImageId) {
+        const previousImage = previousScene.generatedImages?.find(
+          img => img.id === previousScene.selectedImageId
+        );
+        if (previousImage?.url && !referenceUrls.includes(previousImage.url)) {
+          referenceUrls.push(previousImage.url);
+        }
+      }
+    }
+    
+    return referenceUrls;
+  };
+
+  /**
    * Handle image generation command
    */
   const handleGenerateImage = async (sceneIndex: number, customPrompt?: string) => {
@@ -197,12 +246,17 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
         type: 'status',
       });
 
-      const seedFrameUrl = getSeedFrameUrl(sceneIndex);
+      // For product consistency: use Scene 0's image as seed for all subsequent scenes
+      // This ensures the same headphones appear in all scenes
+      const productReferenceImage = getProductReferenceImage(sceneIndex);
+      const seedFrameUrl = productReferenceImage || getSeedFrameUrl(sceneIndex);
+      const referenceImageUrls = getReferenceImageUrls(sceneIndex);
       const request: ImageGenerationRequest = {
         prompt: customPrompt || scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedFrameUrl,
+        seedImage: seedFrameUrl, // Use product reference image for consistency
+        referenceImageUrls,
       };
 
       const response = await generateImage(request);
@@ -215,6 +269,9 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       const status = await pollImageStatus(response.predictionId, {
         interval: 2000,
         timeout: 300000,
+        projectId: project.id,
+        sceneIndex,
+        prompt: customPrompt || scene.imagePrompt,
         onProgress: (progress) => {
           if (progress.progress) {
             addChatMessage({
@@ -635,7 +692,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+    <div className="flex flex-col h-full bg-white dark:bg-gray-800">
       {/* Panel Header - Cursor style: minimal */}
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <h2 className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">

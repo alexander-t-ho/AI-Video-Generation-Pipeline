@@ -224,9 +224,12 @@ export async function pollImageStatus(
     interval?: number;
     timeout?: number;
     onProgress?: (status: ImageStatusResponse) => void;
+    projectId?: string;
+    sceneIndex?: number;
+    prompt?: string;
   } = {}
 ): Promise<ImageStatusResponse> {
-  const { interval = 2000, timeout = 300000, onProgress } = options; // 5 min default timeout
+  const { interval = 2000, timeout = 300000, onProgress, projectId, sceneIndex, prompt } = options; // 5 min default timeout
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -238,7 +241,25 @@ export async function pollImageStatus(
           return;
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/generate-image/${predictionId}`);
+        // Build URL with query parameters if provided
+        let url: string;
+        if (API_BASE_URL) {
+          const urlObj = new URL(`${API_BASE_URL}/api/generate-image/${predictionId}`);
+          if (projectId) urlObj.searchParams.set('projectId', projectId);
+          if (sceneIndex !== undefined) urlObj.searchParams.set('sceneIndex', sceneIndex.toString());
+          if (prompt) urlObj.searchParams.set('prompt', prompt);
+          url = urlObj.toString();
+        } else {
+          // Relative URL - build query string manually
+          const params = new URLSearchParams();
+          if (projectId) params.set('projectId', projectId);
+          if (sceneIndex !== undefined) params.set('sceneIndex', sceneIndex.toString());
+          if (prompt) params.set('prompt', prompt);
+          const queryString = params.toString();
+          url = `/api/generate-image/${predictionId}${queryString ? `?${queryString}` : ''}`;
+        }
+
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error('Failed to fetch image status');
         }
@@ -429,6 +450,10 @@ export async function getProjectStatus(projectId: string): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/project/${projectId}/status`);
 
     if (!response.ok) {
+      // For 404, throw a Response object so statusCode is preserved
+      if (response.status === 404) {
+        throw response;
+      }
       const error = await response.json().catch(() => ({ error: 'Failed to get project status' }));
       throw new Error(error.error || 'Failed to get project status');
     }

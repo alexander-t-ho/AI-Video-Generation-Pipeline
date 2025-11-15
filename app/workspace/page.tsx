@@ -52,7 +52,8 @@ function WorkspaceContent() {
       // Redirect to home if no project
       window.location.href = '/';
     }
-  }, [project, projectId, loadProject]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, projectId]); // loadProject is stable, don't need it in deps
 
   if (!project || isLoading) {
     return (

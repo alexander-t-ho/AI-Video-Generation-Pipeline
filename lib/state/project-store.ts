@@ -305,9 +305,17 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   },
   
   loadProject: async (projectId: string) => {
+    // Check if project is already in store and matches
+    const currentProject = useProjectStore.getState().project;
+    if (currentProject && currentProject.id === projectId) {
+      // Project already loaded
+      return;
+    }
+    
     // TODO: Implement project loading from API/storage
-    // For now, this is a placeholder
-    console.log('Loading project:', projectId);
+    // For now, projects are only in-memory, so if not in store, it doesn't exist
+    // Throw error to trigger redirect to home
+    throw new Error('Project not found. Projects are currently only available in the current session.');
   },
   
   setViewMode: (mode: ViewMode) => {

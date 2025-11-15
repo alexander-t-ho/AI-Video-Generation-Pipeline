@@ -140,6 +140,7 @@ export default function StartingScreen({
             autoFocus={true}
             maxFiles={5}
             maxSizeMB={10}
+            preserveValueOnSubmit={loading} // Keep text visible during loading
           />
 
           {/* Error Message */}

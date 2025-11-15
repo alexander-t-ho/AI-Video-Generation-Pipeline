@@ -354,12 +354,7 @@ export default function MediaDrawer() {
         {renderSection(
           'Uploaded Media',
           'uploaded',
-          uploadedMedia.map((file, index) => ({
-            id: `uploaded-${index}`,
-            type: 'image' as const,
-            url: URL.createObjectURL(file),
-            metadata: { filename: file.name },
-          })),
+          uploadedMedia,
           <ImageIcon className="w-4 h-4" />,
           'No media uploaded'
         )}

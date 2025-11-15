@@ -434,10 +434,14 @@ export async function downloadAndSaveImage(
   }
 
   // Create GeneratedImage object
+  // Convert absolute path to API URL: /tmp/projects/{projectId}/images/{filename} -> /api/images/projects/{projectId}/images/{filename}
+  const relativePath = filePath.replace('/tmp/', '');
+  const apiUrl = `/api/images/${relativePath}`;
+
   const generatedImage: GeneratedImage = {
     id: imageId,
-    url: filePath, // Absolute path for internal use (same as localPath)
-    localPath: filePath, // Full absolute path
+    url: apiUrl, // API URL for frontend access
+    localPath: filePath, // Full absolute path for server-side use
     prompt: '', // Will be set by caller
     replicateId: '', // Will be set by caller
     createdAt: new Date().toISOString(),

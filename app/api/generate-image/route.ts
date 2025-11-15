@@ -149,8 +149,8 @@ export async function POST(request: NextRequest) {
     // Note: Flux-schnell doesn't directly support reference images, so we incorporate them into the prompt
     let enhancedPrompt = prompt;
     if (referenceImageUrls.length > 0) {
-      enhancedPrompt = `${prompt}\n\nUse the provided reference images as style guidance for color palette, composition, lighting, and overall aesthetic.`;
-      // Note: In the future, we could use image-to-image with reference images if the model supports it
+      // Add detailed instructions to maintain product consistency across scenes
+      enhancedPrompt = `${prompt}\n\nCRITICAL INSTRUCTIONS FOR PRODUCT CONSISTENCY:\n- The product (headphones) shown in the reference images must appear IDENTICALLY in this scene\n- Use the EXACT same product model, brand, design, colors, materials, textures, and visual details\n- The product's physical appearance, shape, size, and all design elements must match the reference images exactly\n- ONLY the following may vary: camera angle, composition, lighting, background, and scene context\n- The product itself must be visually identical to maintain brand consistency across all scenes\n- Pay special attention to matching: headphone design, color scheme, material finish, brand logos, button placement, and overall aesthetic`;
     }
 
     // Create prediction

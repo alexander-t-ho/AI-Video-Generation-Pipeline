@@ -59,6 +59,50 @@ export default function SceneCard({
     return undefined;
   };
 
+  const getProductReferenceImage = (): string | undefined => {
+    if (!project) return undefined;
+    // For Scene 0, no reference needed
+    if (sceneIndex === 0) return undefined;
+    
+    // Use Scene 0's first generated image as the product reference
+    if (scenes[0]?.generatedImages?.length > 0) {
+      const firstSceneImage = scenes[0].generatedImages[0];
+      if (firstSceneImage?.url) {
+        return firstSceneImage.url;
+      }
+    }
+    
+    return undefined;
+  };
+
+  const getReferenceImageUrls = (): string[] => {
+    if (!project) return [];
+    const referenceUrls: string[] = [];
+    
+    // Use the first scene's generated image as the primary reference for product consistency
+    if (sceneIndex > 0 && scenes[0]?.generatedImages?.length > 0) {
+      const firstSceneImage = scenes[0].generatedImages[0];
+      if (firstSceneImage?.url) {
+        referenceUrls.push(firstSceneImage.url);
+      }
+    }
+    
+    // Also include the previous scene's selected image if available (for visual continuity)
+    if (sceneIndex > 0) {
+      const previousScene = scenes[sceneIndex - 1];
+      if (previousScene?.selectedImageId) {
+        const previousImage = previousScene.generatedImages?.find(
+          img => img.id === previousScene.selectedImageId
+        );
+        if (previousImage?.url && !referenceUrls.includes(previousImage.url)) {
+          referenceUrls.push(previousImage.url);
+        }
+      }
+    }
+    
+    return referenceUrls;
+  };
+
   const handleGenerateImage = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!project || isGenerating) return;
@@ -72,12 +116,16 @@ export default function SceneCard({
         type: 'status',
       });
 
-      const seedFrameUrl = getSeedFrameUrl();
+      // For product consistency: use Scene 0's image as seed for all subsequent scenes
+      const productReferenceImage = getProductReferenceImage();
+      const seedFrameUrl = productReferenceImage || getSeedFrameUrl();
+      const referenceImageUrls = getReferenceImageUrls();
       const request: ImageGenerationRequest = {
         prompt: scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedFrameUrl,
+        seedImage: seedFrameUrl, // Use product reference image for consistency
+        referenceImageUrls,
       };
 
       const response = await generateImage(request);
@@ -89,6 +137,9 @@ export default function SceneCard({
       const status = await pollImageStatus(response.predictionId, {
         interval: 2000,
         timeout: 300000,
+        projectId: project.id,
+        sceneIndex,
+        prompt: scene.imagePrompt,
       });
 
       if (status.success && status.image) {
