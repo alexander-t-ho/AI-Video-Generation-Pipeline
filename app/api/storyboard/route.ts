@@ -103,10 +103,12 @@ export async function POST(request: NextRequest) {
     // Extract parameters
     const prompt = body.prompt.trim();
     const targetDuration = body.targetDuration || 15;
+    const referenceImageUrls = body.referenceImageUrls || [];
 
     console.log('[Storyboard API] Request received:', {
       prompt: prompt.substring(0, 50) + '...',
       targetDuration,
+      referenceImageCount: referenceImageUrls.length,
     });
 
     // Check for API key
@@ -123,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate storyboard
-    const scenes = await generateStoryboard(prompt, targetDuration);
+    const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls);
 
     const duration = Date.now() - startTime;
     console.log(`[Storyboard API] Successfully generated storyboard in ${duration}ms`);

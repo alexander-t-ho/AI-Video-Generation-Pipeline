@@ -122,12 +122,14 @@ export async function POST(request: NextRequest) {
     const projectId = body.projectId.trim();
     const sceneIndex = body.sceneIndex;
     const seedImage = body.seedImage?.trim();
+    const referenceImageUrls = body.referenceImageUrls || [];
 
     console.log('[Image Generation API] Request received:', {
       prompt: prompt.substring(0, 50) + '...',
       projectId,
       sceneIndex,
       hasSeedImage: !!seedImage,
+      referenceImageCount: referenceImageUrls.length,
     });
 
     // Check for API key
@@ -143,8 +145,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enhance prompt with reference images if provided
+    // Note: Flux-schnell doesn't directly support reference images, so we incorporate them into the prompt
+    let enhancedPrompt = prompt;
+    if (referenceImageUrls.length > 0) {
+      enhancedPrompt = `${prompt}\n\nUse the provided reference images as style guidance for color palette, composition, lighting, and overall aesthetic.`;
+      // Note: In the future, we could use image-to-image with reference images if the model supports it
+    }
+
     // Create prediction
-    const predictionId = await createImagePredictionWithRetry(prompt, seedImage);
+    const predictionId = await createImagePredictionWithRetry(enhancedPrompt, seedImage);
 
     const duration = Date.now() - startTime;
     console.log(`[Image Generation API] Prediction created in ${duration}ms: ${predictionId}`);

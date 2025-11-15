@@ -25,6 +25,11 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
 
   useEffect(() => {
     if (!enabled || !projectId || !project) {
+      // Stop polling when disabled (Phase 10.1.1)
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
       return;
     }
 
@@ -35,9 +40,18 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
         // Check if status changed
         const statusKey = JSON.stringify(status);
         if (statusKey === lastStatusRef.current) {
-          return; // No change, skip update
+          return; // No change, skip update (Phase 10.1.1 - reduce unnecessary updates)
         }
         lastStatusRef.current = statusKey;
+        
+        // Stop polling if project is completed (Phase 10.1.1)
+        if (status.status === 'completed' || project.status === 'completed') {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          return;
+        }
 
         // Call callback if provided
         if (onStatusUpdate) {

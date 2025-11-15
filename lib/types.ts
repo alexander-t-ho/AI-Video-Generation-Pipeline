@@ -23,6 +23,7 @@ export interface Scene {
 export interface StoryboardRequest {
   prompt: string;
   targetDuration?: number;   // Default: 15
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images
 }
 
 export interface StoryboardResponse {
@@ -51,6 +52,7 @@ export interface ImageGenerationRequest {
   projectId: string;
   sceneIndex: number;
   seedImage?: string;        // Optional seed image URL for image-to-image
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
 }
 
 export interface ImageGenerationResponse {

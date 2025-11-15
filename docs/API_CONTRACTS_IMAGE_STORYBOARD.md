@@ -24,13 +24,105 @@ All API routes are currently unauthenticated (internal APIs). Future versions ma
 
 ---
 
+## Image Upload API
+
+### Upload Images
+
+**Endpoint**: `POST /api/upload-images`
+
+**Description**: Uploads user-provided reference images for use in storyboard and image generation. Currently saves to local storage. S3 support can be enabled in the future.
+
+**Request** (FormData):
+- `projectId` (string, required): Project ID for organizing uploaded images
+- `images` (File[], required): One or more image files (JPEG, PNG, WebP)
+  - Max file size: 10MB per file
+  - Allowed types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
+
+**Example Request**:
+```typescript
+const formData = new FormData();
+formData.append('projectId', 'proj-123abc');
+formData.append('images', file1);
+formData.append('images', file2);
+
+const response = await fetch('/api/upload-images', {
+  method: 'POST',
+  body: formData
+});
+```
+
+**Success Response** (200 OK):
+```typescript
+{
+  success: true;
+  images: UploadedImage[];
+  errors?: string[];  // Only present if some images failed
+}
+
+// Where UploadedImage is:
+interface UploadedImage {
+  id: string;              // Unique image ID
+  url: string;             // Local file path or S3 URL
+  localPath: string;      // Always local file path
+  s3Key?: string;         // S3 key if uploaded to S3 (future)
+  originalName: string;   // Original filename
+  size: number;           // File size in bytes
+  mimeType: string;      // MIME type
+  createdAt: string;      // ISO 8601 timestamp
+}
+```
+
+**Example Success Response**:
+```json
+{
+  "success": true,
+  "images": [
+    {
+      "id": "1234567890-abc123",
+      "url": "/tmp/projects/proj-123abc/uploads/1234567890-abc123.jpg",
+      "localPath": "/tmp/projects/proj-123abc/uploads/1234567890-abc123.jpg",
+      "originalName": "reference-image.jpg",
+      "size": 245678,
+      "mimeType": "image/jpeg",
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Error Responses**:
+
+**400 Bad Request** - Invalid request:
+```json
+{
+  "success": false,
+  "error": "Missing required field: projectId",
+  "code": "INVALID_REQUEST"
+}
+```
+
+**500 Internal Server Error** - Upload failed:
+```json
+{
+  "success": false,
+  "error": "Upload failed: Failed to save image",
+  "code": "UPLOAD_FAILED"
+}
+```
+
+**File Storage**:
+- Local storage: `/tmp/projects/{projectId}/uploads/{imageId}.{ext}`
+- Future S3: `uploads/{projectId}/{imageId}.{ext}`
+
+---
+
 ## Storyboard Generation API
 
 ### Generate Storyboard
 
 **Endpoint**: `POST /api/storyboard`
 
-**Description**: Generates a 5-scene storyboard from a user prompt using OpenAI GPT-4o via OpenRouter.
+**Description**: Generates a 5-scene storyboard from a user prompt using OpenAI GPT-4o via OpenRouter. Supports reference images for visual style guidance.
 
 **Request**:
 ```typescript
@@ -38,14 +130,26 @@ All API routes are currently unauthenticated (internal APIs). Future versions ma
   prompt: string;           // Required: User's product/ad description
   targetDuration?: number;  // Optional: Target video duration in seconds (15, 30, or 60)
                            // Default: 15
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images
 }
 ```
 
-**Example Request**:
+**Example Request** (without images):
 ```json
 {
   "prompt": "Create a luxury watch advertisement with golden hour lighting and elegant models",
   "targetDuration": 15
+}
+```
+
+**Example Request** (with reference images):
+```json
+{
+  "prompt": "Create a luxury watch advertisement with golden hour lighting and elegant models",
+  "targetDuration": 15,
+  "referenceImageUrls": [
+    "/tmp/projects/proj-123abc/uploads/1234567890-abc123.jpg"
+  ]
 }
 ```
 
@@ -142,6 +246,7 @@ interface Scene {
   projectId: string;     // Required: Project ID for file organization
   sceneIndex: number;    // Required: Scene index (0-4)
   seedImage?: string;    // Optional: URL to seed image for image-to-image generation
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
 }
 ```
 
@@ -326,6 +431,7 @@ interface Scene {
 interface StoryboardRequest {
   prompt: string;
   targetDuration?: number;   // Default: 15
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images
 }
 
 interface StoryboardResponse {
@@ -354,6 +460,7 @@ interface ImageGenerationRequest {
   projectId: string;
   sceneIndex: number;
   seedImage?: string;
+  referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
 }
 
 interface ImageGenerationResponse {
@@ -628,7 +735,10 @@ async function fetchWithRetry<T>(
 
 ```
 /tmp/projects/{projectId}/
-  └── images/
+  ├── uploads/              # User-uploaded reference images
+  │   ├── {imageId}.jpg
+  │   └── {imageId}.png
+  └── images/              # Generated scene images
       ├── scene-0-{imageId}.png
       ├── scene-1-{imageId}.png
       ├── scene-2-{imageId}.png
@@ -672,13 +782,24 @@ async function fetchWithRetry<T>(
 
 ### cURL Examples
 
+**Upload Images**:
+```bash
+curl -X POST http://localhost:3000/api/upload-images \
+  -F "projectId=test-proj-123" \
+  -F "images=@/path/to/image1.jpg" \
+  -F "images=@/path/to/image2.png"
+```
+
 **Generate Storyboard**:
 ```bash
 curl -X POST http://localhost:3000/api/storyboard \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Luxury watch advertisement with golden hour lighting",
-    "targetDuration": 15
+    "targetDuration": 15,
+    "referenceImageUrls": [
+      "/tmp/projects/test-proj-123/uploads/1234567890-abc123.jpg"
+    ]
   }'
 ```
 
@@ -702,6 +823,12 @@ curl http://localhost:3000/api/generate-image/abc123def456
 
 ## Change Log
 
+### Version 1.1 (Current)
+- Added image upload endpoint (`/api/upload-images`)
+- Added `referenceImageUrls` support to storyboard generation
+- Added `referenceImageUrls` support to image generation
+- Local storage for uploaded images with S3 support ready
+
 ### Version 1.0 (Initial)
 - Initial API contract definition
 - Storyboard generation endpoint
@@ -723,6 +850,10 @@ curl http://localhost:3000/api/generate-image/abc123def456
 5. **Seed Images**: For scenes 1-4, pass the selected seed frame URL from the previous scene.
 
 6. **Timeouts**: If polling exceeds 30 seconds (15 attempts), consider it a timeout and show error to user.
+
+7. **Reference Images**: Upload images first using `/api/upload-images`, then pass the returned URLs in `referenceImageUrls` array to storyboard/image generation endpoints.
+
+8. **Image Storage**: Uploaded images are stored locally in `/tmp/projects/{projectId}/uploads/`. Future S3 support will automatically use S3 URLs when enabled.
 
 ---
 

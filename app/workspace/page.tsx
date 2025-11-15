@@ -9,6 +9,7 @@ import RightPanel from '@/components/workspace/RightPanel';
 import CollapsedLeftPanel from '@/components/workspace/CollapsedLeftPanel';
 import CollapsedRightPanel from '@/components/workspace/CollapsedRightPanel';
 import WorkspaceHeader from '@/components/workspace/WorkspaceHeader';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function WorkspaceContent() {
   const searchParams = useSearchParams();
@@ -84,7 +85,9 @@ function WorkspaceContent() {
 
         {/* Middle Panel - Full width on mobile, flexible on larger screens */}
         <div className="flex-1 min-w-0 flex flex-col w-full lg:w-auto">
-          <MiddlePanel />
+          <ErrorBoundary>
+            <MiddlePanel />
+          </ErrorBoundary>
         </div>
 
         {/* Right Panel - Responsive: full-screen overlay on mobile, collapsible on tablet/desktop */}

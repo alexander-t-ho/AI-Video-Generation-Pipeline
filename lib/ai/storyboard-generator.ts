@@ -6,6 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
 import { Scene, StoryboardResponse } from '../types';
 
 // ============================================================================
@@ -54,7 +55,13 @@ interface OpenRouterRequest {
   model: string;
   messages: Array<{
     role: 'system' | 'user';
-    content: string;
+    content: string | Array<{
+      type: 'text' | 'image_url';
+      text?: string;
+      image_url?: {
+        url: string;
+      };
+    }>;
   }>;
   response_format: {
     type: 'json_object';
@@ -94,11 +101,13 @@ interface RawStoryboardResponse {
  * Calls OpenRouter API to generate storyboard
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 15)
+ * @param referenceImageUrls Optional array of reference image URLs
  * @returns Raw JSON response from OpenRouter
  */
 async function callOpenRouterAPI(
   prompt: string,
-  targetDuration: number = 15
+  targetDuration: number = 15,
+  referenceImageUrls?: string[]
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -115,6 +124,51 @@ async function callOpenRouterAPI(
 
 Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 seconds tolerance).`;
 
+  // Build user message content
+  // If reference images are provided, include them in the message
+  const userMessageContent: any[] = [];
+  
+  // Add text prompt
+  userMessageContent.push({
+    type: 'text',
+    text: userPrompt + (referenceImageUrls && referenceImageUrls.length > 0 
+      ? `\n\nReference images have been provided. Use them to understand the visual style, color palette, composition, and overall aesthetic. Incorporate these visual elements into the storyboard scenes.`
+      : ''),
+  });
+
+  // Add reference images if provided
+  if (referenceImageUrls && referenceImageUrls.length > 0) {
+    for (const imageUrl of referenceImageUrls) {
+      // OpenRouter needs publicly accessible URLs or base64 data URLs
+      // For local file paths, we need to convert to base64 or serve via public endpoint
+      // TODO: When S3 is enabled, use S3 URLs directly
+      // For now, if it's a local path, we'll need to convert it to base64
+      let imageUrlForAPI = imageUrl;
+      
+      // Check if it's a local file path (starts with /tmp or relative path)
+      if (imageUrl.startsWith('/tmp') || imageUrl.startsWith('./') || !imageUrl.startsWith('http')) {
+        // For local paths, we need to read and convert to base64
+        // This is a temporary solution - S3 URLs will work better
+        try {
+          const imageBuffer = fs.readFileSync(imageUrl);
+          const base64Image = imageBuffer.toString('base64');
+          const mimeType = imageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
+          imageUrlForAPI = `data:${mimeType};base64,${base64Image}`;
+        } catch (error) {
+          console.warn(`[Storyboard] Failed to read local image ${imageUrl}, skipping:`, error);
+          continue; // Skip this image if we can't read it
+        }
+      }
+      
+      userMessageContent.push({
+        type: 'image_url',
+        image_url: {
+          url: imageUrlForAPI,
+        },
+      });
+    }
+  }
+
   const requestBody: OpenRouterRequest = {
     model: OPENROUTER_MODEL,
     messages: [
@@ -124,7 +178,9 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
       },
       {
         role: 'user',
-        content: userPrompt,
+        content: userMessageContent.length === 1 && userMessageContent[0].type === 'text'
+          ? userMessageContent[0].text
+          : userMessageContent, // Use array format for multimodal content
       },
     ],
     response_format: {
@@ -343,11 +399,13 @@ async function retryWithBackoff<T>(
  * Generates a 5-scene storyboard from a user prompt
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 15)
+ * @param referenceImageUrls Optional array of reference image URLs for visual context
  * @returns Array of 5 validated scenes with UUIDs
  */
 export async function generateStoryboard(
   prompt: string,
-  targetDuration: number = 15
+  targetDuration: number = 15,
+  referenceImageUrls?: string[]
 ): Promise<Scene[]> {
   // Validate inputs
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -368,7 +426,7 @@ export async function generateStoryboard(
   // Retry logic with exponential backoff
   const scenes = await retryWithBackoff(async () => {
     // Call OpenRouter API
-    const apiResponse = await callOpenRouterAPI(prompt, targetDuration);
+    const apiResponse = await callOpenRouterAPI(prompt, targetDuration, referenceImageUrls);
 
     // Extract JSON content from response
     const content = apiResponse.choices[0]?.message?.content;
