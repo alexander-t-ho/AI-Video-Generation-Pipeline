@@ -11,21 +11,19 @@ import path from 'path';
 import https from 'https';
 import http from 'http';
 
+import { VIDEO_CONFIG } from '@/lib/config/ai-models';
+
 // ============================================================================
 // Constants
 // ============================================================================
 
-// Using wan-video/wan-2.5-i2v-fast model on Replicate
-// Version hash: 5be8b80ffe74f3d3a731693ddd98e7ee94100a0f4ae704bd58e93565977670f9
-// Can be overridden via REPLICATE_VIDEO_MODEL environment variable
-// Format: "wan-video/wan-2.5-i2v-fast:version_hash" or just "wan-video/wan-2.5-i2v-fast" (uses latest)
-const REPLICATE_MODEL = process.env.REPLICATE_VIDEO_MODEL || 'wan-video/wan-2.5-i2v-fast:5be8b80ffe74f3d3a731693ddd98e7ee94100a0f4ae704bd58e93565977670f9';
-const MAX_RETRIES = 2;
-const POLL_INTERVAL = 2000; // 2 seconds
-const MAX_POLL_ATTEMPTS = 150; // 5 minutes total (150 * 2s)
-const DOWNLOAD_RETRIES = 3;
-const VIDEO_DURATION = 5; // seconds (wan-video only supports 5 or 10 seconds)
-const VIDEO_RESOLUTION = '720p'; // wan-video uses resolution instead of aspect_ratio
+const REPLICATE_MODEL = VIDEO_CONFIG.model;
+const MAX_RETRIES = VIDEO_CONFIG.maxRetries;
+const POLL_INTERVAL = VIDEO_CONFIG.pollInterval;
+const MAX_POLL_ATTEMPTS = VIDEO_CONFIG.maxPollAttempts;
+const DOWNLOAD_RETRIES = VIDEO_CONFIG.downloadRetries;
+const VIDEO_DURATION = VIDEO_CONFIG.duration;
+const VIDEO_RESOLUTION = VIDEO_CONFIG.resolution;
 
 // ============================================================================
 // Types
@@ -103,6 +101,7 @@ export async function createVideoPrediction(
   const logPrefix = '[VideoGenerator]';
   console.log(`${logPrefix} ========================================`);
   console.log(`${logPrefix} Creating video prediction`);
+  console.log(`${logPrefix} Model: ${REPLICATE_MODEL}`);
   console.log(`${logPrefix} Image URL: ${imageUrl.substring(0, 80)}${imageUrl.length > 80 ? '...' : ''}`);
   console.log(`${logPrefix} Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
   if (seedFrame) {
@@ -111,6 +110,8 @@ export async function createVideoPrediction(
   } else {
     console.log(`${logPrefix} Mode: image-to-video (Scene 0)`);
   }
+  console.log(`${logPrefix} Duration: ${VIDEO_DURATION}s`);
+  console.log(`${logPrefix} Resolution: ${VIDEO_RESOLUTION}`);
   console.log(`${logPrefix} Timestamp: ${new Date().toISOString()}`);
 
   const replicate = createReplicateClient();

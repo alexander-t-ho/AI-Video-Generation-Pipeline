@@ -10,17 +10,16 @@ import Replicate from 'replicate';
 import fs from 'fs/promises';
 import path from 'path';
 import { GeneratedImage } from '../types';
+import { IMAGE_CONFIG } from '@/lib/config/ai-models';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-// Using flux-dev for better reference image support via IP-Adapter
-// Can be overridden via REPLICATE_IMAGE_MODEL environment variable
-const REPLICATE_MODEL = process.env.REPLICATE_IMAGE_MODEL || 'black-forest-labs/flux-dev';
-const MAX_RETRIES = 3;
-const POLL_INTERVAL = 2000; // 2 seconds
-const MAX_POLL_ATTEMPTS = 30; // 60 seconds total (30 * 2s) - flux-dev is slower than schnell
+const REPLICATE_MODEL = IMAGE_CONFIG.model;
+const MAX_RETRIES = IMAGE_CONFIG.maxRetries;
+const POLL_INTERVAL = IMAGE_CONFIG.pollInterval;
+const MAX_POLL_ATTEMPTS = Math.floor(IMAGE_CONFIG.pollTimeout / IMAGE_CONFIG.pollInterval);
 const DOWNLOAD_RETRIES = 3;
 const DEFAULT_IP_ADAPTER_SCALE = 1.0; // Control reference image influence (0-1, default 1.0 for maximum reference image influence)
 

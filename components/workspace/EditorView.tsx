@@ -6,7 +6,7 @@ import SeedFrameSelector from './SeedFrameSelector';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames } from '@/lib/api-client';
-import { GeneratedImage } from '@/lib/types';
+import { GeneratedImage, SeedFrame } from '@/lib/types';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -44,7 +44,7 @@ function ImagePreviewModal({ image, isOpen, onClose }: ImagePreviewModalProps) {
 
 interface GeneratingImage {
   predictionId: string;
-  status: 'starting' | 'processing' | 'succeeded' | 'failed';
+  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
   image?: GeneratedImage;
 }
 
@@ -179,6 +179,11 @@ export default function EditorView() {
             referenceImageUrls, // Reference images via IP-Adapter (primary driver for object consistency)
             seedFrame: seedFrameUrl, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
           });
+
+          // Check if predictionId exists
+          if (!response.predictionId) {
+            throw new Error('Failed to get prediction ID from image generation response');
+          }
 
           // Update generating state
           setGeneratingImages(prev => {
@@ -399,15 +404,15 @@ export default function EditorView() {
               } catch (error) {
                 console.error('Error uploading seed frame to S3:', error);
                 // If S3 upload fails, convert local path to serveable URL
-                const localPath = frame.localPath || frame.url;
+                const localPath = (frame as any).localPath || frame.url;
                 if (!localPath.startsWith('http://') && !localPath.startsWith('https://') && !localPath.startsWith('/api')) {
                   return {
                     ...frame,
                     url: `/api/serve-image?path=${encodeURIComponent(localPath)}`,
                     localPath: localPath,
-                  };
+                  } as SeedFrame;
                 }
-                return frame;
+                return frame as SeedFrame;
               }
             })
           );

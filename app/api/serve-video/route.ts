@@ -9,6 +9,8 @@ import path from 'path';
  * Query Parameters:
  * - path: string - Local file path to the video
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
