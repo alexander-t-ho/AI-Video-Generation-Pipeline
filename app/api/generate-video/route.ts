@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createVideoPredictionWithRetry } from '@/lib/video/generator';
+import { createVideoPredictionWithRetry, setRuntimeVideoModel } from '@/lib/video/generator';
 
 /**
  * POST /api/generate-video
@@ -24,7 +24,16 @@ import { createVideoPredictionWithRetry } from '@/lib/video/generator';
  * }
  */
 export async function POST(request: NextRequest) {
+  const timestamp = new Date().toISOString();
+
   try {
+    // Check for runtime model override in headers
+    const runtimeVideoModel = request.headers.get('X-Model-Video');
+    if (runtimeVideoModel) {
+      setRuntimeVideoModel(runtimeVideoModel);
+      console.log(`[Video Generation API] Using runtime model: ${runtimeVideoModel}`);
+    }
+
     // Check for required environment variables
     if (!process.env.REPLICATE_API_TOKEN) {
       return NextResponse.json(
@@ -90,15 +99,28 @@ export async function POST(request: NextRequest) {
       }
       if (!seedFrame.startsWith('http://') && !seedFrame.startsWith('https://')) {
         return NextResponse.json(
-          { 
-            success: false, 
-            error: 'seedFrame must be a publicly accessible HTTP/HTTPS URL (e.g., S3 URL)' 
+          {
+            success: false,
+            error: 'seedFrame must be a publicly accessible HTTP/HTTPS URL (e.g., S3 URL)'
           },
           { status: 400 }
         );
       }
       seedFrameUrl = seedFrame;
     }
+
+    // Log request details
+    console.log('[Video Generation API] ========================================');
+    console.log('[Video Generation API] Request received');
+    console.log('[Video Generation API] Timestamp:', timestamp);
+    console.log('[Video Generation API] Selected Model:', runtimeVideoModel || 'default');
+    console.log('[Video Generation API] Project ID:', projectId);
+    console.log('[Video Generation API] Scene Index:', sceneIndex);
+    console.log('[Video Generation API] Prompt:', prompt);
+    console.log('[Video Generation API] Inputs:');
+    console.log('[Video Generation API]   - Image URL:', imageUrl);
+    console.log('[Video Generation API]   - Seed Frame:', seedFrameUrl || 'none');
+    console.log('[Video Generation API] ========================================');
 
     // Create video prediction (returns prediction ID for polling)
     const predictionId = await createVideoPredictionWithRetry(

@@ -15,9 +15,18 @@ import { Scene, StoryboardResponse } from '../types';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Try gpt-4o-mini first as fallback if gpt-4o is not available
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+let OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
+
+/**
+ * Sets the runtime model override for text/storyboard generation
+ * This allows the dev panel to dynamically change the model
+ */
+export function setRuntimeTextModel(model: string) {
+  OPENROUTER_MODEL = model;
+  console.log(`[Storyboard Generator] Runtime model set to: ${model}`);
+}
 
 /**
  * System prompt for storyboard generation

@@ -16,12 +16,21 @@ import { IMAGE_CONFIG } from '@/lib/config/ai-models';
 // Constants
 // ============================================================================
 
-const REPLICATE_MODEL = IMAGE_CONFIG.model;
+let REPLICATE_MODEL = IMAGE_CONFIG.model; // Default model, can be overridden
 const MAX_RETRIES = IMAGE_CONFIG.maxRetries;
 const POLL_INTERVAL = IMAGE_CONFIG.pollInterval;
 const MAX_POLL_ATTEMPTS = Math.floor(IMAGE_CONFIG.pollTimeout / IMAGE_CONFIG.pollInterval);
 const DOWNLOAD_RETRIES = 3;
 const DEFAULT_IP_ADAPTER_SCALE = 1.0; // Control reference image influence (0-1, default 1.0 for maximum reference image influence)
+
+/**
+ * Sets the runtime model override for image generation
+ * This allows the dev panel to dynamically change the model
+ */
+export function setRuntimeImageModel(model: string) {
+  REPLICATE_MODEL = model;
+  console.log(`[Image Generator] Runtime model set to: ${model}`);
+}
 
 // ============================================================================
 // Types
@@ -104,22 +113,26 @@ export async function createImagePrediction(
   }
 
   const logPrefix = '[ImageGenerator]';
+  const timestamp = new Date().toISOString();
   console.log(`${logPrefix} ========================================`);
   console.log(`${logPrefix} Creating image prediction`);
+  console.log(`${logPrefix} Timestamp: ${timestamp}`);
   console.log(`${logPrefix} Model: ${REPLICATE_MODEL}`);
-  console.log(`${logPrefix} Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
-  
+  console.log(`${logPrefix} Prompt: "${prompt}"`);
+
   if (seedImage) {
-    console.log(`${logPrefix} Seed image: ${seedImage.substring(0, 80)}${seedImage.length > 80 ? '...' : ''}`);
+    console.log(`${logPrefix} Seed image: ${seedImage}`);
     console.log(`${logPrefix} Mode: image-to-image`);
   } else if (referenceImageUrls && referenceImageUrls.length > 0) {
-    console.log(`${logPrefix} Reference images: ${referenceImageUrls.length} image(s) for object consistency`);
+    console.log(`${logPrefix} Reference images (${referenceImageUrls.length}):`);
+    referenceImageUrls.forEach((url, idx) => {
+      console.log(`${logPrefix}   [${idx + 1}] ${url}`);
+    });
     console.log(`${logPrefix} IP-Adapter scale: ${ipAdapterScale ?? DEFAULT_IP_ADAPTER_SCALE}`);
     console.log(`${logPrefix} Mode: text-to-image with IP-Adapter`);
   } else {
     console.log(`${logPrefix} Mode: text-to-image`);
   }
-  console.log(`${logPrefix} Timestamp: ${new Date().toISOString()}`);
 
   const replicate = createReplicateClient();
 
@@ -376,11 +389,18 @@ export async function downloadAndSaveImage(
   // Generate image ID
   const imageId = uuidv4();
 
-  // Build file path: /tmp/projects/{projectId}/images/scene-{sceneIndex}-{imageId}.png
+  // Extract model name from REPLICATE_MODEL for filename
+  // e.g., "black-forest-labs/flux-1.1-pro" -> "flux-1.1-pro"
+  const modelName = REPLICATE_MODEL.split('/').pop()?.split(':')[0] || 'unknown';
+  const sanitizedModelName = modelName.replace(/[^a-zA-Z0-9.-]/g, '-');
+
+  // Build file path: /tmp/projects/{projectId}/images/scene-{sceneIndex}-{modelName}-{imageId}.png
   const projectDir = path.join('/tmp', 'projects', projectId);
   const imagesDir = path.join(projectDir, 'images');
-  const filename = `scene-${sceneIndex}-${imageId}.png`;
+  const filename = `scene-${sceneIndex}-${sanitizedModelName}-${imageId}.png`;
   const filePath = path.join(imagesDir, filename);
+
+  console.log(`[ImageGenerator] Using model: ${REPLICATE_MODEL} (${sanitizedModelName})`);
 
   // Create directories if they don't exist
   try {

@@ -17,13 +17,22 @@ import { VIDEO_CONFIG } from '@/lib/config/ai-models';
 // Constants
 // ============================================================================
 
-const REPLICATE_MODEL = VIDEO_CONFIG.model;
+let REPLICATE_MODEL = VIDEO_CONFIG.model; // Default model, can be overridden
 const MAX_RETRIES = VIDEO_CONFIG.maxRetries;
 const POLL_INTERVAL = VIDEO_CONFIG.pollInterval;
 const MAX_POLL_ATTEMPTS = VIDEO_CONFIG.maxPollAttempts;
 const DOWNLOAD_RETRIES = VIDEO_CONFIG.downloadRetries;
 const VIDEO_DURATION = VIDEO_CONFIG.duration;
 const VIDEO_RESOLUTION = VIDEO_CONFIG.resolution;
+
+/**
+ * Sets the runtime model override for video generation
+ * This allows the dev panel to dynamically change the model
+ */
+export function setRuntimeVideoModel(model: string) {
+  REPLICATE_MODEL = model;
+  console.log(`[Video Generator] Runtime model set to: ${model}`);
+}
 
 // ============================================================================
 // Types
@@ -99,20 +108,23 @@ export async function createVideoPrediction(
   }
 
   const logPrefix = '[VideoGenerator]';
+  const timestamp = new Date().toISOString();
   console.log(`${logPrefix} ========================================`);
   console.log(`${logPrefix} Creating video prediction`);
+  console.log(`${logPrefix} Timestamp: ${timestamp}`);
   console.log(`${logPrefix} Model: ${REPLICATE_MODEL}`);
-  console.log(`${logPrefix} Image URL: ${imageUrl.substring(0, 80)}${imageUrl.length > 80 ? '...' : ''}`);
-  console.log(`${logPrefix} Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
+  console.log(`${logPrefix} Prompt: "${prompt}"`);
+  console.log(`${logPrefix} Inputs:`);
+  console.log(`${logPrefix}   - Image URL: ${imageUrl}`);
   if (seedFrame) {
-    console.log(`${logPrefix} Seed Frame: ${seedFrame.substring(0, 80)}${seedFrame.length > 80 ? '...' : ''}`);
-    console.log(`${logPrefix} Mode: image-to-video with seed frame`);
+    console.log(`${logPrefix}   - Seed Frame: ${seedFrame}`);
+    console.log(`${logPrefix}   - Mode: image-to-video with seed frame`);
   } else {
-    console.log(`${logPrefix} Mode: image-to-video (Scene 0)`);
+    console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
   }
-  console.log(`${logPrefix} Duration: ${VIDEO_DURATION}s`);
-  console.log(`${logPrefix} Resolution: ${VIDEO_RESOLUTION}`);
-  console.log(`${logPrefix} Timestamp: ${new Date().toISOString()}`);
+  console.log(`${logPrefix} Settings:`);
+  console.log(`${logPrefix}   - Duration: ${VIDEO_DURATION}s`);
+  console.log(`${logPrefix}   - Resolution: ${VIDEO_RESOLUTION}`);
 
   const replicate = createReplicateClient();
 
@@ -429,14 +441,21 @@ export async function generateVideo(
   console.log(`${logPrefix} Project ID: ${projectId}`);
   console.log(`${logPrefix} Scene Index: ${sceneIndex}`);
 
+  // Extract model name from REPLICATE_MODEL for filename
+  // e.g., "wan-video/wan-2.5-i2v-fast:5be8b80..." -> "wan-2.5-i2v-fast"
+  const modelName = REPLICATE_MODEL.split('/').pop()?.split(':')[0] || 'unknown';
+  const sanitizedModelName = modelName.replace(/[^a-zA-Z0-9.-]/g, '-');
+
   // Create output directory in video testing folder
   const projectRoot = process.cwd();
   const outputDir = path.join(projectRoot, 'video testing');
   await fs.mkdir(outputDir, { recursive: true });
 
-  // Create unique filename with timestamp
+  // Create unique filename with timestamp and model name
   const timestamp = Date.now();
-  const outputPath = path.join(outputDir, `scene-${sceneIndex}-${timestamp}.mp4`);
+  const outputPath = path.join(outputDir, `scene-${sceneIndex}-${sanitizedModelName}-${timestamp}.mp4`);
+
+  console.log(`${logPrefix} Using model: ${REPLICATE_MODEL} (${sanitizedModelName})`);
 
   try {
     // Step 1: Create prediction

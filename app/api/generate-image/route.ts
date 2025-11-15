@@ -13,6 +13,7 @@ import {
   getUserFriendlyErrorMessage,
   getErrorCode,
   isRetryableError,
+  setRuntimeImageModel,
 } from '@/lib/ai/image-generator';
 import { ImageGenerationRequest, ImageGenerationResponse } from '@/lib/types';
 
@@ -157,6 +158,13 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // Check for runtime model override in headers
+    const runtimeT2IModel = request.headers.get('X-Model-T2I');
+    const runtimeI2IModel = request.headers.get('X-Model-I2I');
+
+    // Use T2I or I2I model based on whether we have reference images
+    // We'll check this after parsing the body
+
     // Parse request body
     let body: ImageGenerationRequest;
     try {
@@ -171,6 +179,16 @@ export async function POST(request: NextRequest) {
         } as ImageGenerationResponse,
         { status: 400 }
       );
+    }
+
+    // Apply runtime model override if provided
+    // Use I2I model if we have reference images, otherwise use T2I model
+    const hasReferenceImages = body.referenceImageUrls && body.referenceImageUrls.length > 0;
+    const selectedModel = hasReferenceImages ? runtimeI2IModel : runtimeT2IModel;
+
+    if (selectedModel) {
+      setRuntimeImageModel(selectedModel);
+      console.log(`[Image Generation API] Using runtime model: ${selectedModel} (${hasReferenceImages ? 'I2I' : 'T2I'})`);
     }
 
     // Validate request
@@ -236,29 +254,37 @@ export async function POST(request: NextRequest) {
       console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
     }
 
-    // ACTION 2: Use IP-Adapter ONLY (remove seed image usage)
-    // Using both seed image and IP-Adapter can cause conflicts
-    // IP-Adapter with scale 1.0 should be sufficient for object consistency
-    // Don't set seedImage - use IP-Adapter only for better control
-    if (!seedImage && referenceImageUrls.length > 0) {
-      // DON'T set seedImage - use IP-Adapter only
-      // seedImage = referenceImageUrls[0]; // REMOVED
-      console.log(`[Image Generation API] Scene ${sceneIndex}: Using reference image via IP-Adapter ONLY (no seed image)`);
-    }
+    // Strategy: Use seed image for image-to-image generation
+    // For Scene 0: Seed image will be the reference image (if available)
+    // For Scenes 1-4: Seed image will be the seed frame from the previous scene
+    // Also use IP-Adapter with reference images for object consistency
+    const strategy = seedImage
+      ? `Image-to-image with seed image + IP-Adapter (reference images for object consistency)`
+      : referenceImageUrls.length > 0
+      ? `Text-to-image with IP-Adapter (reference images for object consistency)`
+      : `Text-to-image only`;
 
-    console.log('[Image Generation API] Request received:', {
-      prompt: prompt.substring(0, 50) + '...',
-      projectId,
-      sceneIndex,
-      hasSeedImage: !!seedImage,
-      seedImageUrl: seedImage ? seedImage.substring(0, 80) + '...' : 'none',
-      referenceImageCount: referenceImageUrls.length,
-      referenceImageUrls: referenceImageUrls.map(url => url.substring(0, 80) + '...'),
-      hasSeedFrame: !!seedFrame,
-      seedFrameUrl: seedFrame ? seedFrame.substring(0, 80) + '...' : 'none',
-      strategy: 'IP-Adapter ONLY (no seed image) - reference image via IP-Adapter with scale 1.0',
-      allUrlsPublic,
-    });
+    const timestamp = new Date().toISOString();
+    console.log('[Image Generation API] ========================================');
+    console.log('[Image Generation API] Request received');
+    console.log('[Image Generation API] Timestamp:', timestamp);
+    console.log('[Image Generation API] Model Type:', hasReferenceImages ? 'I2I' : 'T2I');
+    console.log('[Image Generation API] Selected Model:', selectedModel || 'default');
+    console.log('[Image Generation API] Project ID:', projectId);
+    console.log('[Image Generation API] Scene Index:', sceneIndex);
+    console.log('[Image Generation API] Prompt:', prompt);
+    console.log('[Image Generation API] Strategy:', strategy);
+    console.log('[Image Generation API] Inputs:');
+    console.log('[Image Generation API]   - Seed Image:', seedImage || 'none');
+    console.log('[Image Generation API]   - Seed Frame:', seedFrame || 'none');
+    console.log('[Image Generation API]   - Reference Images:', referenceImageUrls.length);
+    if (referenceImageUrls.length > 0) {
+      referenceImageUrls.forEach((url, idx) => {
+        console.log(`[Image Generation API]     [${idx + 1}] ${url}`);
+      });
+    }
+    console.log('[Image Generation API]   - All URLs Public:', allUrlsPublic);
+    console.log('[Image Generation API] ========================================');
 
     // Check for API key
     if (!process.env.REPLICATE_API_TOKEN) {

@@ -9,8 +9,26 @@ import {
   ImageGenerationResponse,
   ImageStatusResponse,
 } from '@/lib/types';
+import { getRuntimeConfig } from '@/lib/config/model-runtime';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+/**
+ * Gets runtime model configuration headers for API requests
+ */
+function getRuntimeModelHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const config = getRuntimeConfig();
+  return {
+    'X-Model-Text': config.text,
+    'X-Model-T2I': config.t2i,
+    'X-Model-I2I': config.i2i,
+    'X-Model-Video': config.video,
+  };
+}
 
 /**
  * Default retry configuration
@@ -115,6 +133,7 @@ export async function generateStoryboard(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getRuntimeModelHeaders(),
       },
       body: JSON.stringify({
         prompt,
@@ -202,6 +221,7 @@ export async function generateImage(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getRuntimeModelHeaders(),
       },
       body: JSON.stringify(request),
     });
@@ -308,6 +328,7 @@ export async function generateVideo(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getRuntimeModelHeaders(),
       },
       body: JSON.stringify({
         imageUrl,
@@ -324,7 +345,7 @@ export async function generateVideo(
     }
 
     const result = await response.json();
-    
+
     // Extract predictionId from the nested data structure
     if (result.success && result.data?.predictionId) {
       return {
@@ -332,7 +353,7 @@ export async function generateVideo(
         status: 'starting',
       };
     }
-    
+
     throw new Error('Invalid response format from video generation API');
   });
 }

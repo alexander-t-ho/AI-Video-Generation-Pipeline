@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { generateStoryboard, createErrorResponse } from '@/lib/ai/storyboard-generator';
+import { generateStoryboard, createErrorResponse, setRuntimeTextModel } from '@/lib/ai/storyboard-generator';
 import { StoryboardRequest, StoryboardResponse } from '@/lib/types';
 
 // ============================================================================
@@ -70,6 +70,13 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // Check for runtime model override in headers
+    const runtimeTextModel = request.headers.get('X-Model-Text');
+    if (runtimeTextModel) {
+      setRuntimeTextModel(runtimeTextModel);
+      console.log(`[Storyboard API] Using runtime model: ${runtimeTextModel}`);
+    }
+
     // Parse request body
     let body: StoryboardRequest;
     try {

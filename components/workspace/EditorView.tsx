@@ -3,7 +3,8 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon } from 'lucide-react';
+import DevPanel from './DevPanel';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames } from '@/lib/api-client';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
@@ -72,6 +73,7 @@ export default function EditorView() {
   const [isExtractingFrames, setIsExtractingFrames] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState('');
+  const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -132,27 +134,17 @@ export default function EditorView() {
       // Get reference images from project (uploaded images for object consistency)
       let referenceImageUrls = project.referenceImageUrls || [];
 
-      // ACTION 1: Ensure reference image URLs are publicly accessible
-      // Note: The API route will handle URL conversion, but we can do it here too for safety
-      // For client-side, we'll use window.location.origin or let the API handle it
-      // The API route will convert local paths to public URLs using NGROK_URL
-
-      // ACTION 2: Use IP-Adapter ONLY (no seed image)
-      // Don't set seedImageUrl - use IP-Adapter only for better control
+      // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
       let seedImageUrl: string | undefined = undefined;
-      if (referenceImageUrls.length > 0) {
-        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image via IP-Adapter ONLY (no seed image):`, referenceImageUrls[0].substring(0, 80) + '...');
-      }
+      let seedFrameUrl: string | undefined = undefined;
 
-      // Get seed frame from previous scene (for Scenes 1-4, to use via IP-Adapter for visual continuity)
-      let seedFrameUrl: string | undefined;
       if (currentSceneIndex > 0) {
         const previousScene = scenes[currentSceneIndex - 1];
         if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
           // Use selected seed frame, or default to first frame if none selected
           const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
           const selectedFrame = previousScene.seedFrames[selectedIndex];
-          
+
           // Ensure the seed frame URL is a public URL (S3 or serveable)
           if (selectedFrame?.url) {
             seedFrameUrl = selectedFrame.url;
@@ -160,24 +152,32 @@ export default function EditorView() {
             if (!seedFrameUrl.startsWith('http://') && !seedFrameUrl.startsWith('https://') && !seedFrameUrl.startsWith('/api')) {
               seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || selectedFrame.url)}`;
             }
-            console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame via IP-Adapter for visual continuity:`, seedFrameUrl.substring(0, 80) + '...');
+
+            // Use the seed frame as the seed image for image-to-image generation
+            seedImageUrl = seedFrameUrl;
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl.substring(0, 80) + '...');
           }
         }
+      } else if (referenceImageUrls.length > 0) {
+        // For Scene 0: Use reference image as seed image if available
+        seedImageUrl = referenceImageUrls[0];
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl.substring(0, 80) + '...');
       }
 
       // Generate 5 images in parallel
       const imagePromises = Array(5).fill(null).map(async (_, index) => {
         try {
           // Create prediction
-          // Strategy: IP-Adapter ONLY (no seed image) - reference image via IP-Adapter with scale 1.0
-          // For scenes 1-4: Also use seed frame via IP-Adapter for visual continuity
+          // Strategy: Use seed frame as seed image for image-to-image generation
+          // For Scene 0: Use reference image as seed image if available
+          // For Scenes 1-4: Use seed frame from previous scene as seed image
           const response = await generateImage({
             prompt: currentScene.imagePrompt,
             projectId: project.id,
             sceneIndex: currentSceneIndex,
-            seedImage: seedImageUrl, // Undefined - using IP-Adapter only
-            referenceImageUrls, // Reference images via IP-Adapter (primary driver for object consistency)
-            seedFrame: seedFrameUrl, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
+            seedImage: seedImageUrl, // Seed frame from previous scene (or reference image for Scene 0)
+            referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
+            seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4)
           });
 
           // Check if predictionId exists
@@ -325,10 +325,69 @@ export default function EditorView() {
       if (videoStatus.status === 'succeeded' && videoStatus.videoPath) {
         setVideoPath(currentSceneIndex, videoStatus.videoPath);
         setSceneStatus(currentSceneIndex, 'video_ready');
-        
+
         // Show warning if download failed but using Replicate URL
         if (videoStatus.error) {
           console.warn('Video download failed, using Replicate URL:', videoStatus.error);
+        }
+
+        // Extract seed frames immediately after video generation (for the next scene)
+        // Only extract if this isn't the last scene
+        if (currentSceneIndex < 4) {
+          setIsExtractingFrames(true);
+          try {
+            // Check if video path is a URL (Replicate URL) or local path
+            let videoPath = videoStatus.videoPath;
+
+            // If it's a URL, we can't extract frames from it directly
+            if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
+              console.warn('Video path is a URL, cannot extract frames. Expected local path.');
+            } else {
+              const response = await extractFrames(
+                videoPath,
+                project.id,
+                currentSceneIndex
+              );
+
+              if (response.frames && response.frames.length > 0) {
+                // Upload seed frames to S3 so they can be used for video generation
+                const uploadedFrames = await Promise.all(
+                  response.frames.map(async (frame) => {
+                    try {
+                      // Upload frame to S3
+                      const { s3Url } = await uploadImageToS3(frame.url, project.id);
+                      return {
+                        ...frame,
+                        url: s3Url, // Update to S3 URL for video generation
+                        localPath: frame.url, // Keep local path for reference
+                      };
+                    } catch (error) {
+                      console.error('Error uploading seed frame to S3:', error);
+                      // If S3 upload fails, convert local path to serveable URL
+                      const localPath = (frame as any).localPath || frame.url;
+                      if (!localPath.startsWith('http://') && !localPath.startsWith('https://') && !localPath.startsWith('/api')) {
+                        return {
+                          ...frame,
+                          url: `/api/serve-image?path=${encodeURIComponent(localPath)}`,
+                          localPath: localPath,
+                        } as SeedFrame;
+                      }
+                      return frame as SeedFrame;
+                    }
+                  })
+                );
+
+                // Store seed frames in CURRENT scene (to be used for next scene)
+                setSeedFrames(currentSceneIndex, uploadedFrames);
+                console.log(`Extracted and stored ${uploadedFrames.length} seed frames for Scene ${currentSceneIndex + 1} (for use in Scene ${currentSceneIndex + 2})`);
+              }
+            }
+          } catch (error) {
+            console.error('Error extracting seed frames:', error);
+            // Don't fail the entire video generation if seed frame extraction fails
+          } finally {
+            setIsExtractingFrames(false);
+          }
         }
       } else if (videoStatus.status === 'succeeded' && !videoStatus.videoPath) {
         // Video succeeded but no path available (shouldn't happen with our fix, but handle it)
@@ -362,78 +421,8 @@ export default function EditorView() {
       return;
     }
 
-    // Calculate next scene index
+    // Move to next scene (seed frames already extracted after video generation)
     const nextSceneIndex = currentSceneIndex + 1;
-    const nextSceneState = scenes[nextSceneIndex];
-
-    // Extract seed frames from current video for the NEXT scene
-    // Only extract if the next scene doesn't already have seed frames
-    if (!nextSceneState?.seedFrames || nextSceneState.seedFrames.length === 0) {
-      setIsExtractingFrames(true);
-      try {
-        // Check if video path is a URL (Replicate URL) or local path
-        let videoPath = sceneState.videoLocalPath;
-        
-        // If it's a URL, we can't extract frames from it directly
-        // The video should have been downloaded locally, so this shouldn't happen
-        if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
-          console.warn('Video path is a URL, cannot extract frames. Expected local path.');
-          // Still move to next scene, but without seed frames
-          setCurrentSceneIndex(nextSceneIndex);
-          return;
-        }
-
-        const response = await extractFrames(
-          videoPath,
-          project.id,
-          currentSceneIndex // Extract from current scene's video
-        );
-
-        if (response.frames && response.frames.length > 0) {
-          // Upload seed frames to S3 so they can be used for video generation
-          const uploadedFrames = await Promise.all(
-            response.frames.map(async (frame) => {
-              try {
-                // Upload frame to S3
-                const { s3Url } = await uploadImageToS3(frame.url, project.id);
-                return {
-                  ...frame,
-                  url: s3Url, // Update to S3 URL for video generation
-                  localPath: frame.url, // Keep local path for reference
-                };
-              } catch (error) {
-                console.error('Error uploading seed frame to S3:', error);
-                // If S3 upload fails, convert local path to serveable URL
-                const localPath = (frame as any).localPath || frame.url;
-                if (!localPath.startsWith('http://') && !localPath.startsWith('https://') && !localPath.startsWith('/api')) {
-                  return {
-                    ...frame,
-                    url: `/api/serve-image?path=${encodeURIComponent(localPath)}`,
-                    localPath: localPath,
-                  } as SeedFrame;
-                }
-                return frame as SeedFrame;
-              }
-            })
-          );
-          
-          // Store seed frames for the NEXT scene (not current scene)
-          setSeedFrames(nextSceneIndex, uploadedFrames);
-          console.log(`Extracted and stored ${uploadedFrames.length} seed frames for Scene ${nextSceneIndex + 1}`);
-        }
-      } catch (error) {
-        console.error('Error extracting seed frames:', error);
-        alert('Failed to extract seed frames: ' + (error instanceof Error ? error.message : 'Unknown error'));
-        setIsExtractingFrames(false);
-        return;
-      } finally {
-        setIsExtractingFrames(false);
-      }
-    } else {
-      console.log(`Scene ${nextSceneIndex + 1} already has ${nextSceneState.seedFrames.length} seed frames, skipping extraction`);
-    }
-
-    // Move to next scene
     setCurrentSceneIndex(nextSceneIndex);
   };
 
@@ -479,11 +468,20 @@ export default function EditorView() {
   });
 
   return (
-    <div className="h-full flex flex-col p-4">
+    <div className="h-full flex flex-col p-4 relative">
+      {/* Dev Panel Toggle Button */}
+      <button
+        onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
+        className="fixed top-4 right-4 z-40 p-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 shadow-sm transition-colors"
+        title="Model Configuration"
+      >
+        <Settings className="w-5 h-5" />
+      </button>
+
       {/* Scene Header */}
       <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-start justify-between">
-          <div className="flex-1">
+          <div className="flex-1 pr-12">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Scene {currentSceneIndex + 1}: {currentScene.description}
             </h3>
@@ -717,6 +715,9 @@ export default function EditorView() {
           onClose={() => setPreviewImage(null)}
         />
       )}
+
+      {/* Dev Panel */}
+      <DevPanel isOpen={isDevPanelOpen} onClose={() => setIsDevPanelOpen(false)} />
     </div>
   );
 }

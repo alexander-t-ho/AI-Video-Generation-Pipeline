@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CombinedInput from './CombinedInput';
+import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
 import { useProjectStore } from '@/lib/state/project-store';
 import { createProject, uploadImages } from '@/lib/api-client';
+import { Settings } from 'lucide-react';
 
 export default function StartingScreen({
   onCreateProject,
@@ -14,7 +16,8 @@ export default function StartingScreen({
   const [targetDuration, setTargetDuration] = useState<number>(15);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+  const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
+
   const router = useRouter();
   const { createProject: createProjectInStore, addChatMessage } = useProjectStore();
 
@@ -118,7 +121,16 @@ export default function StartingScreen({
   const loading = isLoading || externalLoading;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-gray-900 relative">
+      {/* Dev Panel Toggle Button */}
+      <button
+        onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
+        className="fixed top-4 right-4 z-40 p-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 shadow-sm transition-colors"
+        title="Model Configuration"
+      >
+        <Settings className="w-5 h-5" />
+      </button>
+
       <div className="w-full max-w-4xl space-y-8">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -159,6 +171,9 @@ export default function StartingScreen({
           )}
         </div>
       </div>
+
+      {/* Dev Panel */}
+      <DevPanel isOpen={isDevPanelOpen} onClose={() => setIsDevPanelOpen(false)} />
     </div>
   );
 }
