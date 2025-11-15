@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import '@/app/globals.css';
+import ErrorHandler from '@/components/ErrorHandler';
 
 export const metadata: Metadata = {
   title: 'AI Video Generation Pipeline',
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <ErrorHandler />
+        {children}
+      </body>
     </html>
   );
 }

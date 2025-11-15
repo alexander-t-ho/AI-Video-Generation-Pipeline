@@ -37,7 +37,7 @@ export default function TimelineView() {
 
   const handleStitchVideos = async () => {
     if (!project || videoPaths.length === 0) {
-      setError('Not all scenes have videos yet');
+      setError('No videos available to stitch');
       return;
     }
 
@@ -47,7 +47,7 @@ export default function TimelineView() {
     try {
       addChatMessage({
         role: 'agent',
-        content: 'Stitching all videos together...',
+        content: `Stitching ${videoPaths.length} video${videoPaths.length > 1 ? 's' : ''} together...`,
         type: 'status',
       });
 
@@ -57,13 +57,13 @@ export default function TimelineView() {
         // Convert local path to URL for display
         const finalVideoUrl = response.finalVideoPath.startsWith('http')
           ? response.finalVideoPath
-          : `/api/video?path=${encodeURIComponent(response.finalVideoPath)}`;
+          : `/api/serve-video?path=${encodeURIComponent(response.finalVideoPath)}`;
         
         setFinalVideo(finalVideoUrl, response.s3Url);
         
         addChatMessage({
           role: 'agent',
-          content: '✓ Final video stitched successfully! Ready for download.',
+          content: `✓ Final video stitched successfully! Ready for download.`,
           type: 'status',
         });
       } else {
@@ -180,16 +180,16 @@ export default function TimelineView() {
           })}
 
           {/* Stitch Videos Button */}
-          {allScenesHaveVideos && !project.finalVideoUrl && (
+          {videoPaths.length > 0 && !project.finalVideoUrl && (
             <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-                      All Scenes Complete
+                      {allScenesHaveVideos ? 'All Scenes Complete' : 'Stitch Available Videos'}
                     </h4>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {videoPaths.length} videos ready to stitch
+                      {videoPaths.length} of {project.storyboard.length} video{videoPaths.length > 1 ? 's' : ''} ready to stitch
                     </p>
                   </div>
                   <button

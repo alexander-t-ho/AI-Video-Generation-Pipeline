@@ -130,13 +130,26 @@ export async function createVideoPrediction(
 
   try {
     // Replicate SDK accepts either:
-    // 1. version: "owner/model:hash" (full format)
-    // 2. model: "owner/model" and version: "hash" (separate)
-    // Using full format for clarity
-    const prediction = await replicate.predictions.create({
-      model: REPLICATE_MODEL,
-      input,
-    });
+    // 1. version: "owner/model:hash" (full format) - preferred when version hash is provided
+    // 2. model: "owner/model" (uses latest version)
+    // When a version hash is included, use the 'version' parameter directly
+    let predictionParams: any;
+    
+    if (REPLICATE_MODEL.includes(':')) {
+      // Format: "owner/model:hash" - use version parameter
+      predictionParams = {
+        version: REPLICATE_MODEL,
+        input,
+      };
+    } else {
+      // Format: "owner/model" - use model parameter (uses latest version)
+      predictionParams = {
+        model: REPLICATE_MODEL,
+        input,
+      };
+    }
+    
+    const prediction = await replicate.predictions.create(predictionParams);
 
     if (!prediction.id) {
       throw new Error('Replicate API returned prediction without ID');

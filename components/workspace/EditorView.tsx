@@ -3,7 +3,7 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames } from '@/lib/api-client';
 import { GeneratedImage } from '@/lib/types';
@@ -61,6 +61,7 @@ export default function EditorView() {
     setSeedFrames,
     setViewMode,
     selectSeedFrame,
+    updateScenePrompt,
   } = useProjectStore();
   
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -69,6 +70,8 @@ export default function EditorView() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
   const [isExtractingFrames, setIsExtractingFrames] = useState(false);
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const [editedPrompt, setEditedPrompt] = useState('');
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -102,6 +105,13 @@ export default function EditorView() {
     }
   }, [sceneState?.selectedImageId]);
 
+  // Initialize edited prompt when scene changes or editing starts
+  useEffect(() => {
+    if (currentScene) {
+      setEditedPrompt(currentScene.imagePrompt);
+    }
+  }, [currentScene?.imagePrompt, currentSceneIndex]);
+
   const handleGenerateImage = async () => {
     if (!project?.id) return;
 
@@ -119,7 +129,22 @@ export default function EditorView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_image');
 
-      // Get seed frame from previous scene (if not Scene 0)
+      // Get reference images from project (uploaded images for object consistency)
+      let referenceImageUrls = project.referenceImageUrls || [];
+
+      // ACTION 1: Ensure reference image URLs are publicly accessible
+      // Note: The API route will handle URL conversion, but we can do it here too for safety
+      // For client-side, we'll use window.location.origin or let the API handle it
+      // The API route will convert local paths to public URLs using NGROK_URL
+
+      // ACTION 2: Use IP-Adapter ONLY (no seed image)
+      // Don't set seedImageUrl - use IP-Adapter only for better control
+      let seedImageUrl: string | undefined = undefined;
+      if (referenceImageUrls.length > 0) {
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image via IP-Adapter ONLY (no seed image):`, referenceImageUrls[0].substring(0, 80) + '...');
+      }
+
+      // Get seed frame from previous scene (for Scenes 1-4, to use via IP-Adapter for visual continuity)
       let seedFrameUrl: string | undefined;
       if (currentSceneIndex > 0) {
         const previousScene = scenes[currentSceneIndex - 1];
@@ -127,7 +152,16 @@ export default function EditorView() {
           // Use selected seed frame, or default to first frame if none selected
           const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
           const selectedFrame = previousScene.seedFrames[selectedIndex];
-          seedFrameUrl = selectedFrame?.url;
+          
+          // Ensure the seed frame URL is a public URL (S3 or serveable)
+          if (selectedFrame?.url) {
+            seedFrameUrl = selectedFrame.url;
+            // If it's a local path, convert to serveable URL
+            if (!seedFrameUrl.startsWith('http://') && !seedFrameUrl.startsWith('https://') && !seedFrameUrl.startsWith('/api')) {
+              seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || selectedFrame.url)}`;
+            }
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame via IP-Adapter for visual continuity:`, seedFrameUrl.substring(0, 80) + '...');
+          }
         }
       }
 
@@ -135,11 +169,15 @@ export default function EditorView() {
       const imagePromises = Array(5).fill(null).map(async (_, index) => {
         try {
           // Create prediction
+          // Strategy: IP-Adapter ONLY (no seed image) - reference image via IP-Adapter with scale 1.0
+          // For scenes 1-4: Also use seed frame via IP-Adapter for visual continuity
           const response = await generateImage({
             prompt: currentScene.imagePrompt,
             projectId: project.id,
             sceneIndex: currentSceneIndex,
-            seedImage: seedFrameUrl, // Use seed frame from previous scene for consistency
+            seedImage: seedImageUrl, // Undefined - using IP-Adapter only
+            referenceImageUrls, // Reference images via IP-Adapter (primary driver for object consistency)
+            seedFrame: seedFrameUrl, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
           });
 
           // Update generating state
@@ -233,12 +271,40 @@ export default function EditorView() {
       // Upload selected image to S3 first
       const { s3Url } = await uploadImageToS3(selectedImage.localPath, project.id);
 
+      // Get seed frame from previous scene (if not Scene 0)
+      let seedFrameUrl: string | undefined;
+      if (currentSceneIndex > 0) {
+        const previousScene = scenes[currentSceneIndex - 1];
+        if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
+          const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
+          const selectedFrame = previousScene.seedFrames[selectedIndex];
+          
+          // Check if frame URL is already a public URL (S3 or served via API)
+          if (selectedFrame.url.startsWith('http://') || selectedFrame.url.startsWith('https://')) {
+            seedFrameUrl = selectedFrame.url; // Already an S3/public URL
+          } else {
+            // Upload to S3 (or get public URL via API fallback)
+            // The uploadImageToS3 API will handle S3 upload or return a public URL
+            const localPath = selectedFrame.localPath || selectedFrame.url;
+            try {
+              const { s3Url: frameS3Url } = await uploadImageToS3(localPath, project.id);
+              seedFrameUrl = frameS3Url; // This will be either S3 URL or public URL from API
+            } catch (error) {
+              console.error('Error uploading seed frame:', error);
+              // If upload fails, we can't proceed - the API requires a public URL
+              throw new Error('Failed to upload seed frame. Please try again.');
+            }
+          }
+        }
+      }
+
       // Generate video
       const videoResponse = await generateVideo(
         s3Url,
         currentScene.imagePrompt,
         project.id,
-        currentSceneIndex
+        currentSceneIndex,
+        seedFrameUrl // Pass seed frame for scenes 1-4
       );
 
       // Poll for video completion (pass projectId and sceneIndex to trigger download)
@@ -291,20 +357,64 @@ export default function EditorView() {
       return;
     }
 
-    // Extract seed frames from current video for the next scene
-    // Only extract if frames haven't been extracted yet
-    if (seedFrames.length === 0) {
+    // Calculate next scene index
+    const nextSceneIndex = currentSceneIndex + 1;
+    const nextSceneState = scenes[nextSceneIndex];
+
+    // Extract seed frames from current video for the NEXT scene
+    // Only extract if the next scene doesn't already have seed frames
+    if (!nextSceneState?.seedFrames || nextSceneState.seedFrames.length === 0) {
       setIsExtractingFrames(true);
       try {
+        // Check if video path is a URL (Replicate URL) or local path
+        let videoPath = sceneState.videoLocalPath;
+        
+        // If it's a URL, we can't extract frames from it directly
+        // The video should have been downloaded locally, so this shouldn't happen
+        if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
+          console.warn('Video path is a URL, cannot extract frames. Expected local path.');
+          // Still move to next scene, but without seed frames
+          setCurrentSceneIndex(nextSceneIndex);
+          return;
+        }
+
         const response = await extractFrames(
-          sceneState.videoLocalPath,
+          videoPath,
           project.id,
-          currentSceneIndex
+          currentSceneIndex // Extract from current scene's video
         );
 
         if (response.frames && response.frames.length > 0) {
-          // Store seed frames for the current scene (they'll be used for the next scene)
-          setSeedFrames(currentSceneIndex, response.frames);
+          // Upload seed frames to S3 so they can be used for video generation
+          const uploadedFrames = await Promise.all(
+            response.frames.map(async (frame) => {
+              try {
+                // Upload frame to S3
+                const { s3Url } = await uploadImageToS3(frame.url, project.id);
+                return {
+                  ...frame,
+                  url: s3Url, // Update to S3 URL for video generation
+                  localPath: frame.url, // Keep local path for reference
+                };
+              } catch (error) {
+                console.error('Error uploading seed frame to S3:', error);
+                // If S3 upload fails, convert local path to serveable URL
+                const localPath = frame.localPath || frame.url;
+                if (!localPath.startsWith('http://') && !localPath.startsWith('https://') && !localPath.startsWith('/api')) {
+                  return {
+                    ...frame,
+                    url: `/api/serve-image?path=${encodeURIComponent(localPath)}`,
+                    localPath: localPath,
+                  };
+                }
+                return frame;
+              }
+            })
+          );
+          
+          // Store seed frames for the NEXT scene (not current scene)
+          setSeedFrames(nextSceneIndex, uploadedFrames);
+          console.log(`Extracted and stored ${uploadedFrames.length} seed frames for Scene ${nextSceneIndex + 1}`);
         }
       } catch (error) {
         console.error('Error extracting seed frames:', error);
@@ -314,14 +424,33 @@ export default function EditorView() {
       } finally {
         setIsExtractingFrames(false);
       }
+    } else {
+      console.log(`Scene ${nextSceneIndex + 1} already has ${nextSceneState.seedFrames.length} seed frames, skipping extraction`);
     }
 
     // Move to next scene
-    setCurrentSceneIndex(currentSceneIndex + 1);
+    setCurrentSceneIndex(nextSceneIndex);
   };
 
   const handleSelectSeedFrame = (frameIndex: number) => {
     selectSeedFrame(currentSceneIndex, frameIndex);
+  };
+
+  const handleStartEditPrompt = () => {
+    setEditedPrompt(currentScene.imagePrompt);
+    setIsEditingPrompt(true);
+  };
+
+  const handleSavePrompt = () => {
+    if (editedPrompt.trim()) {
+      updateScenePrompt(currentSceneIndex, editedPrompt.trim());
+      setIsEditingPrompt(false);
+    }
+  };
+
+  const handleCancelEditPrompt = () => {
+    setEditedPrompt(currentScene.imagePrompt);
+    setIsEditingPrompt(false);
   };
 
   // Combine generated images with currently generating ones
@@ -349,13 +478,57 @@ export default function EditorView() {
       {/* Scene Header */}
       <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-start justify-between">
-          <div>
+          <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Scene {currentSceneIndex + 1}: {currentScene.description}
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {currentScene.suggestedDuration}s • {currentScene.imagePrompt}
-            </p>
+            <div className="mt-2">
+              <div className="flex items-start gap-2">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {currentScene.suggestedDuration}s •
+                </span>
+                {isEditingPrompt ? (
+                  <div className="flex-1 flex flex-col gap-2">
+                    <textarea
+                      value={editedPrompt}
+                      onChange={(e) => setEditedPrompt(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-none"
+                      rows={3}
+                      placeholder="Enter image prompt..."
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSavePrompt}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                      >
+                        <Save className="w-4 h-4" />
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancelEditPrompt}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                      >
+                        <XIcon className="w-4 h-4" />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-start gap-2 group">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 flex-1">
+                      {currentScene.imagePrompt}
+                    </p>
+                    <button
+                      onClick={handleStartEditPrompt}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                      title="Edit prompt"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -453,30 +626,30 @@ export default function EditorView() {
                         <ImageIcon className="w-8 h-8 text-gray-400" />
                       </div>
                     )}
-                  </div>
+              </div>
                 );
               })}
             </div>
 
             {/* Generate Video Button */}
             {selectedImage && !isGeneratingImage && (
-              <button
-                onClick={handleGenerateVideo}
-                disabled={isGeneratingVideo}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isGeneratingVideo ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Generating Video...
-                  </>
-                ) : (
-                  <>
-                    <Video className="w-5 h-5" />
+            <button
+              onClick={handleGenerateVideo}
+              disabled={isGeneratingVideo}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isGeneratingVideo ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Generating Video...
+                </>
+              ) : (
+                <>
+                  <Video className="w-5 h-5" />
                     Generate Video from Selected Image
-                  </>
-                )}
-              </button>
+                </>
+              )}
+            </button>
             )}
           </div>
         )}
@@ -522,8 +695,8 @@ export default function EditorView() {
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-5 h-5" />
-                  Approve & Continue to Next Scene
+              <CheckCircle2 className="w-5 h-5" />
+              Approve & Continue to Next Scene
                 </>
               )}
             </button>

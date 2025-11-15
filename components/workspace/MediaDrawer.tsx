@@ -2,8 +2,8 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
-import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
 interface MediaItem {
@@ -36,16 +36,46 @@ export default function MediaDrawer() {
     final: true,
   });
   const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
+  const [previewImage, setPreviewImage] = useState<MediaItem | null>(null);
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (previewImage) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [previewImage]);
 
   // Get actual media from project state
   const generatedImages = useMemo(() => {
     const allImages: MediaItem[] = [];
     scenes.forEach((scene, sceneIndex) => {
       scene.generatedImages?.forEach((img) => {
+        // Convert local path to serveable URL if needed
+        let imageUrl = img.url;
+        if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('/api')) {
+          // Convert local path to serveable URL
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(img.localPath || img.url)}`;
+        }
+        
         allImages.push({
           id: img.id,
           type: 'image' as const,
-          url: img.url,
+          url: imageUrl,
           sceneIndex,
           prompt: img.prompt,
           timestamp: img.createdAt,
@@ -84,10 +114,17 @@ export default function MediaDrawer() {
     const allFrames: MediaItem[] = [];
     scenes.forEach((scene, sceneIndex) => {
       scene.seedFrames?.forEach((frame) => {
+        // Use S3 URL if available, otherwise use local path (served via API)
+        let frameUrl = frame.url;
+        if (!frameUrl.startsWith('http://') && !frameUrl.startsWith('https://') && !frameUrl.startsWith('/api')) {
+          // Convert local path to serveable URL
+          frameUrl = `/api/serve-image?path=${encodeURIComponent(frameUrl)}`;
+        }
+        
         allFrames.push({
           id: frame.id,
           type: 'frame' as const,
-          url: frame.url,
+          url: frameUrl,
           sceneIndex,
           timestamp: frame.timestamp.toString(),
         });
@@ -169,6 +206,30 @@ export default function MediaDrawer() {
     const isSelected = mediaDrawer.selectedItems.includes(item.id);
     const hasVideoError = videoErrors[item.id] || false;
 
+    const handleClick = (e: React.MouseEvent) => {
+      // Clear any pending single-click timeout
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
+      
+      // For double-click, open preview
+      if (e.detail === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (item.type === 'image' || item.type === 'frame') {
+          setPreviewImage(item);
+        }
+        return;
+      }
+      
+      // For single-click, delay to check if it's actually a double-click
+      clickTimeoutRef.current = setTimeout(() => {
+        handleMediaClick(item);
+        clickTimeoutRef.current = null;
+      }, 200);
+    };
+
     return (
       <div
         key={item.id}
@@ -180,7 +241,7 @@ export default function MediaDrawer() {
             ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-200 dark:ring-blue-800'
             : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
         }`}
-        onClick={() => handleMediaClick(item)}
+        onClick={handleClick}
       >
         {item.type === 'image' || item.type === 'frame' ? (
           <img
@@ -420,6 +481,62 @@ export default function MediaDrawer() {
           </div>
         )}
       </div>
+
+      {/* Image Preview Modal */}
+      {previewImage && (previewImage.type === 'image' || previewImage.type === 'frame') && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 p-4"
+          onClick={() => setPreviewImage(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setPreviewImage(null);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+        >
+          <div
+            className="relative max-w-5xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-4 right-4 z-10 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-75 transition-opacity"
+              aria-label="Close preview"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <div className="relative w-full h-full flex items-center justify-center p-4">
+              <img
+                src={previewImage.url}
+                alt={previewImage.prompt || 'Preview'}
+                className="max-w-full max-h-[85vh] object-contain"
+                onError={(e) => {
+                  console.error('Failed to load preview image:', previewImage.url);
+                  const target = e.currentTarget;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent && !parent.querySelector('.error-message')) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message p-4 text-center text-red-500 dark:text-red-400';
+                    errorDiv.textContent = 'Failed to load image. The file may have been moved or deleted.';
+                    parent.appendChild(errorDiv);
+                  }
+                }}
+              />
+            </div>
+            {previewImage.prompt && (
+              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white p-4">
+                <p className="text-sm">{previewImage.prompt}</p>
+                {previewImage.sceneIndex !== undefined && (
+                  <p className="text-xs text-gray-300 mt-1">Scene {previewImage.sceneIndex + 1}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

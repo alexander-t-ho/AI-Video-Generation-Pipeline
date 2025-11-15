@@ -521,7 +521,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       if (response.finalVideoPath) {
         const finalVideoUrl = response.finalVideoPath.startsWith('http')
           ? response.finalVideoPath
-          : `/api/video?path=${encodeURIComponent(response.finalVideoPath)}`;
+          : `/api/serve-video?path=${encodeURIComponent(response.finalVideoPath)}`;
 
         setFinalVideo(finalVideoUrl, response.s3Url);
         addChatMessage({

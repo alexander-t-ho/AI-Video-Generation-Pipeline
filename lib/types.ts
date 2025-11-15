@@ -53,6 +53,7 @@ export interface ImageGenerationRequest {
   sceneIndex: number;
   seedImage?: string;        // Optional seed image URL for image-to-image
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
+  seedFrame?: string;        // Optional: Seed frame URL for IP-Adapter (for visual continuity in scenes 1-4)
 }
 
 export interface ImageGenerationResponse {
@@ -116,7 +117,8 @@ export interface SceneWithState extends Scene {
 
 export interface SeedFrame {
   id: string;
-  url: string;              // Local file path
+  url: string;              // S3 URL or public HTTP/HTTPS URL (for video generation)
+  localPath?: string;       // Optional: Local file path (for reference/fallback)
   timestamp: number;        // 0.1s, 0.2s, 0.3s, 0.4s, 0.5s from end
 }
 

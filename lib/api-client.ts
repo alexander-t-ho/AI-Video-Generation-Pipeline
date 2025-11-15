@@ -449,7 +449,13 @@ export async function extractFrames(
       throw new Error(error.error || 'Failed to extract frames');
     }
 
-    return response.json();
+    const result = await response.json();
+    // Unwrap the response structure: { success: true, data: { frames: [...] } }
+    if (result.success && result.data?.frames) {
+      return { frames: result.data.frames };
+    } else {
+      throw new Error(result.error || 'Invalid response structure from frame extraction API');
+    }
   });
 }
 
@@ -477,7 +483,16 @@ export async function stitchVideos(
       throw new Error(error.error || 'Failed to stitch videos');
     }
 
-    return response.json();
+    const result = await response.json();
+    // Unwrap the response structure: { success: true, data: { finalVideoPath: ..., s3Url: ... } }
+    if (result.success && result.data) {
+      return {
+        finalVideoPath: result.data.finalVideoPath,
+        s3Url: result.data.s3Url,
+      };
+    } else {
+      throw new Error(result.error || 'Invalid response structure from stitch videos API');
+    }
   });
 }
 
