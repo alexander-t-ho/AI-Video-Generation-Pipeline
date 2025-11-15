@@ -39,13 +39,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate we have exactly 5 videos (as per PRD)
-    if (videoPaths.length !== 5) {
-      return NextResponse.json(
-        { success: false, error: `Expected 5 video paths, got ${videoPaths.length}` },
-        { status: 400 }
-      );
-    }
+    // Allow stitching any number of videos (at least 1)
+    // Note: PRD mentions 5 scenes, but allow flexibility for partial stitching
 
     if (!projectId || typeof projectId !== 'string') {
       return NextResponse.json(
@@ -83,23 +78,14 @@ export async function POST(request: NextRequest) {
       absoluteVideoPaths.push(absolutePath);
     }
 
-    // Create output directory
-    const outputDir = path.join(projectRoot, 'video testing');
-    await fs.mkdir(outputDir, { recursive: true });
+    // Stitch videos (stitcher creates its own output path)
+    const finalVideoPath = await stitchVideos(absoluteVideoPaths, projectId);
 
-    const timestamp = Date.now();
-    const outputPath = path.join(outputDir, `final-${projectId}-${timestamp}.mp4`);
-
-    // Stitch videos
-    const finalVideoPath = await stitchVideos(absoluteVideoPaths, outputPath);
-
-    // Extract relative path for response
-    const relativePath = path.relative(projectRoot, finalVideoPath);
-
+    // Use absolute path for response (client will handle serving it)
     const response: any = {
       success: true,
       data: {
-        finalVideoPath: relativePath,
+        finalVideoPath: finalVideoPath,
       },
     };
 

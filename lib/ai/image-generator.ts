@@ -22,7 +22,7 @@ const MAX_RETRIES = 3;
 const POLL_INTERVAL = 2000; // 2 seconds
 const MAX_POLL_ATTEMPTS = 30; // 60 seconds total (30 * 2s) - flux-dev is slower than schnell
 const DOWNLOAD_RETRIES = 3;
-const DEFAULT_IP_ADAPTER_SCALE = 0.7; // Control reference image influence (0-1)
+const DEFAULT_IP_ADAPTER_SCALE = 1.0; // Control reference image influence (0-1, default 1.0 for maximum reference image influence)
 
 // ============================================================================
 // Types

@@ -130,9 +130,21 @@ export default function EditorView() {
       setSceneStatus(currentSceneIndex, 'generating_image');
 
       // Get reference images from project (uploaded images for object consistency)
-      const referenceImageUrls = project.referenceImageUrls || [];
+      let referenceImageUrls = project.referenceImageUrls || [];
 
-      // Get seed frame from previous scene (if not Scene 0)
+      // ACTION 1: Ensure reference image URLs are publicly accessible
+      // Note: The API route will handle URL conversion, but we can do it here too for safety
+      // For client-side, we'll use window.location.origin or let the API handle it
+      // The API route will convert local paths to public URLs using NGROK_URL
+
+      // ACTION 2: Use IP-Adapter ONLY (no seed image)
+      // Don't set seedImageUrl - use IP-Adapter only for better control
+      let seedImageUrl: string | undefined = undefined;
+      if (referenceImageUrls.length > 0) {
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image via IP-Adapter ONLY (no seed image):`, referenceImageUrls[0].substring(0, 80) + '...');
+      }
+
+      // Get seed frame from previous scene (for Scenes 1-4, to use via IP-Adapter for visual continuity)
       let seedFrameUrl: string | undefined;
       if (currentSceneIndex > 0) {
         const previousScene = scenes[currentSceneIndex - 1];
@@ -148,26 +160,24 @@ export default function EditorView() {
             if (!seedFrameUrl.startsWith('http://') && !seedFrameUrl.startsWith('https://') && !seedFrameUrl.startsWith('/api')) {
               seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || selectedFrame.url)}`;
             }
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame via IP-Adapter for visual continuity:`, seedFrameUrl.substring(0, 80) + '...');
           }
         }
-      }
-
-      // For Scene 0: Use reference image as seed if available
-      if (currentSceneIndex === 0 && !seedFrameUrl && referenceImageUrls.length > 0) {
-        seedFrameUrl = referenceImageUrls[0];
-        console.log('[EditorView] Scene 0: Using first reference image as seed:', seedFrameUrl.substring(0, 80) + '...');
       }
 
       // Generate 5 images in parallel
       const imagePromises = Array(5).fill(null).map(async (_, index) => {
         try {
           // Create prediction
+          // Strategy: IP-Adapter ONLY (no seed image) - reference image via IP-Adapter with scale 1.0
+          // For scenes 1-4: Also use seed frame via IP-Adapter for visual continuity
           const response = await generateImage({
             prompt: currentScene.imagePrompt,
             projectId: project.id,
             sceneIndex: currentSceneIndex,
-            seedImage: seedFrameUrl, // Use seed frame from previous scene for visual continuity
-            referenceImageUrls, // Pass reference images for IP-Adapter object consistency
+            seedImage: seedImageUrl, // Undefined - using IP-Adapter only
+            referenceImageUrls, // Reference images via IP-Adapter (primary driver for object consistency)
+            seedFrame: seedFrameUrl, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
           });
 
           // Update generating state

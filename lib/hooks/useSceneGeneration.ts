@@ -118,12 +118,17 @@ export function useSceneGeneration(
       // Get reference images from project (uploaded images for object consistency)
       const referenceImageUrls = project.referenceImageUrls || [];
       
+      // OPTION 1: Reference image is the PRIMARY driver for ALL scenes
+      // Use reference image as seed (primary) + seed frame via IP-Adapter (for continuity in scenes 1-4)
+      const seedImage = referenceImageUrls.length > 0 ? referenceImageUrls[0] : undefined;
+      
       const request: ImageGenerationRequest = {
         prompt: customPrompt || scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedFrameUrl,
-        referenceImageUrls, // Pass reference images for IP-Adapter consistency
+        seedImage, // Reference image as seed (PRIMARY driver for object consistency)
+        referenceImageUrls, // Always pass reference images (also used in IP-Adapter)
+        seedFrame: sceneIndex > 0 ? seedFrameUrl : undefined, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
       };
 
       const response = await generateImage(request);

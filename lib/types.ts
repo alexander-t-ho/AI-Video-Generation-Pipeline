@@ -53,6 +53,7 @@ export interface ImageGenerationRequest {
   sceneIndex: number;
   seedImage?: string;        // Optional seed image URL for image-to-image
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
+  seedFrame?: string;        // Optional: Seed frame URL for IP-Adapter (for visual continuity in scenes 1-4)
 }
 
 export interface ImageGenerationResponse {
