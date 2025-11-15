@@ -16,10 +16,9 @@ import http from 'http';
 // ============================================================================
 
 // Using wan-video/wan-2.5-i2v-fast model on Replicate
-// Version hash: 5be8b80ffe74f3d3a731693ddd98e7ee94100a0f4ae704bd58e93565977670f9
 // Can be overridden via REPLICATE_VIDEO_MODEL environment variable
-// Format: "wan-video/wan-2.5-i2v-fast:version_hash" or just "wan-video/wan-2.5-i2v-fast" (uses latest)
-const REPLICATE_MODEL = process.env.REPLICATE_VIDEO_MODEL || 'wan-video/wan-2.5-i2v-fast:5be8b80ffe74f3d3a731693ddd98e7ee94100a0f4ae704bd58e93565977670f9';
+// Use just the model name without version hash to use the latest version
+const REPLICATE_MODEL = process.env.REPLICATE_VIDEO_MODEL || 'wan-video/wan-2.5-i2v-fast';
 const MAX_RETRIES = 2;
 const POLL_INTERVAL = 2000; // 2 seconds
 const MAX_POLL_ATTEMPTS = 150; // 5 minutes total (150 * 2s)
