@@ -77,7 +77,7 @@ export default function EditorView() {
   const [editedPrompt, setEditedPrompt] = useState('');
   const [editedNegativePrompt, setEditedNegativePrompt] = useState('');
   const [editedDuration, setEditedDuration] = useState<number | ''>('');
-  const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(true);
+  const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(false);
   const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
   const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' }>>([]);
   const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
@@ -86,6 +86,7 @@ export default function EditorView() {
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [enlargedSeedFrameUrl, setEnlargedSeedFrameUrl] = useState<string | null>(null);
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -125,8 +126,8 @@ export default function EditorView() {
       setEditedPrompt(currentScene.imagePrompt);
       setEditedNegativePrompt(currentScene.negativePrompt || '');
       setEditedDuration(currentScene.customDuration || '');
-      // Default to true for scenes > 0, false for scene 0, or use saved value
-      setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0);
+      // Default to false (opt-in for longer scenes), or use saved value
+      setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
       // Initialize custom images - support both single string (legacy) and array
       const imageInputs = currentScene.customImageInput 
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
@@ -372,8 +373,9 @@ export default function EditorView() {
       }
 
       // Get seed frame from previous scene (if enabled and not Scene 0)
+      // When enabled, the seed frame will be used as the first frame of the generated clip
       let seedFrameUrl: string | undefined;
-      const useSeedFrame = currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0;
+      const useSeedFrame = currentScene.useSeedFrame === true; // Only use if explicitly enabled
       if (currentSceneIndex > 0 && useSeedFrame) {
         const previousScene = scenes[currentSceneIndex - 1];
         if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
@@ -893,7 +895,7 @@ export default function EditorView() {
     setEditedPrompt(currentScene.imagePrompt);
     setEditedNegativePrompt(currentScene.negativePrompt || '');
     setEditedDuration(currentScene.customDuration || '');
-    setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0);
+    setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
     
     // Clean up blob URLs
     customImagePreviews.forEach(preview => {
@@ -1004,43 +1006,66 @@ export default function EditorView() {
                         <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Duration <span className="text-gray-400 text-xs">(optional, up to 10 seconds)</span>
                         </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="1"
-                            max="10"
-                            step="0.1"
-                            value={editedDuration}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditedDuration(val === '' ? '' : Number(val));
-                            }}
-                            className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
-                            placeholder="seconds"
-                          />
-                          <span className="text-xs text-gray-500 dark:text-gray-400">seconds</span>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              step="0.1"
+                              value={editedDuration}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditedDuration(val === '' ? '' : Number(val));
+                              }}
+                              className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+                              placeholder="seconds"
+                            />
+                            <span className="text-xs text-gray-500 dark:text-gray-400">seconds</span>
+                          </div>
+                          
+                          {/* Use Seed Frame Toggle */}
+                          {currentSceneIndex > 0 && (() => {
+                            const previousScene = scenes[currentSceneIndex - 1];
+                            const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
+                            const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
+                            const seedFrameUrl = seedFrame?.url 
+                              ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
+                                  ? seedFrame.url
+                                  : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
+                              : null;
+                            
+                            return (
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={editedUseSeedFrame}
+                                    onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                  />
+                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    Enable for longer scenes that will be stitched together
+                                  </span>
+                                </label>
+                                {editedUseSeedFrame && seedFrameUrl && (
+                                  <div 
+                                    className="relative w-12 h-12 rounded border border-gray-300 dark:border-gray-600 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                    onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
+                                    title="Double-click to enlarge"
+                                  >
+                                    <img
+                                      src={seedFrameUrl}
+                                      alt="Seed frame preview"
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
-
-                      {/* Use Seed Frame Toggle */}
-                      {currentSceneIndex > 0 && (
-                        <div>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={editedUseSeedFrame}
-                              onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
-                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                            />
-                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                              Use seed frame from previous scene
-                            </span>
-                          </label>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
-                            Disable for longer scenes that will be stitched together
-                          </p>
-                        </div>
-                      )}
 
                       {/* Image Input (Optional) */}
                       <div>
@@ -1321,6 +1346,30 @@ export default function EditorView() {
 
       {/* Dev Panel */}
       <DevPanel isOpen={isDevPanelOpen} onClose={() => setIsDevPanelOpen(false)} />
+
+      {/* Enlarged Seed Frame Modal */}
+      {enlargedSeedFrameUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setEnlargedSeedFrameUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center">
+            <img
+              src={enlargedSeedFrameUrl}
+              alt="Seed frame (enlarged)"
+              className="max-w-full max-h-full object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setEnlargedSeedFrameUrl(null)}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

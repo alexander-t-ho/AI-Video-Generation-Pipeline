@@ -39,7 +39,7 @@ interface ProjectStore {
     imagePrompt?: string;
     negativePrompt?: string;
     customDuration?: number;
-    customImageInput?: string;
+    customImageInput?: string | string[];
     useSeedFrame?: boolean;
   }) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -193,7 +193,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     imagePrompt?: string;
     negativePrompt?: string;
     customDuration?: number;
-    customImageInput?: string;
+    customImageInput?: string | string[];
+    useSeedFrame?: boolean;
   }) => {
     set((state) => {
       if (!state.project || !state.project.storyboard[sceneIndex]) return state;
