@@ -10,7 +10,7 @@ interface RightPanelProps {
 
 export default function RightPanel({ children, onCollapse }: RightPanelProps) {
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800">
+    <div className="flex flex-col h-full w-full bg-white dark:bg-gray-800">
       {/* Panel Header */}
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
         {onCollapse && (

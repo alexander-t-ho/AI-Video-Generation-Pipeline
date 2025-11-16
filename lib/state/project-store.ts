@@ -35,6 +35,13 @@ interface ProjectStore {
   createProject: (prompt: string, targetDuration?: number) => void;
   setStoryboard: (scenes: Scene[]) => void;
   updateScenePrompt: (sceneIndex: number, imagePrompt: string) => void;
+  updateSceneSettings: (sceneIndex: number, settings: {
+    imagePrompt?: string;
+    negativePrompt?: string;
+    customDuration?: number;
+    customImageInput?: string;
+    useSeedFrame?: boolean;
+  }) => void;
   setViewMode: (mode: ViewMode) => void;
   setCurrentSceneIndex: (index: number) => void;
   addChatMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
@@ -169,6 +176,41 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         updatedScenes[sceneIndex] = {
           ...updatedScenes[sceneIndex],
           imagePrompt,
+        };
+      }
+      
+      return {
+        project: {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        },
+        scenes: updatedScenes,
+      };
+    });
+  },
+  
+  updateSceneSettings: (sceneIndex: number, settings: {
+    imagePrompt?: string;
+    negativePrompt?: string;
+    customDuration?: number;
+    customImageInput?: string;
+  }) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard[sceneIndex]) return state;
+      
+      // Update the scene in the storyboard
+      const updatedStoryboard = [...state.project.storyboard];
+      updatedStoryboard[sceneIndex] = {
+        ...updatedStoryboard[sceneIndex],
+        ...settings,
+      };
+      
+      // Update the scene in scenes array (SceneWithState)
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          ...settings,
         };
       }
       

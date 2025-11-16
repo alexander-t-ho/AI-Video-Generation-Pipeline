@@ -18,6 +18,10 @@ export interface Scene {
   description: string;       // Narrative description
   imagePrompt: string;       // Detailed visual prompt for image generation
   suggestedDuration: number; // 2-4 seconds
+  negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
+  customDuration?: number;   // Optional: Custom duration in seconds (overrides suggestedDuration)
+  customImageInput?: string | string[]; // Optional: Custom image input URL(s) for image-to-image generation (up to 3 images)
+  useSeedFrame?: boolean;    // Optional: Whether to use seed frame from previous scene (default: true for scenes > 0)
 }
 
 export interface StoryboardRequest {
@@ -54,6 +58,7 @@ export interface ImageGenerationRequest {
   seedImage?: string;        // Optional seed image URL for image-to-image
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
   seedFrame?: string;        // Optional: Seed frame URL for IP-Adapter (for visual continuity in scenes 1-4)
+  negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
 }
 
 export interface ImageGenerationResponse {

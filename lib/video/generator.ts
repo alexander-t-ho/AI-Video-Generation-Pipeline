@@ -85,6 +85,36 @@ function createReplicateClient(): Replicate {
 }
 
 // ============================================================================
+// Duration Validation
+// ============================================================================
+
+/**
+ * Validates and adjusts duration based on model requirements
+ * @param duration Requested duration in seconds
+ * @param model Model identifier
+ * @returns Valid duration for the model
+ */
+function validateAndAdjustDuration(duration: number, model: string): number {
+  // Google Veo 3.1 Fast only accepts 4, 6, or 8 seconds
+  if (model.includes('veo-3.1-fast') || model.includes('google/veo-3.1-fast')) {
+    const validDurations = [4, 6, 8];
+    // Find the closest valid duration
+    const adjusted = validDurations.reduce((prev, curr) => 
+      Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
+    );
+    if (adjusted !== duration) {
+      console.log(`[VideoGenerator] Adjusted duration from ${duration}s to ${adjusted}s for ${model}`);
+    }
+    return adjusted;
+  }
+
+  // Google Veo 3.1 (non-fast) may have different requirements
+  // Add other model-specific validations here as needed
+  
+  return duration;
+}
+
+// ============================================================================
 // Video Prediction Creation
 // ============================================================================
 
@@ -124,8 +154,10 @@ export async function createVideoPrediction(
   } else {
     console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
   }
+  // Validate and adjust duration based on model requirements
+  const validatedDuration = validateAndAdjustDuration(VIDEO_DURATION, REPLICATE_MODEL);
   console.log(`${logPrefix} Settings:`);
-  console.log(`${logPrefix}   - Duration: ${VIDEO_DURATION}s`);
+  console.log(`${logPrefix}   - Duration: ${validatedDuration}s${validatedDuration !== VIDEO_DURATION ? ` (adjusted from ${VIDEO_DURATION}s)` : ''}`);
   console.log(`${logPrefix}   - Resolution: ${VIDEO_RESOLUTION}`);
 
   const replicate = createReplicateClient();
@@ -148,11 +180,11 @@ export async function createVideoPrediction(
       // Gen-4 specific parameters (adjust based on actual API requirements)
       // Note: Gen-4 may use 'duration' and 'resolution' or different names
       // If Gen-4 has different requirements, update here
-      duration: VIDEO_DURATION,
+      duration: validatedDuration,
       resolution: VIDEO_RESOLUTION,
     } : {
       // WAN model parameters
-      duration: VIDEO_DURATION,
+      duration: validatedDuration,
       resolution: VIDEO_RESOLUTION,
       enable_prompt_expansion: true, // WAN-specific: Enable prompt optimization
     }),

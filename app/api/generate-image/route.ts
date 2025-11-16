@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
         console.log('[Image Generation API] Scene 0: Using Gen-4 Image for maximum consistency with reference image');
       } else if (hasReferenceImages) {
         // Scenes 1-4 with reference images: Use default I2I model (FLUX Dev)
-        selectedModel = undefined; // Will use default from config
+        selectedModel = null; // Will use default from config
         console.log(`[Image Generation API] Scene ${sceneIndex}: Using default I2I model (FLUX Dev with IP-Adapter)`);
       } else {
         // No reference images: Use T2I model

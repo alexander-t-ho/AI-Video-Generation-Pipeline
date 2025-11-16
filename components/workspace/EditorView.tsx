@@ -4,10 +4,11 @@ import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
 import DevPanel from './DevPanel';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Settings } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames } from '@/lib/api-client';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Settings, Upload, XCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages } from '@/lib/api-client';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
+import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -63,6 +64,7 @@ export default function EditorView() {
     setViewMode,
     selectSeedFrame,
     updateScenePrompt,
+    updateSceneSettings,
   } = useProjectStore();
   
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -73,7 +75,17 @@ export default function EditorView() {
   const [isExtractingFrames, setIsExtractingFrames] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState('');
+  const [editedNegativePrompt, setEditedNegativePrompt] = useState('');
+  const [editedDuration, setEditedDuration] = useState<number | ''>('');
+  const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(true);
+  const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
+  const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' }>>([]);
+  const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -107,12 +119,23 @@ export default function EditorView() {
     }
   }, [sceneState?.selectedImageId]);
 
-  // Initialize edited prompt when scene changes or editing starts
+  // Initialize edited fields when scene changes or editing starts
   useEffect(() => {
     if (currentScene) {
       setEditedPrompt(currentScene.imagePrompt);
+      setEditedNegativePrompt(currentScene.negativePrompt || '');
+      setEditedDuration(currentScene.customDuration || '');
+      // Default to true for scenes > 0, false for scene 0, or use saved value
+      setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0);
+      // Initialize custom images - support both single string (legacy) and array
+      const imageInputs = currentScene.customImageInput 
+        ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+        : [];
+      setCustomImageFiles([]);
+      setDroppedImageUrls([]);
+      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
     }
-  }, [currentScene?.imagePrompt, currentSceneIndex]);
+  }, [currentScene?.imagePrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -138,7 +161,31 @@ export default function EditorView() {
       let seedImageUrl: string | undefined = undefined;
       let seedFrameUrl: string | undefined = undefined;
 
-      if (currentSceneIndex > 0) {
+      // Priority: Custom image input > seed frame > reference image
+      // Handle custom image inputs (can be single string or array)
+      const customImageInputs = currentScene.customImageInput
+        ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+        : [];
+
+      if (customImageInputs.length > 0) {
+        // Use first custom image as seed image (for image-to-image)
+        seedImageUrl = customImageInputs[0];
+        // If it's a local path, convert to serveable URL
+        if (!seedImageUrl.startsWith('http://') && !seedImageUrl.startsWith('https://') && !seedImageUrl.startsWith('/api')) {
+          seedImageUrl = `/api/serve-image?path=${encodeURIComponent(seedImageUrl)}`;
+        }
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using custom image input as seed image:`, seedImageUrl.substring(0, 80) + '...');
+        
+        // Add all custom images to reference images for IP-Adapter
+        const customImageUrls = customImageInputs.map(url => {
+          if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/api')) {
+            return `/api/serve-image?path=${encodeURIComponent(url)}`;
+          }
+          return url;
+        });
+        referenceImageUrls = [...customImageUrls, ...referenceImageUrls];
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${customImageUrls.length} custom image(s) as reference images via IP-Adapter`);
+      } else if (currentSceneIndex > 0) {
         const previousScene = scenes[currentSceneIndex - 1];
         if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
           // Use selected seed frame, or default to first frame if none selected
@@ -175,9 +222,10 @@ export default function EditorView() {
             prompt: currentScene.imagePrompt,
             projectId: project.id,
             sceneIndex: currentSceneIndex,
-            seedImage: seedImageUrl, // Seed frame from previous scene (or reference image for Scene 0)
+            seedImage: seedImageUrl, // Custom image input, seed frame from previous scene, or reference image for Scene 0
             referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
-            seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4)
+            seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
+            negativePrompt: currentScene.negativePrompt, // Optional negative prompt
           });
 
           // Check if predictionId exists
@@ -323,9 +371,10 @@ export default function EditorView() {
         console.log('[EditorView] Uploaded image to S3:', s3Url.substring(0, 80) + '...');
       }
 
-      // Get seed frame from previous scene (if not Scene 0)
+      // Get seed frame from previous scene (if enabled and not Scene 0)
       let seedFrameUrl: string | undefined;
-      if (currentSceneIndex > 0) {
+      const useSeedFrame = currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0;
+      if (currentSceneIndex > 0 && useSeedFrame) {
         const previousScene = scenes[currentSceneIndex - 1];
         if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
           const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
@@ -477,21 +526,395 @@ export default function EditorView() {
     selectSeedFrame(currentSceneIndex, frameIndex);
   };
 
-  const handleStartEditPrompt = () => {
-    setEditedPrompt(currentScene.imagePrompt);
-    setIsEditingPrompt(true);
-  };
-
-  const handleSavePrompt = () => {
-    if (editedPrompt.trim()) {
-      updateScenePrompt(currentSceneIndex, editedPrompt.trim());
+  const handleTogglePromptExpansion = () => {
+    if (!isPromptExpanded) {
+      // Expanding: Initialize edit fields and enter edit mode
+      setEditedPrompt(currentScene.imagePrompt);
+      setEditedNegativePrompt(currentScene.negativePrompt || '');
+      setEditedDuration(currentScene.customDuration || '');
+      // Initialize custom images - support both single string (legacy) and array
+      const imageInputs = currentScene.customImageInput 
+        ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+        : [];
+      setCustomImageFiles([]);
+      setDroppedImageUrls([]);
+      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      setIsEditingPrompt(true);
+      setIsPromptExpanded(true);
+    } else {
+      // Collapsing: Just close the editor (auto-save has already saved changes)
+      // Clear any pending saves
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
       setIsEditingPrompt(false);
+      setIsPromptExpanded(false);
     }
   };
 
+  const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Check if adding these files would exceed the limit
+    const currentCount = customImagePreviews.length;
+    if (currentCount + files.length > 3) {
+      alert(`You can only add up to 3 images. Currently have ${currentCount}, trying to add ${files.length}.`);
+      return;
+    }
+
+    const validFiles: File[] = [];
+    const previews: Array<{ url: string; source: 'file' }> = [];
+
+    files.forEach(file => {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert(`${file.name} is not an image file. Skipping.`);
+        return;
+      }
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} is too large (max 10MB). Skipping.`);
+        return;
+      }
+      validFiles.push(file);
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(file);
+      previews.push({ url: previewUrl, source: 'file' });
+    });
+
+    if (validFiles.length > 0) {
+      setCustomImageFiles(prev => [...prev, ...validFiles]);
+      setCustomImagePreviews(prev => [...prev, ...previews]);
+      // Clear dropped image URLs when selecting new files
+      setDroppedImageUrls([]);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    const preview = customImagePreviews[index];
+    
+    // Revoke blob URL if it's from a file
+    if (preview.source === 'file' && preview.url.startsWith('blob:')) {
+      URL.revokeObjectURL(preview.url);
+    }
+
+    // Remove from previews
+    setCustomImagePreviews(prev => prev.filter((_, i) => i !== index));
+    
+    // If it was a file, remove from files array
+    if (preview.source === 'file') {
+      // Find the corresponding file index
+      let fileIndex = 0;
+      for (let i = 0; i < index; i++) {
+        if (customImagePreviews[i].source === 'file') {
+          fileIndex++;
+        }
+      }
+      setCustomImageFiles(prev => prev.filter((_, i) => i !== fileIndex));
+    } else {
+      // If it was from media drawer, remove from dropped URLs
+      const droppedIndex = customImagePreviews.slice(0, index).filter(p => p.source === 'media').length;
+      setDroppedImageUrls(prev => prev.filter((_, i) => i !== droppedIndex));
+    }
+  };
+
+  // Find image URL from itemId and itemType (for drag and drop from media drawer)
+  const findImageUrlFromItem = (itemId: string, itemType: 'image' | 'video' | 'frame'): string | null => {
+    if (itemType === 'video') {
+      // Videos are not supported as image input
+      return null;
+    }
+
+    // Search in generated images
+    for (const scene of scenes) {
+      if (scene.generatedImages) {
+        const image = scene.generatedImages.find(img => img.id === itemId);
+        if (image) {
+          // Return the URL - could be local path or S3 URL
+          return image.url || image.localPath || null;
+        }
+      }
+    }
+
+    // Search in seed frames
+    for (const scene of scenes) {
+      if (scene.seedFrames) {
+        const frame = scene.seedFrames.find(f => f.id === itemId);
+        if (frame) {
+          // Return the URL - could be S3 URL or local path
+          return frame.url || frame.localPath || null;
+        }
+      }
+    }
+
+    // Search in uploaded images
+    if (project?.uploadedImages) {
+      // Check original images
+      const uploadedImage = project.uploadedImages.find(img => img.id === itemId);
+      if (uploadedImage) {
+        return uploadedImage.url || uploadedImage.localPath || null;
+      }
+
+      // Check processed versions
+      for (const uploadedImage of project.uploadedImages) {
+        if (uploadedImage.processedVersions) {
+          const processed = uploadedImage.processedVersions.find(p => p.id === itemId);
+          if (processed) {
+            return processed.url || processed.localPath || null;
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
+  // Handle media drop from media drawer
+  const handleMediaDropOnImageInput = (itemId: string, itemType: 'image' | 'video' | 'frame') => {
+    if (itemType === 'video') {
+      alert('Videos cannot be used as image input. Please use an image or frame.');
+      return;
+    }
+
+    // Check if we've reached the limit
+    if (customImagePreviews.length >= 3) {
+      alert('You can only add up to 3 images.');
+      return;
+    }
+
+    const imageUrl = findImageUrlFromItem(itemId, itemType);
+    if (imageUrl) {
+      // Store the original URL/path for saving
+      setDroppedImageUrls(prev => [...prev, imageUrl]);
+      
+      // Set as custom image preview
+      // If it's a local path, convert to serveable URL for preview
+      let previewUrl = imageUrl;
+      if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('/api') && !imageUrl.startsWith('blob:')) {
+        previewUrl = `/api/serve-image?path=${encodeURIComponent(imageUrl)}`;
+      }
+      setCustomImagePreviews(prev => [...prev, { url: previewUrl, source: 'media' }]);
+    } else {
+      alert('Could not find the dropped image. Please try again.');
+    }
+  };
+
+  // Handle file drop from computer
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+    if (files.length === 0) {
+      return;
+    }
+
+    // Check if adding these files would exceed the limit
+    const currentCount = customImagePreviews.length;
+    if (currentCount + files.length > 3) {
+      alert(`You can only add up to 3 images. Currently have ${currentCount}, trying to add ${files.length}.`);
+      return;
+    }
+
+    const validFiles: File[] = [];
+    const previews: Array<{ url: string; source: 'file' }> = [];
+
+    files.forEach(file => {
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} is too large (max 10MB). Skipping.`);
+        return;
+      }
+      validFiles.push(file);
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(file);
+      previews.push({ url: previewUrl, source: 'file' });
+    });
+
+    if (validFiles.length > 0) {
+      setCustomImageFiles(prev => [...prev, ...validFiles]);
+      setCustomImagePreviews(prev => [...prev, ...previews]);
+    }
+  };
+
+  // Set up drag and drop for image input area (from media drawer)
+  const { handleDragOver: handleMediaDragOver, handleDragLeave: handleMediaDragLeave, handleDrop: handleMediaDrop, isOverDropZone } = useMediaDragDrop({
+    onDrop: handleMediaDropOnImageInput,
+    acceptedTypes: ['image', 'frame'],
+  });
+
+  // Handle drag over for file drops
+  const handleFileDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Also handle media drawer drag over
+    handleMediaDragOver(e);
+  };
+
+  // Handle drag leave for file drops
+  const handleFileDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Also handle media drawer drag leave
+    handleMediaDragLeave();
+  };
+
+  // Handle drop (both files and media drawer)
+  const handleDropZone = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if it's a file drop (has files)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileDrop(e);
+    } else {
+      // Otherwise, try media drawer drop
+      handleMediaDrop(e);
+    }
+  };
+
+  // Auto-save function with debouncing
+  const autoSave = useCallback(async (skipImages = false) => {
+    if (!editedPrompt.trim()) {
+      return; // Don't save if prompt is empty
+    }
+
+    // Clear any pending save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Debounce the save
+    saveTimeoutRef.current = setTimeout(async () => {
+      let imageInputUrls: string[] = [];
+
+      // Collect all image URLs from different sources
+      const mediaUrls: string[] = [];
+      const fileUrls: string[] = [];
+
+      // Get URLs from media drawer drops
+      if (droppedImageUrls.length > 0) {
+        mediaUrls.push(...droppedImageUrls);
+      } else {
+        // Get URLs from existing media previews
+        customImagePreviews
+          .filter(p => p.source === 'media')
+          .forEach(preview => {
+            // Extract original URL from preview (remove /api/serve-image wrapper if present)
+            const url = preview.url.startsWith('/api/serve-image?path=')
+              ? decodeURIComponent(preview.url.split('path=')[1])
+              : preview.url;
+            mediaUrls.push(url);
+          });
+      }
+
+      // Upload files if any were selected (only if not skipping)
+      if (!skipImages && customImageFiles.length > 0 && project) {
+        setIsUploadingImage(true);
+        try {
+          const uploadResult = await uploadImages(customImageFiles, project.id, false);
+          if (uploadResult.images && uploadResult.images.length > 0) {
+            // Use the uploaded image URLs
+            fileUrls.push(...uploadResult.images.map(img => img.url));
+            // Clean up preview URLs
+            customImagePreviews.forEach(preview => {
+              if (preview.source === 'file' && preview.url.startsWith('blob:')) {
+                URL.revokeObjectURL(preview.url);
+              }
+            });
+            // Clear files after upload
+            setCustomImageFiles([]);
+          }
+        } catch (error) {
+          console.error('Failed to upload images:', error);
+          // Don't alert on auto-save failures, just log
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+
+      // Combine all URLs: files first (uploaded), then media (for consistent ordering)
+      imageInputUrls = [...fileUrls, ...mediaUrls];
+
+      // Convert to single string if only one image (for backward compatibility)
+      // Or keep as array if multiple images
+      const imageInput = imageInputUrls.length === 0 
+        ? undefined 
+        : imageInputUrls.length === 1 
+          ? imageInputUrls[0] 
+          : imageInputUrls;
+
+      // Update scene settings
+      updateSceneSettings(currentSceneIndex, {
+        imagePrompt: editedPrompt.trim(),
+        negativePrompt: editedNegativePrompt.trim() || undefined,
+        customDuration: editedDuration ? Number(editedDuration) : undefined,
+        customImageInput: imageInput,
+        useSeedFrame: editedUseSeedFrame,
+      });
+    }, 1000); // 1 second debounce
+  }, [editedPrompt, editedNegativePrompt, editedDuration, editedUseSeedFrame, customImageFiles, customImagePreviews, droppedImageUrls, currentSceneIndex, project, updateSceneSettings]);
+
+  // Auto-save on text field changes
+  useEffect(() => {
+    if (isPromptExpanded && editedPrompt.trim()) {
+      autoSave(true); // Skip images for text-only changes
+    }
+  }, [editedPrompt, editedNegativePrompt, editedDuration, editedUseSeedFrame, isPromptExpanded, autoSave]);
+
+  // Auto-save when images change (with upload)
+  useEffect(() => {
+    if (isPromptExpanded && (customImageFiles.length > 0 || droppedImageUrls.length > 0 || customImagePreviews.length > 0)) {
+      autoSave(false); // Include images
+    }
+  }, [customImagePreviews.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleCancelEditPrompt = () => {
+    // Clear pending saves
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
     setEditedPrompt(currentScene.imagePrompt);
+    setEditedNegativePrompt(currentScene.negativePrompt || '');
+    setEditedDuration(currentScene.customDuration || '');
+    setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : currentSceneIndex > 0);
+    
+    // Clean up blob URLs
+    customImagePreviews.forEach(preview => {
+      if (preview.source === 'file' && preview.url.startsWith('blob:')) {
+        URL.revokeObjectURL(preview.url);
+      }
+    });
+    
+    // Reset to scene's current images
+    const imageInputs = currentScene.customImageInput 
+      ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+      : [];
+    setCustomImageFiles([]);
+    setDroppedImageUrls([]);
+    setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setIsEditingPrompt(false);
+    setIsPromptExpanded(false);
   };
 
   // Combine generated images with currently generating ones
@@ -534,49 +957,182 @@ export default function EditorView() {
             </h3>
             <div className="mt-2">
               <div className="flex items-start gap-2">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {currentScene.suggestedDuration}s •
-                </span>
-                {isEditingPrompt ? (
-                  <div className="flex-1 flex flex-col gap-2">
-                    <textarea
-                      value={editedPrompt}
-                      onChange={(e) => setEditedPrompt(e.target.value)}
-                      className="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-none"
-                      rows={3}
-                      placeholder="Enter image prompt..."
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSavePrompt}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                      >
-                        <Save className="w-4 h-4" />
-                        Save
-                      </button>
-                      <button
-                        onClick={handleCancelEditPrompt}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                      >
-                        <XIcon className="w-4 h-4" />
-                        Cancel
-                      </button>
+                <div className="flex items-start gap-2 flex-1 min-w-0">
+                  {isPromptExpanded ? (
+                    <>
+                      <span className="text-sm text-gray-500 dark:text-gray-400 pt-0.5">
+                        {currentScene.customDuration || currentScene.suggestedDuration}s •
+                      </span>
+                      <div className="flex-1 flex flex-col gap-3">
+                      {/* Prompt (Required) */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Prompt <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={editedPrompt}
+                          onChange={(e) => setEditedPrompt(e.target.value)}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-none"
+                          rows={3}
+                          placeholder="Enter image prompt (required)..."
+                          required
+                        />
+                      </div>
+
+                      {/* Negative Prompt (Optional) */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Negative Prompt <span className="text-gray-400 text-xs">(optional)</span>
+                        </label>
+                        <textarea
+                          value={editedNegativePrompt}
+                          onChange={(e) => setEditedNegativePrompt(e.target.value)}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-y min-h-[2.5rem]"
+                          rows={1}
+                          placeholder="What to avoid in the image (optional)..."
+                          style={{ height: 'auto' }}
+                          onInput={(e) => {
+                            const target = e.currentTarget;
+                            target.style.height = 'auto';
+                            target.style.height = `${target.scrollHeight}px`;
+                          }}
+                        />
+                      </div>
+
+                      {/* Duration (Optional) */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Duration <span className="text-gray-400 text-xs">(optional, up to 10 seconds)</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="0.1"
+                            value={editedDuration}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditedDuration(val === '' ? '' : Number(val));
+                            }}
+                            className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+                            placeholder="seconds"
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">seconds</span>
+                        </div>
+                      </div>
+
+                      {/* Use Seed Frame Toggle */}
+                      {currentSceneIndex > 0 && (
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editedUseSeedFrame}
+                              onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                              Use seed frame from previous scene
+                            </span>
+                          </label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
+                            Disable for longer scenes that will be stitched together
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Image Input (Optional) */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Image Input <span className="text-gray-400 text-xs">(optional, up to 3 images)</span>
+                        </label>
+                        <div className="space-y-2">
+                          {/* Display uploaded images */}
+                          {customImagePreviews.length > 0 && (
+                            <div className="grid grid-cols-3 gap-2">
+                              {customImagePreviews.map((preview, index) => (
+                                <div key={index} className="relative">
+                                  <img
+                                    src={preview.url}
+                                    alt={`Preview ${index + 1}`}
+                                    className="w-full h-24 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                                  />
+                                  <button
+                                    onClick={() => handleRemoveImage(index)}
+                                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                    type="button"
+                                    title="Remove image"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 rounded-b-lg text-center">
+                                    {index + 1}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Upload area - show if less than 3 images */}
+                          {customImagePreviews.length < 3 && (
+                            <label
+                              onDragOver={handleFileDragOver}
+                              onDragLeave={handleFileDragLeave}
+                              onDrop={handleDropZone}
+                              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                                isOverDropZone
+                                  ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/20'
+                                  : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                              }`}
+                            >
+                              <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400'}`} />
+                              <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
+                                {isOverDropZone 
+                                  ? 'Drop images here' 
+                                  : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
+                              </span>
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={handleImageFileSelect}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
+
+                          {/* Model limitation note */}
+                          {customImagePreviews.length > 0 && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                              Note: Depending on the selected model, only the first {customImagePreviews.length > 1 ? 'few' : 'image'} may be used. FLUX models typically support up to 5 images via IP-Adapter, while Gen-4 Image models support 1-3 reference images.
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex items-start gap-2 group">
-                    <p className="text-sm text-gray-500 dark:text-gray-400 flex-1">
-                      {currentScene.imagePrompt}
-                    </p>
-                    <button
-                      onClick={handleStartEditPrompt}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-                      title="Edit prompt"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm text-gray-500 dark:text-gray-400 pt-0.5">
+                        {currentScene.customDuration || currentScene.suggestedDuration}s •
+                      </span>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 flex-1">
+                        {currentScene.imagePrompt}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="flex-shrink-0 pl-2">
+                  <button
+                    onClick={handleTogglePromptExpansion}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title={isPromptExpanded ? "Collapse prompt" : "Expand to edit prompt and settings"}
+                  >
+                    {isPromptExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

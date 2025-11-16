@@ -699,7 +699,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800">
+    <div className="flex flex-col h-full w-full bg-white dark:bg-gray-800">
       {/* Panel Header - Cursor style: minimal */}
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <h2 className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">

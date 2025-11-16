@@ -9,6 +9,7 @@ import {
   ImageGenerationResponse,
   ImageStatusResponse,
 } from '@/lib/types';
+import { UploadedImage } from '@/lib/storage/image-storage';
 import { getRuntimeConfig } from '@/lib/config/model-runtime';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -179,7 +180,7 @@ export async function uploadImages(
   files: File[],
   projectId: string,
   enableBackgroundRemoval?: boolean
-): Promise<{ urls: string[]; paths: string[]; images?: Array<{ id: string; url: string; localPath: string }> }> {
+): Promise<{ urls: string[]; paths: string[]; images?: UploadedImage[] }> {
   const formData = new FormData();
   files.forEach((file) => {
     formData.append('images', file);
