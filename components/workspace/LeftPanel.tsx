@@ -699,19 +699,19 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-white dark:bg-gray-800">
+    <div className="flex flex-col h-full w-full bg-black">
       {/* Panel Header - Cursor style: minimal */}
-      <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <h2 className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+      <div className="px-3 py-2 border-b border-white/20 flex items-center justify-between">
+        <h2 className="text-xs font-medium text-white/80 uppercase tracking-wide">
           Agent
         </h2>
         {onCollapse && (
           <button
             onClick={onCollapse}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-white/10 rounded transition-colors"
             aria-label="Collapse panel"
           >
-            <ChevronLeft className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <ChevronLeft className="w-4 h-4 text-white/60 hover:text-white" />
           </button>
         )}
       </div>

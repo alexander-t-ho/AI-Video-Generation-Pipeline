@@ -13,7 +13,7 @@ export default function TimelineView() {
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-center h-full text-white/60">
         <p className="text-sm">No storyboard available. Generate a storyboard first.</p>
       </div>
     );
@@ -98,10 +98,10 @@ export default function TimelineView() {
     <div className="h-full flex flex-col p-4">
       {/* Header */}
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+        <h3 className="text-lg font-semibold text-white mb-1">
           Timeline
         </h3>
-        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-4 text-sm text-white/60">
           <div className="flex items-center gap-1">
             <Clock className="w-4 h-4" />
             <span>Total: {totalDuration}s</span>
@@ -111,7 +111,7 @@ export default function TimelineView() {
       </div>
 
       {/* Timeline Scrubber */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="space-y-4">
           {/* Scene Clips */}
           {project.storyboard.map((scene, index) => {
@@ -133,13 +133,13 @@ export default function TimelineView() {
                       onClick={() => handleSceneClick(index)}
                       className={`text-sm font-medium transition-colors ${
                         currentSceneIndex === index
-                          ? 'text-blue-500 dark:text-blue-400'
-                          : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                          ? 'text-white'
+                          : 'text-white/60 hover:text-white'
                       }`}
                     >
                       Scene {index + 1}
                     </button>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs text-white/60">
                       {scene.suggestedDuration}s
                     </p>
                   </div>
@@ -149,28 +149,28 @@ export default function TimelineView() {
                     <div
                       className={`h-16 rounded-lg border-2 cursor-pointer transition-all relative ${
                         currentSceneIndex === index
-                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                          : 'border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
+                          ? 'border-white/40 bg-white/10'
+                          : 'border-white/20 bg-white/5 hover:border-white/30'
                       }`}
                       style={{ width: `${Math.max(widthPercent, 10)}%` }}
                       onClick={() => handleSceneClick(index)}
                     >
                       <div className="h-full flex items-center justify-center p-2">
                         <div className="text-center">
-                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 line-clamp-1">
+                          <p className="text-xs font-medium text-white line-clamp-1">
                             {scene.description}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-white/60 mt-1">
                             {startTime.toFixed(1)}s - {endTime.toFixed(1)}s
                           </p>
                         </div>
                       </div>
                       {/* Scene boundary indicators */}
                       {index > 0 && (
-                        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-gray-400 dark:bg-gray-600" />
+                        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-white/20" />
                       )}
                       {index < project.storyboard.length - 1 && (
-                        <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-gray-400 dark:bg-gray-600" />
+                        <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-white/20" />
                       )}
                     </div>
                   </div>
@@ -181,21 +181,21 @@ export default function TimelineView() {
 
           {/* Stitch Videos Button */}
           {videoPaths.length > 0 && !project.finalVideoUrl && (
-            <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-8 pt-8 border-t border-white/20">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+                    <h4 className="text-sm font-semibold text-white mb-1">
                       {allScenesHaveVideos ? 'All Scenes Complete' : 'Stitch Available Videos'}
                     </h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs text-white/60">
                       {videoPaths.length} of {project.storyboard.length} video{videoPaths.length > 1 ? 's' : ''} ready to stitch
                     </p>
                   </div>
                   <button
                     onClick={handleStitchVideos}
                     disabled={isStitching}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
                   >
                     {isStitching ? (
                       <>
@@ -211,9 +211,9 @@ export default function TimelineView() {
                   </button>
                 </div>
                 {error && (
-                  <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+                  <div className="p-3 bg-white/5 border border-white/20 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-white/80 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-white/80">{error}</p>
                   </div>
                 )}
               </div>
@@ -222,14 +222,14 @@ export default function TimelineView() {
 
           {/* Final Stitched Video Preview */}
           {project.finalVideoUrl && (
-            <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-8 pt-8 border-t border-white/20">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                <h4 className="text-sm font-semibold text-white">
                   Final Video
                 </h4>
                 <button
                   onClick={handleDownload}
-                  className="flex items-center gap-2 px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors border border-white/20"
                 >
                   <Download className="w-4 h-4" />
                   Download MP4
@@ -244,9 +244,9 @@ export default function TimelineView() {
           )}
 
           {!allScenesHaveVideos && !project.finalVideoUrl && (
-            <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-center h-32 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
-                <div className="text-center text-gray-500 dark:text-gray-400">
+            <div className="mt-8 pt-8 border-t border-white/20">
+              <div className="flex items-center justify-center h-32 bg-white/5 rounded-lg border-2 border-dashed border-white/20">
+                <div className="text-center text-white/60">
                   <Play className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">
                     {videoPaths.length} of {project.storyboard.length} scenes have videos
