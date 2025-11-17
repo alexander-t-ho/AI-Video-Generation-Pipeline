@@ -3,8 +3,7 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import DevPanel from './DevPanel';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Settings, Upload, XCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages } from '@/lib/api-client';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
@@ -83,14 +82,13 @@ export default function EditorView() {
   const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [enlargedSeedFrameUrl, setEnlargedSeedFrameUrl] = useState<string | null>(null);
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-center h-full text-white/60">
         <p className="text-sm">No scene selected. Choose a scene from the storyboard.</p>
       </div>
     );
@@ -99,7 +97,7 @@ export default function EditorView() {
   const currentScene = project.storyboard[currentSceneIndex];
   if (!currentScene) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-center h-full text-white/60">
         <p className="text-sm">Scene not found.</p>
       </div>
     );
@@ -941,20 +939,11 @@ export default function EditorView() {
 
   return (
     <div className="h-full flex flex-col p-4 relative">
-      {/* Dev Panel Toggle Button */}
-      <button
-        onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
-        className="fixed top-4 right-4 z-40 p-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 shadow-sm transition-colors"
-        title="Model Configuration"
-      >
-        <Settings className="w-5 h-5" />
-      </button>
-
       {/* Scene Header */}
-      <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="mb-4 pb-4 border-b border-white/20">
         <div className="flex items-start justify-between">
           <div className="flex-1 pr-12">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 className="text-lg font-semibold text-white">
               Scene {currentSceneIndex + 1}: {currentScene.description}
             </h3>
             <div className="mt-2">
@@ -962,19 +951,19 @@ export default function EditorView() {
                 <div className="flex items-start gap-2 flex-1 min-w-0">
                   {isPromptExpanded ? (
                     <>
-                      <span className="text-sm text-gray-500 dark:text-gray-400 pt-0.5">
+                      <span className="text-sm text-white/60 pt-0.5">
                         {currentScene.customDuration || currentScene.suggestedDuration}s •
                       </span>
                       <div className="flex-1 flex flex-col gap-3">
                       {/* Prompt (Required) */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Prompt <span className="text-red-500">*</span>
+                        <label className="block text-xs font-medium text-white mb-1">
+                          Prompt <span className="text-white/60">*</span>
                         </label>
                         <textarea
                           value={editedPrompt}
                           onChange={(e) => setEditedPrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-none"
+                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
                           rows={3}
                           placeholder="Enter image prompt (required)..."
                           required
@@ -983,13 +972,13 @@ export default function EditorView() {
 
                       {/* Negative Prompt (Optional) */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Negative Prompt <span className="text-gray-400 text-xs">(optional)</span>
+                        <label className="block text-xs font-medium text-white mb-1">
+                          Negative Prompt <span className="text-white/60 text-xs">(optional)</span>
                         </label>
                         <textarea
                           value={editedNegativePrompt}
                           onChange={(e) => setEditedNegativePrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white resize-y min-h-[2.5rem]"
+                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-y min-h-[2.5rem] backdrop-blur-sm"
                           rows={1}
                           placeholder="What to avoid in the image (optional)..."
                           style={{ height: 'auto' }}
@@ -1003,8 +992,8 @@ export default function EditorView() {
 
                       {/* Duration (Optional) */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Duration <span className="text-gray-400 text-xs">(optional, up to 10 seconds)</span>
+                        <label className="block text-xs font-medium text-white mb-1">
+                          Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
                         </label>
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
@@ -1018,10 +1007,10 @@ export default function EditorView() {
                                 const val = e.target.value;
                                 setEditedDuration(val === '' ? '' : Number(val));
                               }}
-                              className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+                              className="w-24 px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
                               placeholder="seconds"
                             />
-                            <span className="text-xs text-gray-500 dark:text-gray-400">seconds</span>
+                            <span className="text-xs text-white/60">seconds</span>
                           </div>
                           
                           {/* Use Seed Frame Toggle */}
@@ -1042,15 +1031,15 @@ export default function EditorView() {
                                     type="checkbox"
                                     checked={editedUseSeedFrame}
                                     onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
-                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                    className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
                                   />
-                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                  <span className="text-xs font-medium text-white/80">
                                     Enable for longer scenes that will be stitched together
                                   </span>
                                 </label>
                                 {editedUseSeedFrame && seedFrameUrl && (
                                   <div 
-                                    className="relative w-12 h-12 rounded border border-gray-300 dark:border-gray-600 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                    className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
                                     onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
                                     title="Double-click to enlarge"
                                   >
@@ -1069,8 +1058,8 @@ export default function EditorView() {
 
                       {/* Image Input (Optional) */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Image Input <span className="text-gray-400 text-xs">(optional, up to 3 images)</span>
+                        <label className="block text-xs font-medium text-white mb-1">
+                          Image Input <span className="text-white/60 text-xs">(optional, up to 3 images)</span>
                         </label>
                         <div className="space-y-2">
                           {/* Display uploaded images */}
@@ -1081,11 +1070,11 @@ export default function EditorView() {
                                   <img
                                     src={preview.url}
                                     alt={`Preview ${index + 1}`}
-                                    className="w-full h-24 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                                    className="w-full h-24 object-cover rounded-lg border border-white/20"
                                   />
                                   <button
                                     onClick={() => handleRemoveImage(index)}
-                                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                    className="absolute -top-2 -right-2 p-1 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors border border-white/20"
                                     type="button"
                                     title="Remove image"
                                   >
@@ -1107,12 +1096,12 @@ export default function EditorView() {
                               onDrop={handleDropZone}
                               className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
                                 isOverDropZone
-                                  ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/20'
-                                  : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                                  ? 'border-white/40 bg-white/10'
+                                  : 'border-white/20 hover:bg-white/5'
                               }`}
                             >
-                              <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400'}`} />
-                              <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
+                              <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-white/80' : 'text-white/40'}`} />
+                              <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-white/80 font-medium' : 'text-white/60'}`}>
                                 {isOverDropZone 
                                   ? 'Drop images here' 
                                   : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
@@ -1130,7 +1119,7 @@ export default function EditorView() {
 
                           {/* Model limitation note */}
                           {customImagePreviews.length > 0 && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                            <p className="text-xs text-white/60 italic">
                               Note: Depending on the selected model, only the first {customImagePreviews.length > 1 ? 'few' : 'image'} may be used. FLUX models typically support up to 5 images via IP-Adapter, while Gen-4 Image models support 1-3 reference images.
                             </p>
                           )}
@@ -1140,10 +1129,10 @@ export default function EditorView() {
                     </>
                   ) : (
                     <>
-                      <span className="text-sm text-gray-500 dark:text-gray-400 pt-0.5">
+                      <span className="text-sm text-white/60 pt-0.5">
                         {currentScene.customDuration || currentScene.suggestedDuration}s •
                       </span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 flex-1">
+                      <p className="text-sm text-white/60 flex-1">
                         {currentScene.imagePrompt}
                       </p>
                     </>
@@ -1152,7 +1141,7 @@ export default function EditorView() {
                 <div className="flex-shrink-0 pl-2">
                   <button
                     onClick={handleTogglePromptExpansion}
-                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="p-1 text-white/60 hover:text-white rounded hover:bg-white/10 transition-colors"
                     title={isPromptExpanded ? "Collapse prompt" : "Expand to edit prompt and settings"}
                   >
                     {isPromptExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1165,17 +1154,17 @@ export default function EditorView() {
       </div>
 
       {/* Main Preview Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
         {!sceneHasImage && !sceneHasVideo && (
-          <div className="flex flex-col items-center justify-center h-full bg-gray-50 dark:bg-gray-900 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
-            <ImageIcon className="w-12 h-12 text-gray-400 dark:text-gray-500 mb-4" />
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          <div className="flex flex-col items-center justify-center h-full bg-white/5 rounded-lg border-2 border-dashed border-white/20">
+            <ImageIcon className="w-12 h-12 text-white/40 mb-4" />
+            <p className="text-sm text-white/60 mb-4">
               No image generated yet
             </p>
             <button
               onClick={handleGenerateImage}
               disabled={isGeneratingImage}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
             >
               {isGeneratingImage ? (
                 <>
@@ -1196,14 +1185,14 @@ export default function EditorView() {
         {(isGeneratingImage || sceneHasImage) && !sceneHasVideo && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h4 className="text-sm font-medium text-white">
                 {isGeneratingImage ? 'Generating images...' : 'Select an image'}
               </h4>
               {sceneHasImage && (
                 <button
                   onClick={handleRegenerateImage}
                   disabled={isGeneratingImage}
-                  className="px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                  className="px-3 py-1.5 text-sm bg-white/10 text-white/80 rounded-lg hover:bg-white/20 disabled:opacity-50 transition-colors border border-white/20"
                 >
                   {isGeneratingImage ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1343,9 +1332,6 @@ export default function EditorView() {
           onClose={() => setPreviewImage(null)}
         />
       )}
-
-      {/* Dev Panel */}
-      <DevPanel isOpen={isDevPanelOpen} onClose={() => setIsDevPanelOpen(false)} />
 
       {/* Enlarged Seed Frame Modal */}
       {enlargedSeedFrameUrl && (

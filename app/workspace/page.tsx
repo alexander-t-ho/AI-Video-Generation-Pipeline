@@ -15,9 +15,9 @@ function WorkspaceContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
   const { project, loadProject } = useProjectStore();
-  // On mobile, panels start collapsed; on desktop, they start expanded
+  // On mobile, panels start collapsed; on desktop, media drawer starts expanded, agent starts collapsed
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   
   // Auto-collapse panels on mobile on mount
@@ -36,6 +36,13 @@ function WorkspaceContent() {
   }, []);
 
   useEffect(() => {
+    // Handle invalid projectId (e.g., "undefined" string)
+    if (projectId === 'undefined' || projectId === 'null') {
+      console.error('Invalid projectId in URL, redirecting to home');
+      window.location.href = '/';
+      return;
+    }
+
     // Load project if projectId is in URL but not in store
     if (projectId && !project) {
       setIsLoading(true);
@@ -57,10 +64,10 @@ function WorkspaceContent() {
 
   if (!project || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-black">
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">
+          <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/60">
             {isLoading ? 'Loading project...' : 'Loading workspace...'}
           </p>
         </div>
@@ -69,7 +76,7 @@ function WorkspaceContent() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="h-screen flex flex-col overflow-hidden bg-black">
       {/* Workspace Header */}
       <WorkspaceHeader />
 
@@ -79,7 +86,7 @@ function WorkspaceContent() {
         {leftPanelCollapsed ? (
           <CollapsedLeftPanel onClick={() => setLeftPanelCollapsed(false)} />
         ) : (
-          <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-r border-gray-200 dark:border-gray-700 h-full">
+          <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-r border-white/20 h-full">
             <RightPanel onCollapse={() => setLeftPanelCollapsed(true)} />
           </div>
         )}
@@ -95,7 +102,7 @@ function WorkspaceContent() {
         {rightPanelCollapsed ? (
           <CollapsedRightPanel onClick={() => setRightPanelCollapsed(false)} />
         ) : (
-          <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-l border-gray-200 dark:border-gray-700 h-full">
+          <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-l border-white/20 h-full">
             <LeftPanel onCollapse={() => setRightPanelCollapsed(true)} />
           </div>
         )}
@@ -106,7 +113,7 @@ function WorkspaceContent() {
         {leftPanelCollapsed && (
           <button
             onClick={() => setLeftPanelCollapsed(false)}
-            className="p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all animate-scale-in"
+            className="p-3 bg-white/10 text-white rounded-full shadow-lg hover:bg-white/20 active:scale-95 transition-all animate-scale-in border border-white/20 backdrop-blur-sm"
             aria-label="Open media drawer"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,7 +124,7 @@ function WorkspaceContent() {
         {rightPanelCollapsed && (
           <button
             onClick={() => setRightPanelCollapsed(false)}
-            className="p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all animate-scale-in"
+            className="p-3 bg-white/10 text-white rounded-full shadow-lg hover:bg-white/20 active:scale-95 transition-all animate-scale-in border border-white/20 backdrop-blur-sm"
             aria-label="Open agent panel"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,14 +147,14 @@ function WorkspaceContent() {
       
       {/* Mobile: Left Panel Overlay - Media Drawer (swapped) */}
       {!leftPanelCollapsed && (
-        <div className="lg:hidden fixed inset-y-0 left-0 w-full sm:w-80 z-50 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 animate-slide-up shadow-xl">
+        <div className="lg:hidden fixed inset-y-0 left-0 w-full sm:w-80 z-50 bg-black border-r border-white/20 animate-slide-up shadow-xl backdrop-blur-sm">
           <RightPanel onCollapse={() => setLeftPanelCollapsed(true)} />
         </div>
       )}
       
       {/* Mobile: Right Panel Overlay - Agent Chat (swapped) */}
       {!rightPanelCollapsed && (
-        <div className="lg:hidden fixed inset-y-0 right-0 w-full sm:w-80 z-50 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 animate-slide-up shadow-xl">
+        <div className="lg:hidden fixed inset-y-0 right-0 w-full sm:w-80 z-50 bg-black border-l border-white/20 animate-slide-up shadow-xl backdrop-blur-sm">
           <LeftPanel onCollapse={() => setRightPanelCollapsed(true)} />
         </div>
       )}
@@ -159,10 +166,10 @@ export default function WorkspacePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="min-h-screen flex items-center justify-center bg-black">
           <div className="text-center">
-            <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Loading workspace...</p>
+            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-white/60">Loading workspace...</p>
           </div>
         </div>
       }

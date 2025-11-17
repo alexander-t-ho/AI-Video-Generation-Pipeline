@@ -142,7 +142,7 @@ export default function ChatInput({
         <div className="mb-2 flex flex-wrap gap-2 px-3 pt-3">
           {previewUrls.map((url, index) => (
             <div key={index} className="relative group">
-              <div className="w-14 h-14 rounded-md overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="w-14 h-14 rounded-md overflow-hidden border border-white/20 bg-white/5">
                 <img
                   src={url}
                   alt={`Preview ${index + 1}`}
@@ -151,7 +151,7 @@ export default function ChatInput({
               </div>
               <button
                 onClick={() => removeImage(index)}
-                className="absolute -top-1.5 -right-1.5 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                className="absolute -top-1.5 -right-1.5 p-0.5 bg-white/20 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md border border-white/20"
                 aria-label="Remove image"
               >
                 <X className="w-2.5 h-2.5" />
@@ -165,8 +165,8 @@ export default function ChatInput({
       <div
         {...getRootProps()}
         className={`
-          border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800
-          ${isDragActive ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-400 dark:border-blue-600' : ''}
+          border-t border-white/20 bg-black
+          ${isDragActive ? 'bg-white/10 border-white/40' : ''}
         `}
       >
         <input {...getInputProps()} />
@@ -187,7 +187,7 @@ export default function ChatInput({
               type="button"
               onClick={handleAttachClick}
               disabled={images.length >= maxFiles || disabled}
-              className="flex-shrink-0 p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex-shrink-0 p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               aria-label="Attach image"
             >
               <Plus className="w-4 h-4" />
@@ -202,14 +202,14 @@ export default function ChatInput({
               placeholder={placeholder}
               disabled={disabled}
               rows={1}
-              className="flex-1 resize-none border-none outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 text-sm leading-6 min-h-[24px] max-h-[120px] overflow-y-auto"
+              className="flex-1 resize-none border-none outline-none bg-transparent text-white placeholder-white/40 text-sm leading-6 min-h-[24px] max-h-[120px] overflow-y-auto custom-scrollbar"
             />
 
             {/* Send Button - subtle when disabled */}
             <button
               onClick={handleSubmit}
               disabled={(!value.trim() && images.length === 0) || disabled}
-              className="flex-shrink-0 p-1.5 rounded text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="flex-shrink-0 p-1.5 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Send message"
             >
               <ArrowRight className="w-4 h-4" />
@@ -220,8 +220,8 @@ export default function ChatInput({
 
       {/* Drag indicator - subtle */}
       {isDragActive && (
-        <div className="absolute inset-0 flex items-center justify-center bg-blue-500/5 dark:bg-blue-500/10 border-t border-blue-400 dark:border-blue-600 pointer-events-none z-10">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/10 border-t border-white/40 pointer-events-none z-10">
+          <div className="flex items-center gap-2 text-white/80">
             <ImageIcon className="w-4 h-4" />
             <span className="text-xs font-medium">Drop images here</span>
           </div>

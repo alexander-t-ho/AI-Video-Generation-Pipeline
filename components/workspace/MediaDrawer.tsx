@@ -312,15 +312,15 @@ export default function MediaDrawer() {
         onDragEnd={handleDragEnd}
         className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
           isSelected
-            ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-200 dark:ring-blue-800'
-            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+            ? 'border-white/40 ring-2 ring-white/20'
+            : 'border-white/20 hover:border-white/30'
         }`}
         onClick={handleClick}
       >
         {!isVisible ? (
           // Placeholder while not visible
-          <div className="aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-gray-300 dark:border-gray-600 border-t-transparent rounded-full animate-spin" />
+          <div className="aspect-video bg-white/5 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
         ) : item.type === 'image' || item.type === 'frame' ? (
           <img
@@ -385,8 +385,8 @@ export default function MediaDrawer() {
             }}
           />
         ) : (
-          <div className="aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <Video className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+          <div className="aspect-video bg-white/5 flex items-center justify-center">
+            <Video className="w-8 h-8 text-white/40" />
           </div>
         )}
 
@@ -397,10 +397,10 @@ export default function MediaDrawer() {
               e.stopPropagation();
               handleDownload(item.url, `media-${item.id}.${item.type === 'video' ? 'mp4' : 'png'}`);
             }}
-            className="p-2 bg-white/90 dark:bg-gray-800/90 rounded-full hover:bg-white transition-colors"
+            className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors border border-white/20"
             aria-label="Download"
           >
-            <Download className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+            <Download className="w-4 h-4 text-white" />
           </button>
         </div>
 
@@ -413,14 +413,14 @@ export default function MediaDrawer() {
 
         {/* Iteration Badge (for processed images) */}
         {item.metadata?.iteration !== undefined && (
-          <div className="absolute top-2 left-2 px-2 py-1 bg-purple-600 text-white text-xs rounded font-semibold">
+          <div className="absolute top-2 left-2 px-2 py-1 bg-white/20 text-white text-xs rounded font-semibold border border-white/20">
             {item.metadata.iteration === 0 ? 'Original' : `Iteration ${item.metadata.iteration}`}
           </div>
         )}
 
         {/* Selected Indicator */}
         {isSelected && (
-          <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+          <div className="absolute top-2 right-2 w-5 h-5 bg-white/40 rounded-full flex items-center justify-center border border-white/20">
             <div className="w-2 h-2 bg-white rounded-full" />
           </div>
         )}
@@ -456,18 +456,18 @@ export default function MediaDrawer() {
       <div className="mb-4">
         <button
           onClick={() => toggleSection(sectionKey)}
-          className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-white hover:bg-white/10 rounded-lg transition-colors"
         >
           <div className="flex items-center gap-2">
             {isExpanded ? (
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-4 h-4 text-white/60" />
             ) : (
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4 text-white/60" />
             )}
-            {icon}
+            <span className="text-white/60">{icon}</span>
             <span>{title}</span>
             {filteredItems.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-700 rounded-full">
+              <span className="ml-2 px-2 py-0.5 text-xs bg-white/10 text-white/80 rounded-full border border-white/20">
                 {filteredItems.length}
               </span>
             )}
@@ -477,7 +477,7 @@ export default function MediaDrawer() {
         {isExpanded && (
           <div className="mt-2">
             {filteredItems.length === 0 ? (
-              <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-4 text-center">
+              <p className="text-xs text-white/60 px-2 py-4 text-center">
                 {emptyMessage}
               </p>
             ) : (
@@ -494,15 +494,15 @@ export default function MediaDrawer() {
   return (
     <div className="h-full flex flex-col">
       {/* Search and Filter */}
-      <div className="px-3 py-3 border-b border-gray-200 dark:border-gray-700 space-y-2">
+      <div className="px-3 py-3 border-b border-white/20 space-y-2">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
           <input
             type="text"
             placeholder="Search media..."
             value={mediaDrawer.searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+            className="w-full pl-10 pr-4 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
           />
         </div>
 
@@ -510,23 +510,25 @@ export default function MediaDrawer() {
           <select
             value={mediaDrawer.filters.type || ''}
             onChange={(e) => handleFilter('type', e.target.value || undefined)}
-            className="flex-1 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+            className="flex-1 px-3 py-1.5 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white backdrop-blur-sm"
+            style={{ colorScheme: 'dark' }}
           >
-            <option value="">All Types</option>
-            <option value="image">Images</option>
-            <option value="video">Videos</option>
-            <option value="frame">Frames</option>
+            <option value="" className="bg-black text-white">All Types</option>
+            <option value="image" className="bg-black text-white">Images</option>
+            <option value="video" className="bg-black text-white">Videos</option>
+            <option value="frame" className="bg-black text-white">Frames</option>
           </select>
 
           {project && project.storyboard.length > 0 && (
             <select
               value={mediaDrawer.filters.scene !== undefined ? mediaDrawer.filters.scene : ''}
               onChange={(e) => handleFilter('scene', e.target.value ? parseInt(e.target.value) : undefined)}
-              className="flex-1 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+              className="flex-1 px-3 py-1.5 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white backdrop-blur-sm"
+              style={{ colorScheme: 'dark' }}
             >
-              <option value="">All Scenes</option>
+              <option value="" className="bg-black text-white">All Scenes</option>
               {project.storyboard.map((_, index) => (
-                <option key={index} value={index}>
+                <option key={index} value={index} className="bg-black text-white">
                   Scene {index + 1}
                 </option>
               ))}
@@ -585,21 +587,21 @@ export default function MediaDrawer() {
         {/* Final Output */}
         {finalVideo && (
           <div className="mb-4">
-            <div className="flex items-center gap-2 px-2 py-2 text-sm font-semibold text-gray-900 dark:text-white mb-2">
-              <Video className="w-4 h-4" />
+            <div className="flex items-center gap-2 px-2 py-2 text-sm font-semibold text-white mb-2">
+              <Video className="w-4 h-4 text-white/60" />
               <span>Final Output</span>
             </div>
-            <div className="relative rounded-lg overflow-hidden border-2 border-green-500 dark:border-green-400">
-              <div className="aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                <Video className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+            <div className="relative rounded-lg overflow-hidden border-2 border-white/40">
+              <div className="aspect-video bg-white/5 flex items-center justify-center">
+                <Video className="w-8 h-8 text-white/40" />
               </div>
               <div className="absolute top-2 right-2">
                 <button
                   onClick={() => handleDownload(finalVideo, 'final-video.mp4')}
-                  className="p-2 bg-white/90 dark:bg-gray-800/90 rounded-full hover:bg-white transition-colors"
+                  className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors border border-white/20"
                   aria-label="Download final video"
                 >
-                  <Download className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                  <Download className="w-4 h-4 text-white" />
                 </button>
               </div>
             </div>
@@ -622,12 +624,12 @@ export default function MediaDrawer() {
           aria-label="Image preview"
         >
           <div
-            className="relative max-w-5xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-2xl"
+            className="relative max-w-5xl max-h-[90vh] bg-black border border-white/20 rounded-lg overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setPreviewImage(null)}
-              className="absolute top-4 right-4 z-10 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-75 transition-opacity"
+              className="absolute top-4 right-4 z-10 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors border border-white/20"
               aria-label="Close preview"
             >
               <X className="w-6 h-6" />
@@ -644,7 +646,7 @@ export default function MediaDrawer() {
                   const parent = target.parentElement;
                   if (parent && !parent.querySelector('.error-message')) {
                     const errorDiv = document.createElement('div');
-                    errorDiv.className = 'error-message p-4 text-center text-red-500 dark:text-red-400';
+                    errorDiv.className = 'error-message p-4 text-center text-white/80';
                     errorDiv.textContent = 'Failed to load image. The file may have been moved or deleted.';
                     parent.appendChild(errorDiv);
                   }
@@ -652,10 +654,10 @@ export default function MediaDrawer() {
               />
             </div>
             {previewImage.prompt && (
-              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white p-4">
+              <div className="absolute bottom-0 left-0 right-0 bg-black/75 text-white p-4 border-t border-white/20">
                 <p className="text-sm">{previewImage.prompt}</p>
                 {previewImage.sceneIndex !== undefined && (
-                  <p className="text-xs text-gray-300 mt-1">Scene {previewImage.sceneIndex + 1}</p>
+                  <p className="text-xs text-white/60 mt-1">Scene {previewImage.sceneIndex + 1}</p>
                 )}
               </div>
             )}

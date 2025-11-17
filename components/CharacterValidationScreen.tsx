@@ -57,7 +57,19 @@ export default function CharacterValidationScreen() {
 
   const handleSkip = useCallback(() => {
     // Skip character validation and go directly to workspace
-    router.push(`/workspace?projectId=${project?.id}`);
+    if (!project?.id) {
+      console.error('Cannot skip: Project ID is missing');
+      // Try to get project from store state
+      const storeProject = useProjectStore.getState().project;
+      if (storeProject?.id) {
+        router.push(`/workspace?projectId=${storeProject.id}`);
+      } else {
+        // No project available, redirect to home
+        router.push('/');
+      }
+      return;
+    }
+    router.push(`/workspace?projectId=${project.id}`);
   }, [router, project?.id]);
 
   const processUploadedImages = useCallback(async () => {
@@ -210,11 +222,28 @@ export default function CharacterValidationScreen() {
     // Just show the confirmation screen with description and reference images
   }, []);
 
+  // Check if project exists on mount
+  useEffect(() => {
+    if (!project) {
+      console.warn('CharacterValidationScreen: No project found, redirecting to home');
+      router.push('/');
+      return;
+    }
+  }, [project, router]);
+
   // Extract clean character description from full prompt on mount (Issue #1 fix: runs once)
   useEffect(() => {
     const extractCleanDescription = async () => {
       // Only run once to prevent infinite loops
-      if (!project?.characterDescription || hasAttemptedExtraction) return;
+      if (!project?.characterDescription || hasAttemptedExtraction) {
+        // If no character description, set fallback
+        if (!project?.characterDescription && !hasAttemptedExtraction) {
+          setHasAttemptedExtraction(true);
+          setCleanDescription('Character from your video prompt');
+          setTempDescription('Character from your video prompt');
+        }
+        return;
+      }
       
       setHasAttemptedExtraction(true);
       setIsExtractingDescription(true);
@@ -277,6 +306,20 @@ export default function CharacterValidationScreen() {
 
   const handleConfirmGeneration = () => {
     // User confirmed - start generation
+    if (!project?.id) {
+      console.error('Cannot start generation: Project ID is missing');
+      // Try to get project from store state
+      const storeProject = useProjectStore.getState().project;
+      if (storeProject?.id) {
+        // Still navigate to workspace even without generation
+        router.push(`/workspace?projectId=${storeProject.id}`);
+      } else {
+        // No project available, redirect to home
+        router.push('/');
+      }
+      return;
+    }
+    
     setShowConfirmation(false);
     
     if (hasUploadedImages && project?.uploadedImageUrls && project.uploadedImageUrls.length > 0) {
@@ -413,7 +456,17 @@ export default function CharacterValidationScreen() {
     setCharacterReferences(allReferences);
 
     // Navigate to workspace immediately
-    router.push(`/workspace?projectId=${project?.id}`);
+    if (!project?.id) {
+      console.error('Cannot navigate: Project ID is missing');
+      const storeProject = useProjectStore.getState().project;
+      if (storeProject?.id) {
+        router.push(`/workspace?projectId=${storeProject.id}`);
+      } else {
+        router.push('/');
+      }
+      return;
+    }
+    router.push(`/workspace?projectId=${project.id}`);
 
     // Upscale selected images in the background (non-blocking)
     console.log(`[CharacterValidation] Upscaling ${selectedImages.length} selected images in background...`);

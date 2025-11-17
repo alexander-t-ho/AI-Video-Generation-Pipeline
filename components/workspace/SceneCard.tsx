@@ -268,21 +268,21 @@ export default function SceneCard({
     switch (status) {
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full animate-success">
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full animate-success border border-white/20">
             <CheckCircle2 className="w-3 h-3" />
             Completed
           </span>
         );
       case 'video_ready':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full">
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
             <CheckCircle2 className="w-3 h-3" />
             Video Ready
           </span>
         );
       case 'image_ready':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-full">
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
             <CheckCircle2 className="w-3 h-3" />
             Image Ready
           </span>
@@ -290,14 +290,14 @@ export default function SceneCard({
       case 'generating_video':
       case 'generating_image':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/80 rounded-full border border-white/20">
             <Loader2 className="w-3 h-3 animate-spin" />
             Generating...
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/5 text-white/60 rounded-full border border-white/20">
             Pending
           </span>
         );
@@ -310,19 +310,19 @@ export default function SceneCard({
       onClick={handleClick}
       className={`relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 group animate-fade-in ${
         isSelected
-          ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20 shadow-md ring-2 ring-blue-200 dark:ring-blue-800'
-          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]'
+          ? 'border-white/40 bg-white/10 shadow-md ring-2 ring-white/20'
+          : 'border-white/20 bg-white/5 hover:border-white/30 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]'
       }`}
     >
       {/* Scene Number Badge */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20">
             {sceneIndex + 1}
           </span>
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <Clock className="w-4 h-4 text-white/60" />
+            <span className="text-xs text-white/60">
               {scene.suggestedDuration}s
             </span>
           </div>
@@ -331,22 +331,22 @@ export default function SceneCard({
       </div>
 
       {/* Description */}
-      <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
+      <h3 className="text-sm font-medium text-white mb-2 line-clamp-2">
         {scene.description}
       </h3>
 
       {/* Image Prompt Preview */}
-      <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3">
+      <p className="text-xs text-white/60 line-clamp-3">
         {scene.imagePrompt}
       </p>
 
       {/* Error Display with Retry */}
       {sceneError && (
-        <div className="mt-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+        <div className="mt-3 p-2 bg-white/5 border border-white/20 rounded-md">
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-white/80 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs text-red-700 dark:text-red-400">{sceneError.message}</p>
+              <p className="text-xs text-white/80">{sceneError.message}</p>
               {sceneError.retryable && (
                 <button
                   onClick={async (e) => {
@@ -358,7 +358,7 @@ export default function SceneCard({
                     }
                   }}
                   disabled={isGenerating}
-                  className="mt-1 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 underline disabled:opacity-50"
+                  className="mt-1 text-xs text-white/60 hover:text-white/80 underline disabled:opacity-50"
                 >
                   Retry
                 </button>
@@ -369,7 +369,7 @@ export default function SceneCard({
                 e.stopPropagation();
                 clearSceneError(sceneIndex);
               }}
-              className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+              className="text-white/60 hover:text-white/80"
             >
               ×
             </button>
@@ -383,7 +383,7 @@ export default function SceneCard({
           <button
             onClick={handleGenerateImage}
             disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
           >
             {isGenerating ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -397,7 +397,7 @@ export default function SceneCard({
           <button
             onClick={handleGenerateVideo}
             disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
           >
             {isGenerating ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -411,7 +411,7 @@ export default function SceneCard({
       
       {/* Thumbnail Preview (Phase 9.1.1) */}
       {scenes[sceneIndex]?.generatedImages?.[0] && (
-        <div className="mt-3 rounded-md overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div className="mt-3 rounded-md overflow-hidden border border-white/20">
           {isVisible ? (
             <img
               src={scenes[sceneIndex].generatedImages[0].url}
@@ -420,8 +420,8 @@ export default function SceneCard({
               loading="lazy"
             />
           ) : (
-            <div className="w-full aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-              <div className="w-6 h-6 border-2 border-gray-300 dark:border-gray-600 border-t-transparent rounded-full animate-spin" />
+            <div className="w-full aspect-video bg-white/5 flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
             </div>
           )}
         </div>

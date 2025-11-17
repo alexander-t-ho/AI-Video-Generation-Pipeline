@@ -44,14 +44,14 @@ export default function MiddlePanel({ children }: MiddlePanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full bg-black">
       {/* Panel Header with Mode Toggle */}
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="px-3 py-2 border-b border-white/20 bg-black backdrop-blur-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white capitalize">
-            {viewMode === 'storyboard' && 'Storyboard'}
-            {viewMode === 'timeline' && 'Timeline'}
-            {viewMode === 'editor' && 'Editor'}
+          <h2 className="text-xs font-medium text-white/80 uppercase tracking-wide">
+            {viewMode === 'storyboard' && 'STORYBOARD'}
+            {viewMode === 'timeline' && 'TIMELINE'}
+            {viewMode === 'editor' && 'EDITOR'}
           </h2>
           <ModeToggle />
         </div>

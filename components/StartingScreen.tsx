@@ -240,7 +240,7 @@ export default function StartingScreen({
 
   return (
     <div 
-      className="min-h-screen flex flex-col items-center justify-center p-6 cinematic-gradient relative overflow-hidden"
+      className="min-h-screen flex flex-col items-center p-6 cinematic-gradient relative overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -278,7 +278,7 @@ export default function StartingScreen({
         <Settings className="w-4 h-4" />
       </button>
 
-      <div className="relative z-10 w-full max-w-6xl px-6">
+      <div className="relative z-10 w-full max-w-6xl px-6 mt-20">
         {currentStep === 0 ? (
           /* Initial Prompt Screen - Monologue style */
           <div className={`space-y-8 ${isTransitioning ? 'animate-crumble' : 'animate-fade-in'}`}>
@@ -295,14 +295,18 @@ export default function StartingScreen({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    handleInitialPrompt();
+                  // Enter submits, Shift+Enter creates new line
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (prompt.trim() && !loading) {
+                      handleInitialPrompt();
+                    }
                   }
                 }}
                 placeholder="Create a cinematic advertisement for a Porsche 911"
                 disabled={loading}
                 rows={6}
-                className="w-full px-8 py-6 bg-white/[0.02] border border-white/20 rounded-3xl text-white text-xl font-light placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl"
+                className="w-full px-8 py-6 bg-white/5 border border-white/20 rounded-3xl text-white text-xl font-light placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/10 backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl"
               />
               {/* Gallery Icon - Bottom Left */}
               <input
@@ -356,26 +360,6 @@ export default function StartingScreen({
                 <span>Continue</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
-            </div>
-
-            {/* 5 Dots Indicator - Shows progression through steps */}
-            <div className="flex items-center justify-center gap-3 pt-12">
-              {[0, 1, 2, 3, 4].map((step) => (
-                <div
-                  key={step}
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    step === 0
-                      ? 'w-8 bg-white/60'
-                      : 'w-2 bg-white/20'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Helper Text */}
-            <div className="text-center text-sm text-white/40 pt-4 space-y-2">
-              <p>Press Cmd+Enter to continue</p>
-              <p className="text-white/30">Five steps to a cinematic, performance-ready ad</p>
             </div>
           </div>
         ) : (
