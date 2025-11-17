@@ -170,7 +170,70 @@ export default function MediaDrawer() {
     return allFrames;
   }, [scenes]);
 
-  const uploadedMedia: MediaItem[] = []; // TODO: Get from project state when available
+  // Uploaded media with all processed versions
+  const uploadedMedia = useMemo(() => {
+    const allMedia: MediaItem[] = [];
+    
+    if (project?.uploadedImages) {
+      project.uploadedImages.forEach((uploadedImage, imgIndex) => {
+        // Add original image
+        let imageUrl = uploadedImage.url;
+        if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('/api')) {
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(uploadedImage.localPath || uploadedImage.url)}`;
+        }
+        
+        allMedia.push({
+          id: uploadedImage.id,
+          type: 'image' as const,
+          url: imageUrl,
+          metadata: {
+            label: 'Original',
+            originalName: uploadedImage.originalName,
+            isOriginal: true,
+            imageIndex: imgIndex,
+          },
+          timestamp: uploadedImage.createdAt,
+        });
+        
+        // Add all processed versions with labels
+        if (uploadedImage.processedVersions && uploadedImage.processedVersions.length > 0) {
+          uploadedImage.processedVersions.forEach((processed) => {
+            let processedUrl = processed.url;
+            if (!processedUrl.startsWith('http://') && !processedUrl.startsWith('https://') && !processedUrl.startsWith('/api')) {
+              processedUrl = `/api/serve-image?path=${encodeURIComponent(processed.localPath || processed.url)}`;
+            }
+            
+            // Determine label based on iteration number
+            // Iterations 1-2 are background removal, 3+ are edge cleanup
+            let label = '';
+            if (processed.iteration <= 2) {
+              label = `BG Removed ${processed.iteration}`;
+            } else {
+              const edgeCleanupIter = processed.iteration - 2;
+              label = `Edge Cleaned ${edgeCleanupIter}x`;
+            }
+            
+            allMedia.push({
+              id: processed.id,
+              type: 'image' as const,
+              url: processedUrl,
+              metadata: {
+                label,
+                iteration: processed.iteration,
+                originalName: uploadedImage.originalName,
+                isProcessed: true,
+                imageIndex: imgIndex,
+              },
+              timestamp: processed.createdAt,
+            });
+          });
+        }
+      });
+    }
+    
+    return allMedia;
+  }, [project?.uploadedImages]);
+  
   const finalVideo = project?.finalVideoUrl;
 
   // Character references from project state
@@ -411,9 +474,21 @@ export default function MediaDrawer() {
           </div>
         )}
 
-        {/* Iteration Badge (for processed images) */}
-        {item.metadata?.iteration !== undefined && (
-          <div className="absolute top-2 left-2 px-2 py-1 bg-purple-600 text-white text-xs rounded font-semibold">
+        {/* Label Badge (for uploaded images and processed versions) */}
+        {item.metadata?.label && (
+          <div className={`absolute top-1 left-1 px-2 py-1 text-white text-[10px] rounded font-medium ${
+            item.metadata.isOriginal 
+              ? 'bg-blue-600/90' 
+              : item.metadata.label.includes('Edge Cleaned')
+              ? 'bg-purple-600/90'
+              : 'bg-green-600/90'
+          }`}>
+            {item.metadata.label}
+          </div>
+        )}
+        {/* Fallback: Iteration Badge (for other processed images without label) */}
+        {!item.metadata?.label && item.metadata?.iteration !== undefined && (
+          <div className="absolute top-1 left-1 px-2 py-1 bg-purple-600/90 text-white text-[10px] rounded font-medium">
             {item.metadata.iteration === 0 ? 'Original' : `Iteration ${item.metadata.iteration}`}
           </div>
         )}

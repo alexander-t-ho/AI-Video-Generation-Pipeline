@@ -199,6 +199,17 @@ export async function uploadImages(
     }
   }
   formData.append('enableBackgroundRemoval', enableBackgroundRemoval ? 'true' : 'false');
+  
+  // Get edge cleanup iterations from runtime config
+  try {
+    const { getRuntimeConfig } = await import('@/lib/config/model-runtime');
+    const config = getRuntimeConfig();
+    const edgeCleanupIterations = config.edgeCleanupIterations ?? 1;
+    formData.append('edgeCleanupIterations', edgeCleanupIterations.toString());
+  } catch {
+    // Default to 1 if config can't be loaded
+    formData.append('edgeCleanupIterations', '1');
+  }
 
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/upload-images`, {

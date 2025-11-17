@@ -189,6 +189,37 @@ export default function DevPanel({ isOpen, onClose }: DevPanelProps) {
           </div>
         </div>
 
+        {/* Edge Cleanup Iterations */}
+        {config.enableBackgroundRemoval !== false && (
+          <div className="space-y-2">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Edge Cleanup Iterations
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Number of edge cleanup passes after background removal (helps remove artifacts, 0-3)
+              </p>
+            </div>
+            <select
+              value={config.edgeCleanupIterations ?? 1}
+              onChange={(e) => {
+                const newConfig = { ...config, edgeCleanupIterations: parseInt(e.target.value, 10) };
+                setConfig(newConfig);
+                saveRuntimeConfig(newConfig);
+              }}
+              className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+            >
+              <option value={0}>0 - No edge cleanup</option>
+              <option value={1}>1 - Single pass (default)</option>
+              <option value={2}>2 - Double pass</option>
+              <option value={3}>3 - Triple pass</option>
+            </select>
+            <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+              More iterations may improve edge quality but increase processing time. Test different values to find the best balance.
+            </p>
+          </div>
+        )}
+
         {/* Video Model */}
         <ModelSelector
           label="Video Model"

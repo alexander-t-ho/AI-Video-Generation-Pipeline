@@ -153,6 +153,7 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     name: 'Runway Gen-4 Image',
     provider: 'Runway',
     description: 'Maximum consistency with reference images, best for Scene 0',
+    supportedInputs: ['image', 'prompt', 'reference_image', 'aspect_ratio', 'seed'],
   },
   {
     id: 'runwayml/gen4-image-turbo',
@@ -173,13 +174,6 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     provider: 'Black Forest Labs',
     description: 'Advanced image editing and transformation',
     supportedInputs: ['prompt', 'image', 'mask', 'strength', 'output_format', 'guidance_scale', 'seed'],
-  },
-  {
-    id: 'runwayml/gen4-image',
-    name: 'Runway Gen-4 Image',
-    provider: 'Runway',
-    description: 'Image transformation & editing',
-    supportedInputs: ['image', 'prompt', 'reference_image', 'aspect_ratio', 'seed'],
   },
   {
     id: 'black-forest-labs/flux-dev',

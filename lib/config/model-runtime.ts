@@ -22,6 +22,7 @@ export interface RuntimeModelConfig {
   i2i: string;
   video: string;
   enableBackgroundRemoval?: boolean; // Optional: Enable/disable background removal on upload
+  edgeCleanupIterations?: number; // Optional: Number of edge cleanup passes (0-3, default: 1)
 }
 
 const STORAGE_KEY = 'ai-pipeline-runtime-models';
@@ -35,6 +36,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeModelConfig = {
   i2i: AVAILABLE_I2I_MODELS[0].id, // runwayml/gen4-image (best for Scene 0 consistency)
   video: AVAILABLE_VIDEO_MODELS[0].id, // wan-2.2 (fast and cost-effective)
   enableBackgroundRemoval: true, // Default: enabled
+  edgeCleanupIterations: 1, // Default: 1 iteration
 };
 
 /**
@@ -54,6 +56,10 @@ export function getRuntimeConfig(): RuntimeModelConfig {
         // Ensure enableBackgroundRemoval has a default if not present
         if (parsed.enableBackgroundRemoval === undefined) {
           parsed.enableBackgroundRemoval = DEFAULT_RUNTIME_CONFIG.enableBackgroundRemoval;
+        }
+        // Ensure edgeCleanupIterations has a default if not present
+        if (parsed.edgeCleanupIterations === undefined) {
+          parsed.edgeCleanupIterations = DEFAULT_RUNTIME_CONFIG.edgeCleanupIterations;
         }
         return parsed;
       }
