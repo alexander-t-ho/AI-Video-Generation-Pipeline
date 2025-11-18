@@ -202,6 +202,13 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     supportedInputs: ['prompt', 'image', 'negative_prompt', 'strength', 'guidance_scale', 'num_outputs', 'seed'],
   },
   {
+    id: 'google/nano-banana',
+    name: 'Nano Banana',
+    provider: 'Google',
+    description: 'Specialized for precise recoloring and color changes',
+    supportedInputs: ['prompt', 'image'],
+  },
+  {
     id: 'stability-ai/sd3-medium',
     name: 'SD3 Medium (IP-Adapter)',
     provider: 'Stability AI',

@@ -9,13 +9,33 @@ import { v4 as uuidv4 } from 'uuid';
 
 type WorkflowStep = 'idle' | 'generating_image' | 'image_ready' | 'generating_video' | 'video_ready' | 'extracting_frames' | 'frames_ready' | 'completed';
 
+export type ValidationStage = 'confirmation' | 'main-reference' | 'angle-selection' | 'angle-generation' | 'complete';
+
+export type AngleType = 'front' | 'rear' | 'left-side' | 'right-side' | 'front-left-45' | 'front-right-45' | 'top' | 'low-angle';
+
+export interface CharacterReferenceImage extends GeneratedImage {
+  angleType: AngleType;
+  generationModel: string;
+  isUpscaled: boolean;
+  originalPrompt: string;
+  consistencyScore?: number; // 0-100, for quality checking
+}
+
 interface ProjectStore {
   // Project state
   project: ProjectState | null;
-  
+
   // Character validation state
   needsCharacterValidation: boolean;
   hasUploadedImages: boolean;
+  characterValidationStage: ValidationStage;
+  mainReferenceImage: CharacterReferenceImage | null;
+  angleReferenceImages: Record<AngleType, CharacterReferenceImage>;
+  selectedAngles: AngleType[];
+  currentAngleIndex: number;
+  characterReferenceModel: string; // For dev panel override
+  angleGenerationMethod: 'turnaround' | 'sequential';
+  consistencyCheckResult: { score: number; issues: string[] } | null;
   
   // UI state
   viewMode: ViewMode;
@@ -97,7 +117,21 @@ interface ProjectStore {
   setNeedsCharacterValidation: (needs: boolean) => void;
   setHasUploadedImages: (has: boolean) => void;
   setUploadedImageUrls: (urls: string[]) => void;
-  
+
+  // Character validation state management
+  setCharacterValidationStage: (stage: ValidationStage) => void;
+  setMainReferenceImage: (image: CharacterReferenceImage) => void;
+  setAngleReferenceImage: (angleType: AngleType, image: CharacterReferenceImage) => void;
+  removeAngleReferenceImage: (angleType: AngleType) => void;
+  setSelectedAngles: (angles: AngleType[]) => void;
+  addSelectedAngle: (angle: AngleType) => void;
+  removeSelectedAngle: (angle: AngleType) => void;
+  selectAllAngles: () => void;
+  setCurrentAngleIndex: (index: number) => void;
+  setCharacterReferenceModel: (model: string) => void;
+  setAngleGenerationMethod: (method: 'turnaround' | 'sequential') => void;
+  setConsistencyCheckResult: (result: { score: number; issues: string[] } | null) => void;
+
   reset: () => void;
 }
 
@@ -121,6 +155,14 @@ const initialState = {
   sceneErrors: {} as Record<number, { message: string; timestamp: string; retryable: boolean }>,
   needsCharacterValidation: false,
   hasUploadedImages: false,
+  characterValidationStage: 'confirmation' as ValidationStage,
+  mainReferenceImage: null,
+  angleReferenceImages: {} as Record<AngleType, CharacterReferenceImage>,
+  selectedAngles: [] as AngleType[],
+  currentAngleIndex: 0,
+  characterReferenceModel: 'black-forest-labs/flux-1.1-pro', // Default model for character references (faster)
+  angleGenerationMethod: 'sequential' as 'turnaround' | 'sequential', // Changed to sequential for separate file generation
+  consistencyCheckResult: null,
 };
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -691,7 +733,73 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
-  
+
+  // Character validation state management
+  setCharacterValidationStage: (stage: ValidationStage) => {
+    set({ characterValidationStage: stage });
+  },
+
+  setMainReferenceImage: (image: CharacterReferenceImage) => {
+    set({ mainReferenceImage: image });
+  },
+
+  setAngleReferenceImage: (angleType: AngleType, image: CharacterReferenceImage) => {
+    set((state) => ({
+      angleReferenceImages: {
+        ...state.angleReferenceImages,
+        [angleType]: image,
+      },
+    }));
+  },
+
+  removeAngleReferenceImage: (angleType: AngleType) => {
+    set((state) => {
+      const updated = { ...state.angleReferenceImages };
+      delete updated[angleType];
+      return { angleReferenceImages: updated };
+    });
+  },
+
+  setSelectedAngles: (angles: AngleType[]) => {
+    set({ selectedAngles: angles });
+  },
+
+  addSelectedAngle: (angle: AngleType) => {
+    set((state) => ({
+      selectedAngles: state.selectedAngles.includes(angle)
+        ? state.selectedAngles
+        : [...state.selectedAngles, angle],
+    }));
+  },
+
+  removeSelectedAngle: (angle: AngleType) => {
+    set((state) => ({
+      selectedAngles: state.selectedAngles.filter(a => a !== angle),
+    }));
+  },
+
+  selectAllAngles: () => {
+    set({
+      selectedAngles: ['front', 'rear', 'left-side', 'right-side', 'front-left-45', 'front-right-45', 'top', 'low-angle']
+    });
+  },
+
+  setCurrentAngleIndex: (index: number) => {
+    set({ currentAngleIndex: index });
+  },
+
+  setCharacterReferenceModel: (model: string) => {
+    set({ characterReferenceModel: model });
+  },
+
+  setAngleGenerationMethod: (method: 'turnaround' | 'sequential') => {
+    set({ angleGenerationMethod: method });
+  },
+
+  setConsistencyCheckResult: (result: { score: number; issues: string[] } | null) => {
+    set({ consistencyCheckResult: result });
+  },
+
   reset: () => {
     set(initialState);
   },

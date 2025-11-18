@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ImageDropZone from './ImageDropZone';
 import Take5Wizard from './Take5Wizard';
 import DevPanel from './workspace/DevPanel';
@@ -26,14 +26,22 @@ export default function StartingScreen({
   const [isDragging, setIsDragging] = useState(false);
 
   const router = useRouter();
-  const { 
-    createProject: createProjectInStore, 
+  const searchParams = useSearchParams();
+  const {
+    createProject: createProjectInStore,
     addChatMessage,
     setNeedsCharacterValidation,
     setHasUploadedImages,
     setCharacterDescription,
     setUploadedImageUrls,
   } = useProjectStore();
+
+  // Check if we should show wizard directly (coming from brand identity)
+  useEffect(() => {
+    if (searchParams.get('showWizard') === 'true') {
+      setCurrentStep(1);
+    }
+  }, [searchParams]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).filter(file => 
@@ -76,18 +84,17 @@ export default function StartingScreen({
 
   const handleInitialPrompt = () => {
     if (!prompt.trim() || loading) return;
-    
-    // Trigger crumble animation
+
+    // Trigger smooth fade-out transition
     setIsTransitioning(true);
-    
-    // After animation, show wizard
+
+    // After smooth transition, navigate to brand identity
     setTimeout(() => {
-      setCurrentStep(1);
-      setIsTransitioning(false);
-    }, 800);
+      router.push('/brand-identity');
+    }, 600);
   };
 
-  const handleWizardSubmit = async (combinedPrompt: string, wizardImages?: File[], duration?: number) => {
+  const handleWizardSubmit = async (combinedPrompt: string, wizardImages?: File[], duration?: number, characterSubject?: string) => {
     setError(null);
     setIsLoading(true);
 
@@ -97,9 +104,9 @@ export default function StartingScreen({
       createProjectInStore(finalPrompt, duration || targetDuration);
       const projectId = useProjectStore.getState().project?.id;
 
-      // Upload all images (initial + wizard)
+      // Upload all images (wizard images include initial images, so no need to merge)
       let referenceImageUrls: string[] = [];
-      const allImages = [...images, ...(wizardImages || [])];
+      const allImages = wizardImages || images;
       if (allImages && allImages.length > 0 && projectId) {
         try {
           addChatMessage({
@@ -108,7 +115,16 @@ export default function StartingScreen({
             type: 'status',
           });
           const uploadResult = await uploadImages(allImages, projectId);
-          referenceImageUrls = uploadResult.urls || [];
+          
+          // Convert local paths to serve-image API URLs (like CharacterValidationScreen does)
+          referenceImageUrls = (uploadResult.urls || []).map(url => {
+            // S3 URLs (starting with http) can be used directly
+            if (url.startsWith('http://') || url.startsWith('https://')) {
+              return url;
+            }
+            // Local paths need to be served through the API
+            return `/api/serve-image?path=${encodeURIComponent(url)}`;
+          });
           
           // Store full uploaded image objects in project state
           if (uploadResult.images) {
@@ -131,57 +147,59 @@ export default function StartingScreen({
         }
       }
 
-      // Check if character validation is needed BEFORE storyboard generation
-      const hasCharacters = detectCharactersOrProducts(finalPrompt);
-      const hasImages = allImages.length > 0;
-      
-      if (hasCharacters || hasImages) {
-        // Set flags for character validation screen
+      // Check if images were uploaded - if so, go directly to brand identity
+      if (allImages.length > 0) {
+        // Images uploaded - process for brand identity
+        setHasUploadedImages(true);
+        setUploadedImageUrls(referenceImageUrls);
+
+        addChatMessage({
+          role: 'agent',
+          content: 'Processing images for brand identity assets...',
+          type: 'status',
+        });
+
+        // Navigate directly to brand identity page for image processing
+        router.push('/brand-identity');
+
+        // Create project but skip storyboard generation
+        if (onCreateProject) {
+          await onCreateProject(finalPrompt, allImages, duration || targetDuration);
+        }
+      } else {
+        // No images uploaded - proceed with normal character validation flow
         setNeedsCharacterValidation(true);
-        
-        if (hasImages) {
-          setHasUploadedImages(true);
-          setUploadedImageUrls(referenceImageUrls);
+        setUploadedImageUrls(referenceImageUrls);
+
+        // Use the character subject from wizard Step 1 if provided, otherwise extract from prompt
+        let characterDesc = characterSubject || extractCharacterDescription(finalPrompt) || finalPrompt;
+
+        // Prefer characterSubject (from wizard Step 1) as it's the most specific description of the character/product
+        if (characterSubject && characterSubject.trim()) {
+          characterDesc = characterSubject.trim();
+          console.log('[StartingScreen] Using character subject from wizard Step 1:', characterDesc);
+        } else {
+          console.log('[StartingScreen] No character subject provided, using full prompt for extraction');
         }
-        
-        if (hasCharacters) {
-          const characterDesc = extractCharacterDescription(finalPrompt);
-          if (characterDesc) {
-            setCharacterDescription(characterDesc);
-          }
-        }
-        
+
+        setCharacterDescription(characterDesc);
+
         // Navigate to character validation screen IMMEDIATELY
         addChatMessage({
           role: 'agent',
-          content: 'Validating character while storyboard generates...',
+          content: 'Setting up character validation...',
           type: 'status',
         });
-        
+
         if (onCreateProject) {
-          await onCreateProject(finalPrompt, allImages.length > 0 ? allImages : undefined, duration || targetDuration);
-        }
-        
-        // Navigate to character validation BEFORE storyboard generation
-        router.push('/character-validation');
-        
-        // Generate storyboard in background (non-blocking)
-        generateStoryboardInBackground(finalPrompt, duration || targetDuration, referenceImageUrls);
-      } else {
-        // No character validation needed, generate storyboard first
-        await generateStoryboard(finalPrompt, duration || targetDuration, referenceImageUrls);
-        
-        if (onCreateProject) {
-          await onCreateProject(finalPrompt, allImages.length > 0 ? allImages : undefined, duration || targetDuration);
+          await onCreateProject(finalPrompt, undefined, duration || targetDuration);
         }
 
-        // Navigate to workspace
-        const finalProjectId = useProjectStore.getState().project?.id || projectId;
-        if (finalProjectId) {
-          router.push(`/workspace?projectId=${finalProjectId}`);
-        } else {
-          router.push('/workspace');
-        }
+        // Navigate to brand identity BEFORE character validation
+        router.push('/brand-identity');
+
+        // Generate storyboard in background (non-blocking)
+        generateStoryboardInBackground(finalPrompt, duration || targetDuration, referenceImageUrls);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
@@ -281,7 +299,7 @@ export default function StartingScreen({
       <div className="relative z-10 w-full max-w-6xl px-6 mt-20">
         {currentStep === 0 ? (
           /* Initial Prompt Screen - Monologue style */
-          <div className={`space-y-8 ${isTransitioning ? 'animate-crumble' : 'animate-fade-in'}`}>
+          <div className={`space-y-8 ${isTransitioning ? 'animate-fade-out' : 'animate-fade-in'}`}>
             {/* Tagline */}
             <div className="text-center mb-12 w-full overflow-x-hidden">
               <h2 className="text-[36px] uppercase text-white/80 tracking-[0.5em] whitespace-nowrap" style={{ fontFamily: 'Porsche911, sans-serif' }}>
@@ -295,6 +313,11 @@ export default function StartingScreen({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(e) => {
+                  // Tab fills in default prompt
+                  if (e.key === 'Tab' && !prompt.trim()) {
+                    e.preventDefault();
+                    setPrompt('Create a cinematic advertisement for a Porsche 911');
+                  }
                   // Enter submits, Shift+Enter creates new line
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

@@ -32,23 +32,30 @@ interface ReplicatePrediction {
 }
 
 // ============================================================================
-// Replicate Client Setup
+// Replicate Client Setup (OPTIMIZED: Singleton Pattern)
 // ============================================================================
 
+let replicateClientInstance: Replicate | null = null;
+
 /**
- * Creates and configures a Replicate client
+ * Gets or creates a Replicate client (singleton pattern)
+ * OPTIMIZATION: Reuses client instance to avoid recreation overhead
  * @returns Configured Replicate client instance
  */
-function createReplicateClient(): Replicate {
-  const apiToken = process.env.REPLICATE_API_TOKEN;
+function getReplicateClient(): Replicate {
+  if (!replicateClientInstance) {
+    const apiToken = process.env.REPLICATE_API_TOKEN;
 
-  if (!apiToken) {
-    throw new Error('REPLICATE_API_TOKEN environment variable is not set');
+    if (!apiToken) {
+      throw new Error('REPLICATE_API_TOKEN environment variable is not set');
+    }
+
+    replicateClientInstance = new Replicate({
+      auth: apiToken,
+    });
   }
 
-  return new Replicate({
-    auth: apiToken,
-  });
+  return replicateClientInstance;
 }
 
 // ============================================================================
@@ -69,22 +76,19 @@ export async function removeBackground(
     throw new Error('Image path is required and must be a valid string');
   }
 
-  // Check if file exists
-  try {
-    await fs.access(imagePath);
-  } catch (error) {
-    throw new Error(`Image file not found: ${imagePath}`);
-  }
-
   console.log(`${logPrefix} Starting background removal for: ${imagePath}`);
 
-  const replicate = createReplicateClient();
+  const replicate = getReplicateClient(); // OPTIMIZED: Use singleton
 
-  // Read image file
+  // OPTIMIZED: Read file once, no redundant access() call
   let imageBuffer: Buffer;
   try {
     imageBuffer = await fs.readFile(imagePath);
   } catch (error) {
+    // Handle both "file not found" and other read errors
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`Image file not found: ${imagePath}`);
+    }
     throw new Error(`Failed to read image file: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
@@ -139,7 +143,7 @@ export async function removeBackground(
  */
 async function pollBackgroundRemovalStatus(predictionId: string): Promise<string> {
   const logPrefix = '[BackgroundRemover]';
-  const replicate = createReplicateClient();
+  const replicate = getReplicateClient(); // OPTIMIZED: Use singleton
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     try {
@@ -290,5 +294,17 @@ export async function removeBackgroundIterative(
 
   console.log(`${logPrefix} Completed ${iterations} iterations`);
   return processedPaths;
+}
+
+// ============================================================================
+// Export for Testing
+// ============================================================================
+
+/**
+ * Resets the singleton Replicate client (useful for testing)
+ * OPTIMIZATION: Allows proper unit testing of singleton pattern
+ */
+export function resetReplicateClient(): void {
+  replicateClientInstance = null;
 }
 

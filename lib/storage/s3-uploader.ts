@@ -291,11 +291,148 @@ export function getS3Url(s3Key: string): string {
 }
 
 // ============================================================================
+// Background-Removed Image Caching
+// ============================================================================
+
+/**
+ * Check if a background-removed version of an image exists in S3
+ * @param originalS3Key - The S3 key of the original image
+ * @returns The S3 key of the background-removed version if it exists, null otherwise
+ */
+export async function findBackgroundRemovedVersion(
+  originalS3Key: string
+): Promise<string | null> {
+  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  
+  if (!bucket) {
+    console.warn('[S3] AWS_S3_BUCKET_NAME not configured');
+    return null;
+  }
+
+  try {
+    const region = process.env.AWS_REGION || 'us-east-1';
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!accessKeyId || !secretAccessKey) {
+      console.warn('[S3] AWS credentials not configured');
+      return null;
+    }
+
+    const s3Client = new S3Client({
+      region,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+
+    // Generate the expected key for background-removed version
+    // Pattern: uploads/{projectId}/{hash}-nobg.png
+    const backgroundRemovedKey = originalS3Key.replace(
+      /(\.[^.]+)$/, 
+      '-nobg.png' // Always use PNG for background-removed images (transparency)
+    );
+
+    // Check if the object exists
+    const command = new HeadObjectCommand({
+      Bucket: bucket,
+      Key: backgroundRemovedKey,
+    });
+
+    const response = await s3Client.send(command);
+    
+    // If no error thrown, the object exists
+    console.log(`[S3] Found existing background-removed image: ${backgroundRemovedKey}`);
+    return backgroundRemovedKey;
+    
+  } catch (error: any) {
+    if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+      // Object doesn't exist, which is fine
+      return null;
+    }
+    // Log other errors but don't throw
+    console.warn('[S3] Error checking for background-removed version:', error);
+    return null;
+  }
+}
+
+/**
+ * Upload a processed (background-removed) image to S3
+ * @param processedImageUrl - URL of the processed image (from Replicate)
+ * @param originalS3Key - S3 key of the original image
+ * @returns S3 key of the uploaded processed image
+ */
+export async function uploadProcessedImageToS3(
+  processedImageUrl: string,
+  originalS3Key: string
+): Promise<string> {
+  const logPrefix = '[S3]';
+  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  
+  if (!bucket) {
+    throw new Error('AWS_S3_BUCKET_NAME not configured');
+  }
+
+  try {
+    // Download the processed image
+    console.log(`${logPrefix} Downloading processed image from Replicate...`);
+    const response = await fetch(processedImageUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download processed image: ${response.statusText}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Generate the S3 key for the processed version
+    const processedKey = originalS3Key.replace(/(\.[^.]+)$/, '-nobg.png');
+
+    // Create S3 client
+    const region = process.env.AWS_REGION || 'us-east-1';
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!accessKeyId || !secretAccessKey) {
+      throw new Error('AWS credentials not configured');
+    }
+
+    const s3Client = new S3Client({
+      region,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+
+    // Upload to S3
+    console.log(`${logPrefix} Uploading processed image to S3: ${processedKey}`);
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: processedKey,
+      Body: buffer,
+      ContentType: 'image/png', // Background-removed images are typically PNG
+      Metadata: {
+        'processing-type': 'background-removed',
+        'original-key': originalS3Key,
+        'uploaded-at': new Date().toISOString(),
+      },
+    });
+
+    await s3Client.send(command);
+    console.log(`${logPrefix} Successfully uploaded processed image to S3`);
+
+    return processedKey;
+  } catch (error: any) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`${logPrefix} Failed to upload processed image:`, errorMessage);
+    throw new Error(`Failed to upload processed image to S3: ${errorMessage}`);
+  }
+}
+
+// ============================================================================
 // Export
 // ============================================================================
 
 export default {
   uploadToS3,
   getS3Url,
+  findBackgroundRemovedVersion,
+  uploadProcessedImageToS3,
 };
 

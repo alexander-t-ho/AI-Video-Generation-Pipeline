@@ -26,6 +26,8 @@ interface CharacterVariation {
  * @param count Number of variations to generate (1-10)
  * @param generateTurnaround Whether to generate proper turnaround coverage
  * @param referenceImages Array of reference image URLs to base generation on
+ * @param feedback Optional user feedback for refinement
+ * @param ipAdapterScale Optional IP-Adapter scale for reference image influence (0-1)
  * @returns Array of generated character images with metadata
  */
 export async function generateCharacterVariation(
@@ -33,7 +35,9 @@ export async function generateCharacterVariation(
   projectId: string,
   count: number = 5,
   generateTurnaround: boolean = false,
-  referenceImages: string[] = []
+  referenceImages: string[] = [],
+  feedback?: string,
+  ipAdapterScale?: number
 ): Promise<CharacterVariation[]> {
   if (!description || typeof description !== 'string') {
     throw new Error('Description is required and must be a string');
@@ -70,8 +74,13 @@ export async function generateCharacterVariation(
       // Build variation-specific prompt
       const variationPrompt = buildVariationPrompt(description, variation);
 
-      // Create prediction
-      const predictionId = await createImagePredictionWithRetry(variationPrompt);
+      // Create prediction with reference images and IP-Adapter
+      const predictionId = await createImagePredictionWithRetry(
+        variationPrompt,
+        undefined, // seedImage (not used for character generation)
+        referenceImages.length > 0 ? referenceImages : undefined,
+        ipAdapterScale
+      );
       console.log(`${logPrefix} Prediction created for variation ${i + 1}: ${predictionId}`);
 
       // Poll for completion

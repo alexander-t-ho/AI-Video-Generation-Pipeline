@@ -156,3 +156,33 @@ export interface APIError {
   retryable?: boolean;
 }
 
+// ============================================================================
+// Character Generation Types
+// ============================================================================
+
+export interface CharacterGenerationOptions {
+  description: string;
+  projectId: string;
+  count?: number;
+  mode: 'batch' | 'single';
+  generateTurnaround?: boolean;
+  referenceImages?: string[];
+  feedback?: string;
+  selectedReferenceImage?: string;
+  model?: string;
+  ipAdapterScale?: number;
+}
+
+export interface CharacterVariation {
+  id: string;
+  url: string;
+  type: 'turnaround' | 'closeup' | 'full-body' | 'detail';
+  angle: number;
+  scale: 'full' | 'medium' | 'close';
+  metadata?: {
+    prompt: string;
+    model: string;
+    replicateId: string;
+  };
+}
+

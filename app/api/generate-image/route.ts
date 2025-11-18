@@ -20,12 +20,169 @@ import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
 import path from 'path';
 
 // ============================================================================
-// Prompt Adjustment for Reference Images
+// Module-level Constants (OPTIMIZED: Cache env vars and regex patterns)
+// ============================================================================
+
+const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
+
+// OPTIMIZATION: Pre-compile regex patterns for prompt adjustment
+const COLOR_MATERIAL_REGEX = /\b(silver|black|red|blue|white|gray|grey|gold|metal|leather|wood|plastic|stainless steel|matte|glossy|shiny|dull)\s+/gi;
+const OBJECT_TYPE_REGEX = /\b(modern|sleek|luxury|sports|vintage|classic|premium|high-end|budget|affordable)\s+/gi;
+const CAR_REGEX = /\b(car|vehicle|automobile|sedan|suv|coupe|convertible|sports car|luxury car|modern car|vintage car|classic car)\b/gi;
+const WATCH_REGEX = /\b(watch|timepiece|wristwatch|clock)\b/gi;
+const PRODUCT_FEATURES_REGEX = /\b(product|item|object|thing)\s+(with|featuring|showing|displaying)\s+[^,]+/gi;
+const OBJECT_FEATURES_REGEX = /\b(with|featuring|showing|displaying|including)\s+[^,]+(headlights|wheels|tires|doors|windows|buttons|dials|straps|bands|bezels)\b/gi;
+const DUPLICATE_SAME_REGEX = /\bthe same\s+the same\b/gi;
+const DUPLICATE_REFERENCE_REGEX = /\bthe same\s+object\s+from\s+the\s+reference\s+image\s+the\s+same\s+object\s+from\s+the\s+reference\s+image\b/gi;
+const MULTIPLE_SPACES_REGEX = /\s+/g;
+const MULTIPLE_COMMAS_REGEX = /,\s*,/g;
+
+// OPTIMIZATION: Pre-define scene words as a Set for O(1) lookup
+const SCENE_WORDS = new Set([
+  'at', 'in', 'on', 'with', 'during', 'sunset', 'sunrise', 'background', 'foreground',
+  'lighting', 'dramatic', 'soft', 'bright', 'dark', 'golden hour', 'blue hour',
+  'mountain', 'beach', 'city', 'street', 'road', 'track', 'studio', 'outdoor', 'indoor',
+  'positioned', 'placed', 'situated', 'located', 'standing', 'sitting', 'moving', 'stationary',
+  'vibrant', 'muted', 'warm', 'cool', 'natural', 'artificial', 'ambient', 'direct',
+  'blurred', 'sharp', 'focused', 'depth of field', 'bokeh', 'shallow', 'wide',
+  'atmosphere', 'mood', 'feeling', 'emotion', 'energy', 'dynamic', 'static', 'calm', 'energetic',
+  // Camera angles and positioning
+  'front', 'view', 'head-on', 'centered', 'side', 'rear', 'top', 'bottom', 'angle', 'perspective',
+  // Photography and style terms
+  'photography', 'automotive', 'portrait', 'landscape', 'macro', 'wide-angle', 'telephoto',
+  // Technical terms
+  'orthographic', 'isometric', 'aerial', 'overhead', 'birds-eye', 'worms-eye', 'low-angle', 'high-angle'
+]);
+
+// OPTIMIZATION: Simple LRU cache for prompt adjustments
+const promptCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 100;
+
+// ============================================================================
+// Helper Functions (OPTIMIZED: Extracted from handler)
+// ============================================================================
+
+/**
+ * Gets MIME type from file extension
+ * OPTIMIZATION: Centralized function instead of inline conditionals
+ */
+function getContentType(url: string): string {
+  const ext = path.extname(url).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+  };
+  return mimeTypes[ext] || 'image/png';
+}
+
+/**
+ * Checks if a word is scene-related
+ * OPTIMIZATION: O(1) Set lookup instead of O(n) array search
+ */
+function isSceneWord(word: string): boolean {
+  const cleaned = word.toLowerCase().replace(/[.,!?;:]/g, '');
+  return cleaned.length <= 3 || // Short words (prepositions, articles)
+         SCENE_WORDS.has(cleaned) ||
+         cleaned.includes('reference') ||
+         cleaned.includes('same') ||
+         cleaned.includes('object');
+}
+
+/**
+ * Converts local paths to public URLs (S3 or ngrok)
+ * OPTIMIZATION: Extracted from handler to avoid recreation on every request
+ */
+async function convertToPublicUrl(url: string, projectId: string): Promise<string> {
+  // S3 URLs may not be publicly accessible (403 errors)
+  // Download and convert to base64 data URL for Replicate
+  if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    try {
+      console.log(`[Image Generation API] Downloading S3 image for base64 conversion: ${url.substring(0, 80)}...`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(`[Image Generation API] Failed to download S3 image (${response.status}), will try ngrok fallback`);
+        // Fallback to ngrok URL if available
+        return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64Image = buffer.toString('base64');
+      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+      console.log(`[Image Generation API] Successfully converted S3 image to base64 (${(base64Image.length / 1024).toFixed(2)} KB)`);
+      return dataUrl;
+    } catch (error: any) {
+      console.error(`[Image Generation API] Failed to convert S3 URL to base64:`, error.message);
+      // Last resort: try ngrok URL
+      return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+    }
+  }
+  
+  // If it's already a public URL (external, non-S3), use it as-is
+  if (url.startsWith('https://') || (url.startsWith('http://') && !url.includes('localhost'))) {
+    return url;
+  }
+  
+  // If it's a local path, try to upload to S3 first, then convert to base64
+  if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
+    try {
+      // Read file and convert to base64 directly
+      const fs = await import('fs/promises');
+      const fileBuffer = await fs.readFile(url);
+      const base64Image = fileBuffer.toString('base64');
+      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+      console.log(`[Image Generation API] Converted local path to base64: ${url.substring(0, 50)}... (${(base64Image.length / 1024).toFixed(2)} KB)`);
+      return dataUrl;
+    } catch (localError: any) {
+      console.warn(`[Image Generation API] Failed to read local file, trying S3 upload: ${localError.message}`);
+      
+      // Fallback: try S3 upload
+      try {
+        const s3Key = await uploadToS3(url, projectId, {
+          contentType: getContentType(url),
+        });
+        const s3Url = getS3Url(s3Key);
+        console.log(`[Image Generation API] Uploaded to S3: ${url.substring(0, 50)}... -> ${s3Url.substring(0, 80)}...`);
+        
+        // Now convert the S3 URL to base64 (recursive call)
+        return convertToPublicUrl(s3Url, projectId);
+      } catch (s3Error: any) {
+        const publicUrl = `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+        console.warn(`[Image Generation API] S3 upload failed, using fallback URL: ${s3Error.message}`);
+        return publicUrl;
+      }
+    }
+  }
+  
+  // If it's already a relative API path, make it absolute
+  if (url.startsWith('/api/')) {
+    const publicUrl = `${NGROK_URL}${url}`;
+    if (publicUrl.includes('localhost')) {
+      console.warn(`[Image Generation API] WARNING: Using localhost URL - Replicate may not be able to access it: ${publicUrl}`);
+    }
+    return publicUrl;
+  }
+  
+  return url;
+}
+
+// ============================================================================
+// Prompt Adjustment for Reference Images (OPTIMIZED)
 // ============================================================================
 
 /**
  * Adjusts the prompt to be less specific about object details when a reference image is present.
  * This allows the reference image to define the object while the prompt focuses on scene composition.
+ * 
+ * OPTIMIZATIONS:
+ * - Pre-compiled regex patterns (defined at module level)
+ * - Set-based word lookup (O(1) instead of O(n))
+ * - LRU cache for repeated prompts
+ * - Reduced string allocations
  * 
  * Strategy:
  * - Replace specific object descriptions with generic references
@@ -36,57 +193,42 @@ import path from 'path';
  * @returns Adjusted prompt that prioritizes reference image
  */
 function adjustPromptForReferenceImage(originalPrompt: string): string {
-  // ACTION 3: Make prompts even more generic - extract only scene composition, lighting, and background
-  // Remove ALL object-specific descriptions to let the reference image define the object
-  
-  let adjustedPrompt = originalPrompt;
+  // OPTIMIZATION: Check cache first
+  if (promptCache.has(originalPrompt)) {
+    return promptCache.get(originalPrompt)!;
+  }
 
-  // Remove all color/material descriptions that might override the reference image
-  adjustedPrompt = adjustedPrompt.replace(/\b(silver|black|red|blue|white|gray|grey|gold|metal|leather|wood|plastic|stainless steel|matte|glossy|shiny|dull)\s+/gi, '');
+  // Apply all replacements in sequence (using pre-compiled regex)
+  let adjustedPrompt = originalPrompt
+    .replace(COLOR_MATERIAL_REGEX, '')
+    .replace(OBJECT_TYPE_REGEX, '')
+    .replace(CAR_REGEX, 'the same object from the reference image')
+    .replace(WATCH_REGEX, 'the same object from the reference image')
+    .replace(PRODUCT_FEATURES_REGEX, 'the same object from the reference image')
+    .replace(OBJECT_FEATURES_REGEX, '');
   
-  // Remove all object type descriptions
-  adjustedPrompt = adjustedPrompt.replace(/\b(modern|sleek|luxury|sports|vintage|classic|premium|high-end|budget|affordable)\s+/gi, '');
+  // Filter words (single pass using optimized helper)
+  const words = adjustedPrompt.split(MULTIPLE_SPACES_REGEX);
+  const filteredWords = words.filter(isSceneWord);
   
-  // Replace specific object mentions with generic reference
-  adjustedPrompt = adjustedPrompt.replace(/\b(car|vehicle|automobile|sedan|suv|coupe|convertible|sports car|luxury car|modern car|vintage car|classic car)\b/gi, 'the same object from the reference image');
-  adjustedPrompt = adjustedPrompt.replace(/\b(watch|timepiece|wristwatch|clock)\b/gi, 'the same object from the reference image');
-  adjustedPrompt = adjustedPrompt.replace(/\b(product|item|object|thing)\s+(with|featuring|showing|displaying)\s+[^,]+/gi, 'the same object from the reference image');
-  
-  // Remove object-specific features that might conflict with reference image
-  adjustedPrompt = adjustedPrompt.replace(/\b(with|featuring|showing|displaying|including)\s+[^,]+(headlights|wheels|tires|doors|windows|buttons|dials|straps|bands|bezels)\b/gi, '');
-  
-  // Keep only scene composition words: location, lighting, background, atmosphere
-  const sceneWords = [
-    'at', 'in', 'on', 'with', 'during', 'sunset', 'sunrise', 'background', 'foreground', 
-    'lighting', 'dramatic', 'soft', 'bright', 'dark', 'golden hour', 'blue hour',
-    'mountain', 'beach', 'city', 'street', 'road', 'track', 'studio', 'outdoor', 'indoor',
-    'positioned', 'placed', 'situated', 'located', 'standing', 'sitting', 'moving', 'stationary',
-    'vibrant', 'muted', 'warm', 'cool', 'natural', 'artificial', 'ambient', 'direct',
-    'blurred', 'sharp', 'focused', 'depth of field', 'bokeh', 'shallow', 'wide',
-    'atmosphere', 'mood', 'feeling', 'emotion', 'energy', 'dynamic', 'static', 'calm', 'energetic'
-  ];
-  
-  // Extract words that are scene-related
-  const words = adjustedPrompt.split(/\s+/);
-  const filteredWords = words.filter(word => {
-    const lowerWord = word.toLowerCase().replace(/[.,!?;:]/g, '');
-    return sceneWords.some(sceneWord => lowerWord.includes(sceneWord.toLowerCase())) ||
-           lowerWord.includes('reference') ||
-           lowerWord.includes('same') ||
-           lowerWord.includes('object') ||
-           lowerWord.length <= 3; // Keep short words (prepositions, articles)
-  });
-  
-  // Build new prompt with reference image emphasis
-  adjustedPrompt = `The same object from the reference image, ${filteredWords.join(' ')}`;
-  
-  // Clean up duplicate phrases and extra spaces
-  adjustedPrompt = adjustedPrompt.replace(/\bthe same\s+the same\b/gi, 'the same');
-  adjustedPrompt = adjustedPrompt.replace(/\bthe same\s+object\s+from\s+the\s+reference\s+image\s+the\s+same\s+object\s+from\s+the\s+reference\s+image\b/gi, 'the same object from the reference image');
-  adjustedPrompt = adjustedPrompt.replace(/\s+/g, ' '); // Multiple spaces to single space
-  adjustedPrompt = adjustedPrompt.replace(/,\s*,/g, ','); // Multiple commas to single comma
-  
-  return adjustedPrompt.trim();
+  // Build final prompt
+  adjustedPrompt = `The same object from the reference image, ${filteredWords.join(' ')}`
+    .replace(DUPLICATE_SAME_REGEX, 'the same')
+    .replace(DUPLICATE_REFERENCE_REGEX, 'the same object from the reference image')
+    .replace(MULTIPLE_SPACES_REGEX, ' ')
+    .replace(MULTIPLE_COMMAS_REGEX, ',')
+    .trim();
+
+  // OPTIMIZATION: Cache result with LRU eviction
+  if (promptCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = promptCache.keys().next().value;
+    if (firstKey) {
+      promptCache.delete(firstKey);
+    }
+  }
+  promptCache.set(originalPrompt, adjustedPrompt);
+
+  return adjustedPrompt;
 }
 
 // ============================================================================
@@ -227,84 +369,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract parameters (sceneIndex already extracted above)
-    let prompt = body.prompt.trim();
+    // Extract and prepare parameters
+    // sceneIndex already extracted above
     const projectId = body.projectId.trim();
-    let seedImage = body.seedImage?.trim();
+    let prompt = body.prompt.trim();
     let referenceImageUrls = body.referenceImageUrls || [];
-    const seedFrame = body.seedFrame?.trim(); // Seed frame for IP-Adapter (scenes 1-4)
+    const seedFrame = body.seedFrame?.trim();
+    let seedImage = body.seedImage?.trim();
 
-    // ACTION 1: Verify and convert all image URLs to publicly accessible URLs
-    // Replicate requires HTTP/HTTPS URLs that are publicly accessible (not localhost)
-    // We need to upload local images to S3 or use ngrok/public URL
-    
-    // Helper function to convert local paths to public URLs (S3 or public URL)
-    const convertToPublicUrl = async (url: string): Promise<string> => {
-      // If it's already a public URL (S3 or external), use it as-is
-      if (url.startsWith('https://') || (url.startsWith('http://') && !url.includes('localhost'))) {
-        return url;
-      }
-      
-      // If it's a local path, try to upload to S3 first, fallback to ngrok/public URL
-      if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
-        try {
-          // Determine content type from file extension
-          const ext = path.extname(url).toLowerCase();
-          const contentType = 
-            ext === '.png' ? 'image/png' :
-            ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-            ext === '.gif' ? 'image/gif' :
-            ext === '.webp' ? 'image/webp' :
-            'image/png'; // Default to PNG
-          
-          // Try to upload to S3
-          const s3Key = await uploadToS3(url, projectId, {
-            contentType,
-          });
-          const s3Url = getS3Url(s3Key);
-          console.log(`[Image Generation API] Uploaded to S3: ${url.substring(0, 50)}... -> ${s3Url.substring(0, 80)}...`);
-          return s3Url;
-        } catch (s3Error: any) {
-          // If S3 upload fails, use ngrok/public URL as fallback
-          // Note: This will only work if ngrok is configured and running
-          const ngrokUrl = process.env.NGROK_URL || 'http://localhost:3000';
-          const publicUrl = `${ngrokUrl}/api/serve-image?path=${encodeURIComponent(url)}`;
-          console.warn(`[Image Generation API] S3 upload failed, using public URL (may not work if not publicly accessible): ${url.substring(0, 50)}... -> ${publicUrl.substring(0, 80)}...`);
-          console.warn(`[Image Generation API] S3 error: ${s3Error.message}`);
-          return publicUrl;
-        }
-      }
-      
-      // If it's already a relative API path, make it absolute (but warn if localhost)
-      if (url.startsWith('/api/')) {
-        const ngrokUrl = process.env.NGROK_URL || 'http://localhost:3000';
-        const publicUrl = `${ngrokUrl}${url}`;
-        if (publicUrl.includes('localhost')) {
-          console.warn(`[Image Generation API] WARNING: Using localhost URL - Replicate may not be able to access it: ${publicUrl}`);
-        }
-        return publicUrl;
-      }
-      
-      return url;
-    };
+    // OPTIMIZATION: Convert ALL URLs in parallel (not sequential)
+    const urlsToConvert: string[] = [
+      ...referenceImageUrls,
+      ...(seedImage ? [seedImage] : []),
+      ...(seedFrame ? [seedFrame] : []),
+    ];
 
-    // Convert reference image URLs (async - need to await)
-    const convertedReferenceUrls = await Promise.all(
-      referenceImageUrls.map(url => convertToPublicUrl(url))
+    const convertedUrls = await Promise.all(
+      urlsToConvert.map(url => convertToPublicUrl(url, projectId))
     );
-    referenceImageUrls = convertedReferenceUrls;
+
+    // Split converted URLs back to their respective variables
+    const refImageCount = referenceImageUrls.length;
+    referenceImageUrls = convertedUrls.slice(0, refImageCount);
     
-    // Convert seed image URL if provided
+    let currentIndex = refImageCount;
     if (seedImage) {
-      seedImage = await convertToPublicUrl(seedImage);
-      console.log(`[Image Generation API] Converted seed image URL: ${seedImage.substring(0, 80)}...`);
+      seedImage = convertedUrls[currentIndex++];
     }
     
-    // Convert seed frame URL if provided
-    let seedFrameUrl: string | undefined = seedFrame;
+    let seedFrameUrl: string | undefined;
     if (seedFrame) {
-      seedFrameUrl = await convertToPublicUrl(seedFrame);
-      console.log(`[Image Generation API] Converted seed frame URL: ${seedFrameUrl.substring(0, 80)}...`);
+      seedFrameUrl = convertedUrls[currentIndex++];
     }
 
     // Log URL verification
@@ -353,7 +448,9 @@ export async function POST(request: NextRequest) {
     console.log('[Image Generation API]   - Reference Images:', referenceImageUrls.length);
     if (referenceImageUrls.length > 0) {
       referenceImageUrls.forEach((url, idx) => {
-        console.log(`[Image Generation API]     [${idx + 1}] ${url}`);
+        // Only log first 30 chars of URL to avoid flooding console with base64 data
+        const urlPreview = url.startsWith('data:') ? `${url.substring(0, 30)}... [base64 data]` : url;
+        console.log(`[Image Generation API]     [${idx + 1}] ${urlPreview}`);
       });
     }
     console.log('[Image Generation API]   - All URLs Public:', allUrlsPublic);

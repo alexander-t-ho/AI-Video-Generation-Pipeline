@@ -4,7 +4,7 @@ import { useState } from 'react';
 import ImageDropZone from './ImageDropZone';
 
 interface Take5WizardProps {
-  onSubmit: (combinedPrompt: string, images?: File[], targetDuration?: number) => void | Promise<void>;
+  onSubmit: (combinedPrompt: string, images?: File[], targetDuration?: number, characterSubject?: string) => void | Promise<void>;
   disabled?: boolean;
   initialPrompt?: string;
   initialImages?: File[];
@@ -111,7 +111,8 @@ export default function Take5Wizard({
   const handleGenerate = async () => {
     if (disabled) return;
     const prompt = buildPrompt();
-    await onSubmit(prompt, images.length ? images : undefined, duration);
+    // Pass the subject (character description) as a separate parameter
+    await onSubmit(prompt, images.length ? images : undefined, duration, subject.trim());
   };
 
   const renderStepContent = () => {

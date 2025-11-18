@@ -52,6 +52,7 @@ interface ReplicateInput {
   output_format?: string;
   output_quality?: number;
   image?: string; // For image-to-image
+  image_input?: string[]; // For nano-banana model
   ip_adapter_images?: string[]; // For IP-Adapter reference images (FLUX models)
   ip_adapter_scale?: number; // Control how strongly to follow reference (0-1, default 0.7)
   reference_images?: string[]; // For Gen-4 Image models (Runway Gen-4 Image)
@@ -138,25 +139,40 @@ export async function createImagePrediction(
 
   const replicate = createReplicateClient();
 
-  // Detect if we're using Gen-4 Image models (they use reference_images instead of ip_adapter_images)
+  // Detect model types for different parameter handling
   const isGen4Image = REPLICATE_MODEL.includes('gen4-image');
+  const isNanoBanana = REPLICATE_MODEL.includes('nano-banana');
 
-  // Build input parameters
-  const input: ReplicateInput = {
-    prompt: prompt.trim(),
-    num_outputs: 1,
-    aspect_ratio: '16:9',
-    output_format: 'png',
-    output_quality: 90,
-  };
+  // Build input parameters - model-specific
+  let input: ReplicateInput;
 
-  // Add seed image if provided (for image-to-image)
-  if (seedImage) {
-    input.image = seedImage;
+  if (isNanoBanana) {
+    // Nano-banana only accepts these specific parameters
+    input = {
+      prompt: prompt.trim(),
+      image_input: seedImage ? [seedImage] : [],
+      aspect_ratio: seedImage ? 'match_input_image' : '16:9',
+      output_format: 'jpg', // Model default
+    };
+    console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage}`);
+  } else {
+    // Standard parameters for other models
+    input = {
+      prompt: prompt.trim(),
+      num_outputs: 1,
+      aspect_ratio: '16:9',
+      output_format: 'png',
+      output_quality: 90,
+    };
+
+    // Add seed image for non-nano-banana models
+    if (seedImage) {
+      input.image = seedImage;
+    }
   }
 
-  // Add reference images - Gen-4 Image uses reference_images, FLUX uses ip_adapter_images
-  if (referenceImageUrls && referenceImageUrls.length > 0) {
+  // Add reference images - only for non-nano-banana models
+  if (!isNanoBanana && referenceImageUrls && referenceImageUrls.length > 0) {
     if (isGen4Image) {
       // Gen-4 Image models use reference_images parameter
       input.reference_images = referenceImageUrls;

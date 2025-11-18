@@ -1,23 +1,31 @@
 /**
  * API Route: Generate Character Variations
  * POST /api/generate-character-variations
- * 
- * Generates multiple character variations based on a description
+ *
+ * Generates character variations using unified service interface.
+ * Supports both batch generation (turnaround sheets) and single iterations.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { generateCharacterVariation } from '@/lib/ai/character-generator';
+import { generateCharacterVariations } from '@/lib/services/character-generation';
+import { convertUrlsInParallel } from '@/lib/utils/url-converter';
+import { setRuntimeImageModel } from '@/lib/ai/image-generator';
 
 interface GenerateCharacterVariationsRequest {
   description: string;
   projectId: string;
   count?: number;
-  referenceImages?: string[]; // URLs of reference images to base generation on
+  mode?: 'batch' | 'single';
+  generateTurnaround?: boolean;
+  referenceImages?: string[];
+  feedback?: string;
+  selectedReferenceImage?: string;
+  ipAdapterScale?: number;
 }
 
 interface GenerateCharacterVariationsResponse {
   success: boolean;
-  images?: Array<{ id: string; url: string }>;
+  images?: Array<{ id: string; url: string; type?: string; angle?: number; scale?: string; metadata?: any }>;
   error?: string;
 }
 
@@ -25,68 +33,71 @@ export async function POST(
   req: NextRequest
 ): Promise<NextResponse<GenerateCharacterVariationsResponse>> {
   try {
+    // Parse and validate request
     const body: GenerateCharacterVariationsRequest = await req.json();
 
-    // Validate request
     if (!body.description || typeof body.description !== 'string') {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Description is required and must be a string',
-        },
+        { success: false, error: 'Description is required and must be a string' },
         { status: 400 }
       );
     }
 
     if (!body.projectId || typeof body.projectId !== 'string') {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Project ID is required and must be a string',
-        },
+        { success: false, error: 'Project ID is required and must be a string' },
         { status: 400 }
       );
     }
 
     const count = body.count && typeof body.count === 'number' ? body.count : 5;
-
     if (count < 1 || count > 10) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Count must be between 1 and 10',
-        },
+        { success: false, error: 'Count must be between 1 and 10' },
         { status: 400 }
       );
     }
 
-    // Extract reference images (optional)
-    const referenceImages = body.referenceImages && Array.isArray(body.referenceImages) 
-      ? body.referenceImages 
-      : [];
+    // Check for runtime model override in headers
+    const runtimeModel = req.headers.get('X-Model-T2I');
+    if (runtimeModel) {
+      setRuntimeImageModel(runtimeModel);
+      console.log('[API:GenerateCharacterVariations] Using runtime model:', runtimeModel);
+    }
 
-    // Generate character variations with reference images
-    const images = await generateCharacterVariation(
-      body.description, 
-      body.projectId, 
+    // Call service layer with all parameters
+    const variations = await generateCharacterVariations({
+      description: body.description,
+      projectId: body.projectId,
       count,
-      false, // generateTurnaround
-      referenceImages // Pass reference images
-    );
+      mode: body.mode || 'batch',
+      generateTurnaround: body.generateTurnaround || false,
+      referenceImages: body.referenceImages || [],
+      feedback: body.feedback,
+      selectedReferenceImage: body.selectedReferenceImage,
+      model: runtimeModel || undefined,
+      ipAdapterScale: body.ipAdapterScale,
+    });
 
+    // Return success response with full metadata
     return NextResponse.json({
       success: true,
-      images,
+      images: variations.map(v => ({
+        id: v.id,
+        url: v.url,
+        type: v.type,
+        angle: v.angle,
+        scale: v.scale,
+        metadata: v.metadata,
+      })),
     });
+
   } catch (error) {
     console.error('[API:GenerateCharacterVariations] Error:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      {
-        success: false,
-        error: errorMessage,
-      },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }
