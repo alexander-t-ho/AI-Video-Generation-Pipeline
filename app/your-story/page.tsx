@@ -94,6 +94,22 @@ export default function YourStoryPage() {
     }
   }, [searchParams]); // Only run when searchParams changes
 
+  // Auto-generate storyboard when story idea is ready
+  useEffect(() => {
+    // Only auto-generate if:
+    // 1. We have an idea
+    // 2. We don't already have a storyboard
+    // 3. We're not currently generating anything
+    if (idea && !storyboardScenes && !isGeneratingStoryboard && !isGeneratingIdea) {
+      // Small delay to ensure state is settled
+      const timer = setTimeout(() => {
+        handleGenerateStoryboard();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [idea, storyboardScenes, isGeneratingStoryboard, isGeneratingIdea]);
+
   const generateStoryIdea = async (initialPrompt: string) => {
     setIsGeneratingIdea(true);
     try {
@@ -465,11 +481,7 @@ export default function YourStoryPage() {
                 >
                   {activeScene ? (
                     <div 
-                      className="p-5 rounded-lg border-2 bg-white/10 border-white/50 shadow-2xl backdrop-blur-xl"
-                      style={{
-                        transform: 'rotate(2deg) scale(1.05)',
-                        transformOrigin: 'center',
-                      }}
+                      className="p-5 rounded-lg border-2 bg-white/10 border-white/30 shadow-xl backdrop-blur-md"
                     >
                       <div className="grid grid-cols-[auto_1fr_3fr_auto] gap-4 items-start">
                         <div className="flex flex-col items-center gap-2">
@@ -492,14 +504,8 @@ export default function YourStoryPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex flex-col gap-2">
-                          <button
-                            className="px-3 py-1 text-sm text-white/70 border border-white/20 rounded-md"
-                            disabled
-                          >
-                            Edit
-                          </button>
-                        </div>
+                        {/* Empty div to maintain grid layout without the buttons */}
+                        <div className="w-[34px]"></div>
                       </div>
                     </div>
                   ) : null}

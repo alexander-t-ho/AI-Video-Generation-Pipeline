@@ -11,7 +11,7 @@ interface SceneCardProps {
   index: number;
   onUpdate: (sceneId: string, updates: Partial<Scene>) => void;
   isEditing: boolean;
-  onEditToggle: (sceneId: string) => void;
+  onEditToggle: (sceneId: string | null) => void;
   onRegenerate?: (sceneId: string) => void;
   isRegenerating?: boolean;
 }
@@ -74,13 +74,13 @@ export default function SceneCard({
       description: editDescription.trim(),
       imagePrompt: editImagePrompt.trim(),
     });
-    onEditToggle(scene.id);
+    onEditToggle(null);
   };
 
   const handleCancel = () => {
     setEditDescription(scene.description);
     setEditImagePrompt(scene.imagePrompt || '');
-    onEditToggle(scene.id);
+    onEditToggle(null);
   };
 
   const handleRewrite = async () => {

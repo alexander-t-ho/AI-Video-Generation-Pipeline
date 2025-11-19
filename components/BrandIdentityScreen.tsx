@@ -347,7 +347,7 @@ export default function BrandIdentityScreen() {
       {/* Back and Continue Buttons - Bottom Right */}
       <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
         <button
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/your-story')}
           className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
         >
           <ArrowLeft className="w-4 h-4" />

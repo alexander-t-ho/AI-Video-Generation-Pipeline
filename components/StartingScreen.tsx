@@ -1,15 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import ImageDropZone from './ImageDropZone';
-import Scen3Wizard from './Scen3Wizard';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
-import { useProjectStore } from '@/lib/state/project-store';
-import { createProject, uploadImages } from '@/lib/api-client';
 import { Settings, ArrowRight, Image, X } from 'lucide-react';
-import { detectCharactersOrProducts, extractCharacterDescription } from '@/lib/utils/character-detection';
 
 export default function StartingScreen({
   onCreateProject,
@@ -25,7 +20,6 @@ export default function StartingScreen({
   const [isDragging, setIsDragging] = useState(false);
 
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).filter(file => 
