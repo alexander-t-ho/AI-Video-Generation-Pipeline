@@ -16,7 +16,7 @@ import {
   generateStoryboard,
   uploadImages,
 } from '@/lib/api-client';
-import { ImageGenerationRequest } from '@/lib/types';
+import { ImageGenerationRequest, GeneratedImage, GeneratedVideo, SceneWithState } from '@/lib/types';
 
 interface LeftPanelProps {
   onCollapse?: () => void;
@@ -211,7 +211,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       const previousScene = scenes[sceneIndex - 1];
       if (previousScene?.selectedImageId) {
         const previousImage = previousScene.generatedImages?.find(
-          img => img.id === previousScene.selectedImageId
+          (img: GeneratedImage) => img.id === previousScene.selectedImageId
         );
         if (previousImage?.url && !referenceUrls.includes(previousImage.url)) {
           referenceUrls.push(previousImage.url);
@@ -324,7 +324,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
 
     const sceneState = scenes[sceneIndex];
     const selectedImage = sceneState?.selectedImageId
-      ? sceneState.generatedImages.find((img) => img.id === sceneState.selectedImageId)
+      ? sceneState.generatedImages.find((img: GeneratedImage) => img.id === sceneState.selectedImageId)
       : sceneState?.generatedImages[0];
 
     if (!selectedImage) {
@@ -487,8 +487,15 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     }
 
     const videoPaths = scenes
-      .map((s) => s.videoLocalPath)
-      .filter((path): path is string => !!path);
+      .map((s: SceneWithState) => {
+        // Use selected video if available, otherwise fallback to videoLocalPath for backward compatibility
+        if (s.selectedVideoId && s.generatedVideos) {
+          const selectedVideo = s.generatedVideos.find((v: GeneratedVideo) => v.id === s.selectedVideoId);
+          return selectedVideo?.localPath;
+        }
+        return s.videoLocalPath;
+      })
+      .filter((path: string | undefined): path is string => !!path);
 
     if (videoPaths.length === 0) {
       addChatMessage({
@@ -700,15 +707,15 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
 
   return (
     <div className="flex flex-col h-full w-full bg-black">
-      {/* Panel Header - Cursor style: minimal */}
-      <div className="px-3 py-2 border-b border-white/20 flex items-center justify-between">
+      {/* Panel Header */}
+      <div className="h-10 px-3 border-b border-white/20 bg-black backdrop-blur-sm flex items-center justify-between">
         <h2 className="text-xs font-medium text-white/80 uppercase tracking-wide">
           Agent
         </h2>
         {onCollapse && (
           <button
             onClick={onCollapse}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
+            className="p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0"
             aria-label="Collapse panel"
           >
             <ChevronLeft className="w-4 h-4 text-white/60 hover:text-white" />

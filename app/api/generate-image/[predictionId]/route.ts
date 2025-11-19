@@ -244,6 +244,14 @@ export async function GET(
 
     if (prediction.status === 'failed') {
       const errorMessage = prediction.error || 'Image generation failed';
+      const duration = Date.now() - startTime;
+      console.error(`[Image Status API] Prediction failed after ${duration}ms:`, {
+        predictionId,
+        error: errorMessage,
+        projectId: projectId || 'not provided',
+        sceneIndex: sceneIndex !== undefined ? sceneIndex : 'not provided',
+      });
+      
       return NextResponse.json(
         {
           success: false,

@@ -223,7 +223,7 @@ export async function uploadImages(
     }
 
     const result = await response.json();
-
+    
     // Extract URLs from uploaded images
     // Prefer the last processed version (most refined background removal) if available
     const urls = result.images?.map((img: any) => {
@@ -381,7 +381,8 @@ export async function generateVideo(
   prompt: string,
   projectId: string,
   sceneIndex: number,
-  seedFrame?: string
+  seedFrame?: string,
+  duration?: number // Optional: Scene-specific duration
 ): Promise<{ predictionId: string; status: string }> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
@@ -396,6 +397,7 @@ export async function generateVideo(
         projectId,
         sceneIndex,
         seedFrame,
+        duration, // Pass duration if provided
       }),
     });
 
@@ -405,7 +407,7 @@ export async function generateVideo(
     }
 
     const result = await response.json();
-
+    
     // Extract predictionId from the nested data structure
     if (result.success && result.data?.predictionId) {
       return {
@@ -413,7 +415,7 @@ export async function generateVideo(
         status: 'starting',
       };
     }
-
+    
     throw new Error('Invalid response format from video generation API');
   });
 }
@@ -594,6 +596,85 @@ export async function getProjectStatus(projectId: string): Promise<any> {
     }
 
     return response.json();
+  });
+}
+
+/**
+ * Apply clip edits (trim/crop) to timeline clips
+ */
+export async function applyClipEdits(
+  clips: Array<{
+    id: string;
+    videoLocalPath: string;
+    trimStart?: number;
+    trimEnd?: number;
+    sourceDuration: number;
+  }>,
+  projectId: string
+): Promise<string[]> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/apply-clip-edits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clips,
+        projectId,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to apply clip edits' }));
+      throw new Error(error.error || 'Failed to apply clip edits');
+    }
+
+    const result = await response.json();
+    if (result.success && result.data?.editedVideoPaths) {
+      return result.data.editedVideoPaths;
+    } else {
+      throw new Error(result.error || 'Invalid response structure from apply clip edits API');
+    }
+  });
+}
+
+/**
+ * Generate a preview video from timeline clips with edits applied
+ * This creates a temporary stitched video for smooth playback
+ */
+export async function generatePreview(
+  clips: Array<{
+    id: string;
+    videoLocalPath: string;
+    trimStart?: number;
+    trimEnd?: number;
+    sourceDuration: number;
+  }>,
+  projectId: string
+): Promise<string> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/generate-preview`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clips,
+        projectId,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to generate preview' }));
+      throw new Error(error.error || 'Failed to generate preview');
+    }
+
+    const result = await response.json();
+    if (result.success && result.data?.previewVideoPath) {
+      return result.data.previewVideoPath;
+    } else {
+      throw new Error(result.error || 'Invalid response structure from generate preview API');
+    }
   });
 }
 

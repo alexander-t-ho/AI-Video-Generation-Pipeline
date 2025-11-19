@@ -123,6 +123,11 @@ export function useSceneGeneration(
       // Use reference image as seed (primary) + seed frame via IP-Adapter (for continuity in scenes 1-4)
       const seedImage = referenceImageUrls.length > 0 ? referenceImageUrls[0] : undefined;
       
+      // Get prompt adjustment mode from runtime config
+      const { getRuntimeConfig } = await import('@/lib/config/model-runtime');
+      const runtimeConfig = getRuntimeConfig();
+      const promptAdjustmentMode = runtimeConfig.promptAdjustmentMode || 'scene-specific';
+      
       const request: ImageGenerationRequest = {
         prompt: customPrompt || scene.imagePrompt,
         projectId: project.id,
@@ -130,6 +135,7 @@ export function useSceneGeneration(
         seedImage, // Reference image as seed (PRIMARY driver for object consistency)
         referenceImageUrls, // Always pass reference images (also used in IP-Adapter)
         seedFrame: sceneIndex > 0 ? seedFrameUrl : undefined, // Seed frame for IP-Adapter (for visual continuity in scenes 1-4)
+        promptAdjustmentMode, // Prompt adjustment mode from runtime config
       };
 
       const response = await generateImage(request);

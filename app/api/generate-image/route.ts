@@ -17,49 +17,18 @@ import {
 } from '@/lib/ai/image-generator';
 import { ImageGenerationRequest, ImageGenerationResponse } from '@/lib/types';
 import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
+import { DEFAULT_RUNTIME_CONFIG, PromptAdjustmentMode } from '@/lib/config/model-runtime';
+import { adjustPromptForReferenceImage } from '@/lib/utils/prompt-optimizer';
 import path from 'path';
 
 // ============================================================================
-// Module-level Constants (OPTIMIZED: Cache env vars and regex patterns)
+// Module-level Constants
 // ============================================================================
 
 const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
 
-// OPTIMIZATION: Pre-compile regex patterns for prompt adjustment
-const COLOR_MATERIAL_REGEX = /\b(silver|black|red|blue|white|gray|grey|gold|metal|leather|wood|plastic|stainless steel|matte|glossy|shiny|dull)\s+/gi;
-const OBJECT_TYPE_REGEX = /\b(modern|sleek|luxury|sports|vintage|classic|premium|high-end|budget|affordable)\s+/gi;
-const CAR_REGEX = /\b(car|vehicle|automobile|sedan|suv|coupe|convertible|sports car|luxury car|modern car|vintage car|classic car)\b/gi;
-const WATCH_REGEX = /\b(watch|timepiece|wristwatch|clock)\b/gi;
-const PRODUCT_FEATURES_REGEX = /\b(product|item|object|thing)\s+(with|featuring|showing|displaying)\s+[^,]+/gi;
-const OBJECT_FEATURES_REGEX = /\b(with|featuring|showing|displaying|including)\s+[^,]+(headlights|wheels|tires|doors|windows|buttons|dials|straps|bands|bezels)\b/gi;
-const DUPLICATE_SAME_REGEX = /\bthe same\s+the same\b/gi;
-const DUPLICATE_REFERENCE_REGEX = /\bthe same\s+object\s+from\s+the\s+reference\s+image\s+the\s+same\s+object\s+from\s+the\s+reference\s+image\b/gi;
-const MULTIPLE_SPACES_REGEX = /\s+/g;
-const MULTIPLE_COMMAS_REGEX = /,\s*,/g;
-
-// OPTIMIZATION: Pre-define scene words as a Set for O(1) lookup
-const SCENE_WORDS = new Set([
-  'at', 'in', 'on', 'with', 'during', 'sunset', 'sunrise', 'background', 'foreground',
-  'lighting', 'dramatic', 'soft', 'bright', 'dark', 'golden hour', 'blue hour',
-  'mountain', 'beach', 'city', 'street', 'road', 'track', 'studio', 'outdoor', 'indoor',
-  'positioned', 'placed', 'situated', 'located', 'standing', 'sitting', 'moving', 'stationary',
-  'vibrant', 'muted', 'warm', 'cool', 'natural', 'artificial', 'ambient', 'direct',
-  'blurred', 'sharp', 'focused', 'depth of field', 'bokeh', 'shallow', 'wide',
-  'atmosphere', 'mood', 'feeling', 'emotion', 'energy', 'dynamic', 'static', 'calm', 'energetic',
-  // Camera angles and positioning
-  'front', 'view', 'head-on', 'centered', 'side', 'rear', 'top', 'bottom', 'angle', 'perspective',
-  // Photography and style terms
-  'photography', 'automotive', 'portrait', 'landscape', 'macro', 'wide-angle', 'telephoto',
-  // Technical terms
-  'orthographic', 'isometric', 'aerial', 'overhead', 'birds-eye', 'worms-eye', 'low-angle', 'high-angle'
-]);
-
-// OPTIMIZATION: Simple LRU cache for prompt adjustments
-const promptCache = new Map<string, string>();
-const MAX_CACHE_SIZE = 100;
-
 // ============================================================================
-// Helper Functions (OPTIMIZED: Extracted from handler)
+// Helper Functions
 // ============================================================================
 
 /**
@@ -76,19 +45,6 @@ function getContentType(url: string): string {
     '.webp': 'image/webp',
   };
   return mimeTypes[ext] || 'image/png';
-}
-
-/**
- * Checks if a word is scene-related
- * OPTIMIZATION: O(1) Set lookup instead of O(n) array search
- */
-function isSceneWord(word: string): boolean {
-  const cleaned = word.toLowerCase().replace(/[.,!?;:]/g, '');
-  return cleaned.length <= 3 || // Short words (prepositions, articles)
-         SCENE_WORDS.has(cleaned) ||
-         cleaned.includes('reference') ||
-         cleaned.includes('same') ||
-         cleaned.includes('object');
 }
 
 /**
@@ -168,67 +124,6 @@ async function convertToPublicUrl(url: string, projectId: string): Promise<strin
   }
   
   return url;
-}
-
-// ============================================================================
-// Prompt Adjustment for Reference Images (OPTIMIZED)
-// ============================================================================
-
-/**
- * Adjusts the prompt to be less specific about object details when a reference image is present.
- * This allows the reference image to define the object while the prompt focuses on scene composition.
- * 
- * OPTIMIZATIONS:
- * - Pre-compiled regex patterns (defined at module level)
- * - Set-based word lookup (O(1) instead of O(n))
- * - LRU cache for repeated prompts
- * - Reduced string allocations
- * 
- * Strategy:
- * - Replace specific object descriptions with generic references
- * - Keep scene composition, lighting, and background details
- * - Let the reference image define the object's appearance
- * 
- * @param originalPrompt The original prompt from the storyboard
- * @returns Adjusted prompt that prioritizes reference image
- */
-function adjustPromptForReferenceImage(originalPrompt: string): string {
-  // OPTIMIZATION: Check cache first
-  if (promptCache.has(originalPrompt)) {
-    return promptCache.get(originalPrompt)!;
-  }
-
-  // Apply all replacements in sequence (using pre-compiled regex)
-  let adjustedPrompt = originalPrompt
-    .replace(COLOR_MATERIAL_REGEX, '')
-    .replace(OBJECT_TYPE_REGEX, '')
-    .replace(CAR_REGEX, 'the same object from the reference image')
-    .replace(WATCH_REGEX, 'the same object from the reference image')
-    .replace(PRODUCT_FEATURES_REGEX, 'the same object from the reference image')
-    .replace(OBJECT_FEATURES_REGEX, '');
-  
-  // Filter words (single pass using optimized helper)
-  const words = adjustedPrompt.split(MULTIPLE_SPACES_REGEX);
-  const filteredWords = words.filter(isSceneWord);
-  
-  // Build final prompt
-  adjustedPrompt = `The same object from the reference image, ${filteredWords.join(' ')}`
-    .replace(DUPLICATE_SAME_REGEX, 'the same')
-    .replace(DUPLICATE_REFERENCE_REGEX, 'the same object from the reference image')
-    .replace(MULTIPLE_SPACES_REGEX, ' ')
-    .replace(MULTIPLE_COMMAS_REGEX, ',')
-    .trim();
-
-  // OPTIMIZATION: Cache result with LRU eviction
-  if (promptCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = promptCache.keys().next().value;
-    if (firstKey) {
-      promptCache.delete(firstKey);
-    }
-  }
-  promptCache.set(originalPrompt, adjustedPrompt);
-
-  return adjustedPrompt;
 }
 
 // ============================================================================
@@ -412,14 +307,33 @@ export async function POST(request: NextRequest) {
       console.warn('[Image Generation API] WARNING: Some reference image URLs are not publicly accessible!');
     }
 
-    // OPTION 3: Adjust prompt strategy - make prompts less specific about object details
-    // When a reference image is present, modify the prompt to let the reference image define the object
-    // This reduces prompt influence and increases reference image influence
+    // Prompt adjustment strategy based on runtime config
+    // Get prompt adjustment mode from request body (sent from client) or use default
+    const promptAdjustmentMode: PromptAdjustmentMode = body.promptAdjustmentMode || DEFAULT_RUNTIME_CONFIG.promptAdjustmentMode || 'scene-specific';
+    
+    // Apply prompt adjustment based on mode
     if (referenceImageUrls.length > 0) {
-      prompt = adjustPromptForReferenceImage(prompt);
-      console.log(`[Image Generation API] Scene ${sceneIndex}: Adjusted prompt to prioritize reference image`);
-      console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
-      console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
+      if (promptAdjustmentMode === 'disabled') {
+        // No adjustment - use full prompt
+        console.log(`[Image Generation API] Scene ${sceneIndex}: Prompt adjustment disabled - using full prompt`);
+      } else if (promptAdjustmentMode === 'scene-specific') {
+        // Scene-specific: Scene 1 uses full prompt (for dynamic shots), others use adjusted prompt
+        if (sceneIndex === 1) {
+          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - Scene 1 uses full prompt for dynamic shots`);
+          // Keep full prompt for Scene 1
+        } else {
+          prompt = adjustPromptForReferenceImage(prompt);
+          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - using prompt adjustment`);
+          console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
+          console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
+        }
+      } else if (promptAdjustmentMode === 'less-aggressive') {
+        // Less aggressive: Only replace object type mentions, keep all scene details
+        prompt = adjustPromptForReferenceImage(prompt);
+        console.log(`[Image Generation API] Scene ${sceneIndex}: Using less-aggressive prompt adjustment`);
+        console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
+        console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
+      }
     }
 
     // Strategy: Use seed image for image-to-image generation

@@ -59,6 +59,7 @@ export interface ImageGenerationRequest {
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
   seedFrame?: string;        // Optional: Seed frame URL for IP-Adapter (for visual continuity in scenes 1-4)
   negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
+  promptAdjustmentMode?: 'disabled' | 'less-aggressive' | 'scene-specific'; // Optional: How to adjust prompts when reference images are present
 }
 
 export interface ImageGenerationResponse {
@@ -115,15 +116,31 @@ export interface SceneWithState extends Scene {
   selectedImageId?: string;
   
   // Video generation state
-  videoLocalPath?: string;
-  videoS3Key?: string;
-  actualDuration?: number;
+  generatedVideos?: GeneratedVideo[];  // Array of all generated videos (old and new)
+  selectedVideoId?: string;             // ID of currently selected video
+  videoLocalPath?: string;              // Deprecated: Use selectedVideoId instead (kept for backward compatibility)
+  videoS3Key?: string;                  // Deprecated: Use selectedVideoId instead (kept for backward compatibility)
+  actualDuration?: number;              // Deprecated: Use selectedVideoId instead (kept for backward compatibility)
   
   // Seed frames for NEXT scene (not present in Scene 4)
   seedFrames?: SeedFrame[];
   selectedSeedFrameIndex?: number;
   
   status: 'pending' | 'generating_image' | 'image_ready' | 'generating_video' | 'video_ready' | 'completed';
+}
+
+// ============================================================================
+// Generated Video Types
+// ============================================================================
+
+export interface GeneratedVideo {
+  id: string;
+  url: string;              // S3 URL or public HTTP/HTTPS URL
+  localPath: string;        // Local file path
+  s3Key?: string;           // Optional: S3 key if uploaded
+  actualDuration?: number;   // Optional: Actual duration in seconds
+  timestamp: string;        // ISO timestamp when generated
+  prompt?: string;           // Optional: Prompt used for generation
 }
 
 // ============================================================================
@@ -136,6 +153,43 @@ export interface SeedFrame {
   localPath?: string;       // Optional: Local file path (for reference/fallback)
   timestamp: number;        // 0.1s, 0.2s, 0.3s, 0.4s, 0.5s from end
 }
+
+// ============================================================================
+// Timeline Clip Types
+// ============================================================================
+
+/**
+ * Represents a clip on the timeline that can be edited
+ */
+export interface TimelineClip {
+  id: string;                // UUID v4
+  sceneIndex: number;        // Original scene index this clip came from
+  sceneId: string;           // Original scene ID
+  title: string;             // Clip title (usually scene description)
+  videoId: string;           // Reference to GeneratedVideo ID
+  videoLocalPath: string;    // Local path to the source video file
+  startTime: number;         // Start time in the timeline (seconds)
+  duration: number;          // Duration of this clip (seconds)
+  
+  // Editing properties
+  trimStart?: number;        // Trim start point in source video (seconds, default: 0)
+  trimEnd?: number;          // Trim end point in source video (seconds, default: full duration)
+  isSplit?: boolean;         // Whether this clip was created by splitting
+  originalClipId?: string;   // If split, reference to original clip ID
+  
+  // Computed properties
+  endTime: number;           // End time in timeline (startTime + duration)
+  sourceDuration: number;   // Original source video duration before trimming
+}
+
+/**
+ * Timeline editing operations
+ */
+export type TimelineEditOperation = 
+  | { type: 'split'; clipId: string; splitTime: number }      // Split clip at time
+  | { type: 'delete'; clipId: string }                        // Delete clip
+  | { type: 'crop'; clipId: string; trimStart: number; trimEnd: number }  // Crop/trim clip
+  | { type: 'move'; clipId: string; newStartTime: number };   // Move clip position
 
 // ============================================================================
 // Error Types

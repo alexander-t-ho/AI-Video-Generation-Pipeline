@@ -14,15 +14,15 @@ export default function ModeToggle() {
   const { viewMode, setViewMode } = useProjectStore();
 
   return (
-    <div className="flex items-center gap-0 bg-white/5 rounded-lg p-0.5">
+    <div className="flex items-center gap-0 bg-white/5 rounded-lg p-1">
       {modes.map(({ mode, label, icon }, index) => (
         <div key={mode} className="flex items-center">
           {index > 0 && (
-            <div className="h-4 w-px bg-white/20" />
+            <div className="h-5 w-px bg-white/20" />
           )}
           <button
             onClick={() => setViewMode(mode)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
               viewMode === mode
                 ? 'bg-white/20 text-white shadow-sm'
                 : 'text-white/60 hover:text-white hover:bg-white/10'

@@ -220,6 +220,34 @@ export default function DevPanel({ isOpen, onClose }: DevPanelProps) {
           </div>
         )}
 
+        {/* Prompt Adjustment Mode */}
+        <div className="space-y-2">
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Prompt Adjustment Mode
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              How to adjust prompts when reference images are present (affects image generation only)
+            </p>
+          </div>
+          <select
+            value={config.promptAdjustmentMode ?? 'scene-specific'}
+            onChange={(e) => {
+              const newConfig = { ...config, promptAdjustmentMode: e.target.value as 'disabled' | 'less-aggressive' | 'scene-specific' };
+              setConfig(newConfig);
+              saveRuntimeConfig(newConfig);
+            }}
+            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-white"
+          >
+            <option value="disabled">Disabled - Use full prompt (matches video generation)</option>
+            <option value="less-aggressive">Less Aggressive - Keep scene details, only replace object type</option>
+            <option value="scene-specific">Scene-Specific - Scene 1 uses full prompt, others use less-aggressive (default)</option>
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+            <strong>Disabled:</strong> Images use full prompts like videos. <strong>Less Aggressive:</strong> Keeps all scene details (camera angles, lighting, action) but replaces object type. <strong>Scene-Specific:</strong> Scene 1 (dynamic shots) uses full prompt, others use less-aggressive adjustment.
+          </p>
+        </div>
+
         {/* Video Model */}
         <ModelSelector
           label="Video Model"

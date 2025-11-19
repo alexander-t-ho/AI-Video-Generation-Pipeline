@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import ImageDropZone from './ImageDropZone';
 
 interface Scen3WizardProps {
@@ -23,6 +23,8 @@ export default function Scen3Wizard({
   onStepChange
 }: Scen3WizardProps) {
   const [activeStep, setActiveStep] = useState<StepId>(currentStep as StepId);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const isGeneratingRef = useRef(false); // Keep ref for immediate checks
 
   const [subject] = useState(initialPrompt); // Pre-fill with initial prompt (no UI step for this)
   const [style, setStyle] = useState('Leigh Powis–style commercial film, tight and action-driven');
@@ -50,7 +52,10 @@ export default function Scen3Wizard({
   };
 
   const goNext = () => {
-    const nextStep = (activeStep < 3 ? activeStep + 1 : activeStep) as StepId;
+    // Prevent rapid clicks during navigation
+    if (disabled || isGeneratingRef.current || isGenerating) return;
+    
+    const nextStep = (activeStep < 5 ? activeStep + 1 : activeStep) as StepId;
     setActiveStep(nextStep);
     if (onStepChange) {
       onStepChange(nextStep);
@@ -104,10 +109,25 @@ export default function Scen3Wizard({
   };
 
   const handleGenerate = async () => {
-    if (disabled) return;
-    const prompt = buildPrompt();
-    // Pass the subject (character description) as a separate parameter
-    await onSubmit(prompt, images.length ? images : undefined, duration, subject.trim());
+    // Prevent multiple simultaneous submissions (race condition fix)
+    if (disabled || isGeneratingRef.current || isGenerating) {
+      console.warn('[Take5Wizard] handleGenerate called while already generating, ignoring duplicate call');
+      return;
+    }
+    
+    isGeneratingRef.current = true;
+    setIsGenerating(true); // Update state to disable buttons immediately
+    try {
+      const prompt = buildPrompt();
+      await onSubmit(prompt, images.length ? images : undefined, duration);
+    } catch (error) {
+      console.error('[Take5Wizard] Error in handleGenerate:', error);
+      // Reset on error so user can retry
+      isGeneratingRef.current = false;
+      setIsGenerating(false);
+      throw error;
+    }
+    // Note: isGeneratingRef and isGenerating are not reset on success because navigation should prevent further clicks
   };
 
   const renderStepContent = () => {
@@ -363,8 +383,8 @@ export default function Scen3Wizard({
               <button
                 type="button"
                 onClick={goNext}
-                disabled={disabled}
-                className="px-4 py-2 rounded-full border border-white/20 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-all"
+                disabled={disabled || isGenerating}
+                className="px-4 py-2 rounded-full border border-white/20 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next step
               </button>
@@ -373,7 +393,7 @@ export default function Scen3Wizard({
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={disabled}
+              disabled={disabled || isGenerating}
               className="px-6 py-2 rounded-full bg-white text-sm font-semibold text-black hover:bg-white/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {activeStep < 3 ? 'Skip · Generate' : 'Generate storyboard'}

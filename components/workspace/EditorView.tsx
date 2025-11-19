@@ -6,7 +6,8 @@ import SeedFrameSelector from './SeedFrameSelector';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages } from '@/lib/api-client';
-import { GeneratedImage, SeedFrame } from '@/lib/types';
+import { GeneratedImage, GeneratedVideo, SeedFrame } from '@/lib/types';
+import { UploadedImage, ProcessedImage } from '@/lib/storage/image-storage';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
 interface ImagePreviewModalProps {
@@ -107,8 +108,27 @@ export default function EditorView() {
   const sceneState = scenes[currentSceneIndex];
   const sceneImages = sceneState?.generatedImages || [];
   const sceneHasImage = sceneImages.length > 0;
-  const selectedImage = sceneImages.find(img => img.id === (selectedImageId || sceneState?.selectedImageId));
-  const sceneHasVideo = !!sceneState?.videoLocalPath;
+  const selectedImage = sceneImages.find((img: GeneratedImage) => img.id === (selectedImageId || sceneState?.selectedImageId));
+  // Get selected video (prefer selectedVideoId, fallback to videoLocalPath for backward compatibility)
+  const selectedVideo = sceneState?.generatedVideos?.find((v: GeneratedVideo) => v.id === sceneState.selectedVideoId) 
+    || (sceneState?.videoLocalPath ? {
+      id: 'legacy',
+      url: sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
+        ? sceneState.videoLocalPath
+        : `/api/serve-video?path=${encodeURIComponent(sceneState.videoLocalPath)}`,
+      localPath: sceneState.videoLocalPath,
+      actualDuration: sceneState.actualDuration,
+      timestamp: new Date().toISOString(),
+    } : undefined);
+  
+  // Ensure video URL is properly formatted for playback
+  const videoUrl = selectedVideo?.url || (selectedVideo?.localPath 
+    ? (selectedVideo.localPath.startsWith('http://') || selectedVideo.localPath.startsWith('https://')
+      ? selectedVideo.localPath
+      : `/api/serve-video?path=${encodeURIComponent(selectedVideo.localPath)}`)
+    : undefined);
+  
+  const sceneHasVideo = !!selectedVideo && !!videoUrl;
   const seedFrames = sceneState?.seedFrames || [];
 
   // Update selected image ID when scene state changes
@@ -131,8 +151,23 @@ export default function EditorView() {
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
         : [];
       setCustomImageFiles([]);
-      setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      // Populate droppedImageUrls with saved images so they're preserved when adding new ones
+      setDroppedImageUrls(imageInputs.map((url: string) => {
+        // Convert serveable URLs back to original paths if needed
+        if (url.startsWith('/api/serve-image?path=')) {
+          return decodeURIComponent(url.split('path=')[1]);
+        }
+        return url;
+      }));
+      // Set previews with properly formatted URLs
+      setCustomImagePreviews(imageInputs.map((url: string) => {
+        // Convert local paths to serveable URLs for preview
+        let previewUrl = url;
+        if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/api') && !url.startsWith('blob:')) {
+          previewUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+        }
+        return { url: previewUrl, source: 'media' as const };
+      }));
     }
   }, [currentScene?.imagePrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex]);
 
@@ -167,47 +202,65 @@ export default function EditorView() {
         : [];
 
       if (customImageInputs.length > 0) {
-        // Use first custom image as seed image (for image-to-image)
-        seedImageUrl = customImageInputs[0];
-        // If it's a local path, convert to serveable URL
-        if (!seedImageUrl.startsWith('http://') && !seedImageUrl.startsWith('https://') && !seedImageUrl.startsWith('/api')) {
-          seedImageUrl = `/api/serve-image?path=${encodeURIComponent(seedImageUrl)}`;
+        // Validate and format custom image URLs
+        const validatedCustomImages: string[] = [];
+        for (const url of customImageInputs) {
+          if (!url || typeof url !== 'string') {
+            console.warn(`[EditorView] Invalid custom image URL: ${url}`);
+            continue;
+          }
+          
+          // Convert local paths to serveable URLs
+          let formattedUrl = url;
+          if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://') && !formattedUrl.startsWith('/api')) {
+            formattedUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+          }
+          validatedCustomImages.push(formattedUrl);
         }
-        console.log(`[EditorView] Scene ${currentSceneIndex}: Using custom image input as seed image:`, seedImageUrl.substring(0, 80) + '...');
         
-        // Add all custom images to reference images for IP-Adapter
-        const customImageUrls = customImageInputs.map(url => {
-          if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/api')) {
-            return `/api/serve-image?path=${encodeURIComponent(url)}`;
-          }
-          return url;
-        });
-        referenceImageUrls = [...customImageUrls, ...referenceImageUrls];
-        console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${customImageUrls.length} custom image(s) as reference images via IP-Adapter`);
+        if (validatedCustomImages.length === 0) {
+          console.error(`[EditorView] No valid custom images found after validation`);
+        } else {
+          // Use first custom image as seed image (for image-to-image)
+          seedImageUrl = validatedCustomImages[0];
+          console.log(`[EditorView] Scene ${currentSceneIndex}: Using custom image input as seed image:`, seedImageUrl.substring(0, 80) + '...');
+          
+          // Add all custom images to reference images for IP-Adapter
+          referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls];
+          console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
+        }
       } else if (currentSceneIndex > 0) {
-        const previousScene = scenes[currentSceneIndex - 1];
-        if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
-          // Use selected seed frame, or default to first frame if none selected
-          const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
-          const selectedFrame = previousScene.seedFrames[selectedIndex];
+        // Only use seed frame if explicitly enabled via checkbox
+        const useSeedFrame = currentScene.useSeedFrame === true;
+        if (useSeedFrame) {
+          const previousScene = scenes[currentSceneIndex - 1];
+          if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
+            // Use selected seed frame, or default to first frame if none selected
+            const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
+            const selectedFrame = previousScene.seedFrames[selectedIndex];
 
-          // Ensure the seed frame URL is a public URL (S3 or serveable)
-          if (selectedFrame?.url) {
-            seedFrameUrl = selectedFrame.url;
-            // If it's a local path, convert to serveable URL
-            if (!seedFrameUrl.startsWith('http://') && !seedFrameUrl.startsWith('https://') && !seedFrameUrl.startsWith('/api')) {
-              seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || selectedFrame.url)}`;
+            // Ensure the seed frame URL is a public URL (S3 or serveable)
+            if (selectedFrame?.url) {
+              const frameUrl = selectedFrame.url;
+              // If it's a local path, convert to serveable URL
+              if (!frameUrl.startsWith('http://') && !frameUrl.startsWith('https://') && !frameUrl.startsWith('/api')) {
+                seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || frameUrl)}`;
+              } else {
+                seedFrameUrl = frameUrl;
+              }
+
+              // Use the seed frame as the seed image for image-to-image generation
+              seedImageUrl = seedFrameUrl;
+              console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl!.substring(0, 80) + '...');
             }
-
-            // Use the seed frame as the seed image for image-to-image generation
-            seedImageUrl = seedFrameUrl;
-            console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl.substring(0, 80) + '...');
           }
+        } else {
+          console.log(`[EditorView] Scene ${currentSceneIndex}: Seed frame checkbox is disabled, not using seed frame`);
         }
       } else if (referenceImageUrls.length > 0) {
         // For Scene 0: Use reference image as seed image if available
         seedImageUrl = referenceImageUrls[0];
-        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl.substring(0, 80) + '...');
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
       }
 
       // Generate 5 images in parallel
@@ -217,6 +270,11 @@ export default function EditorView() {
           // Strategy: Use seed frame as seed image for image-to-image generation
           // For Scene 0: Use reference image as seed image if available
           // For Scenes 1-4: Use seed frame from previous scene as seed image
+          // Get prompt adjustment mode from runtime config
+          const { getRuntimeConfig } = await import('@/lib/config/model-runtime');
+          const runtimeConfig = getRuntimeConfig();
+          const promptAdjustmentMode = runtimeConfig.promptAdjustmentMode || 'scene-specific';
+
           const response = await generateImage({
             prompt: currentScene.imagePrompt,
             projectId: project.id,
@@ -225,6 +283,7 @@ export default function EditorView() {
             referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
             seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
             negativePrompt: currentScene.negativePrompt, // Optional negative prompt
+            promptAdjustmentMode, // Prompt adjustment mode from runtime config
           });
 
           // Check if predictionId exists
@@ -283,6 +342,7 @@ export default function EditorView() {
               };
               return updated;
             });
+            return { success: true, index };
           } else {
             throw new Error(statusResponse.error || 'Image generation failed');
           }
@@ -296,11 +356,31 @@ export default function EditorView() {
             };
             return updated;
           });
+          return { success: false, index, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
 
-      await Promise.all(imagePromises);
-      setSceneStatus(currentSceneIndex, 'image_ready');
+      const results = await Promise.all(imagePromises);
+      const successCount = results.filter(r => r.success).length;
+      
+      if (successCount > 0) {
+        // At least one image succeeded
+        setSceneStatus(currentSceneIndex, 'image_ready');
+      } else {
+        // All images failed - show error and reset status
+        const errorMessages = results
+          .filter(r => !r.success && r.error)
+          .map(r => r.error)
+          .filter((msg, idx, arr) => arr.indexOf(msg) === idx); // Unique errors
+        
+        const errorMessage = errorMessages.length > 0 
+          ? `All image generations failed. ${errorMessages[0]}`
+          : 'All image generations failed. Please try again.';
+        
+        console.error('[EditorView] All image generations failed:', errorMessages);
+        alert(errorMessage);
+        setSceneStatus(currentSceneIndex, 'pending');
+      }
     } catch (error) {
       console.error('Error generating images:', error);
     } finally {
@@ -314,6 +394,11 @@ export default function EditorView() {
   };
 
   const handleRegenerateVideo = async () => {
+    // Clear seed frames for current scene before regenerating
+    // This ensures new seed frames are extracted from the newly generated video
+    setSeedFrames(currentSceneIndex, []);
+    console.log(`[EditorView] Cleared seed frames for Scene ${currentSceneIndex + 1} before regeneration`);
+    
     // Regenerate video using the same logic as handleGenerateVideo
     await handleGenerateVideo();
   };
@@ -325,33 +410,32 @@ export default function EditorView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_video');
 
-      // For Scene 0: Use reference image directly (if available) for maximum consistency
+      // For Scene 0: Use generated scene image (with vehicle in context) instead of character reference
+      // This prevents the fade from character image to scene - video starts directly in the scene
       // For Scenes 1-4: Use selected generated image
       let imageToUse: string | undefined;
       
       if (currentSceneIndex === 0) {
-        // Scene 0: Use reference image directly for video generation
-        // This ensures the video looks like the input reference image
-        const referenceImageUrls = project.referenceImageUrls || [];
-        if (referenceImageUrls.length > 0) {
-          // Use the reference image (should be cleaned/background-removed)
-          // Reference image might be a URL or local path - handle both
-          const refImage = referenceImageUrls[0];
-          if (refImage.startsWith('http://') || refImage.startsWith('https://')) {
-            // Already a URL, use it directly
-            imageToUse = refImage;
-            console.log('[EditorView] Scene 0: Using reference image URL directly for video generation');
-          } else {
-            // Local path, will be uploaded to S3
-            imageToUse = refImage;
-            console.log('[EditorView] Scene 0: Using reference image (local path) for video generation - will upload to S3');
-          }
-        } else if (selectedImage) {
-          // Fallback to generated image if no reference image
+        // Scene 0: Prioritize generated scene image (which includes vehicle in scene context)
+        // This ensures the video starts directly in the scene without fading from character image
+        if (selectedImage) {
           imageToUse = selectedImage.localPath;
-          console.warn('[EditorView] Scene 0: No reference image available, using generated image as fallback');
+          console.log('[EditorView] Scene 0: Using generated scene image (with vehicle in context) for video generation');
         } else {
-          throw new Error('No image available for video generation. Please upload a reference image or generate an image first.');
+          // Fallback to reference image if no generated scene image available
+          const referenceImageUrls = project.referenceImageUrls || [];
+          if (referenceImageUrls.length > 0) {
+            const refImage = referenceImageUrls[0];
+            if (refImage.startsWith('http://') || refImage.startsWith('https://')) {
+              imageToUse = refImage;
+              console.log('[EditorView] Scene 0: No generated image available, using reference image URL as fallback');
+            } else {
+              imageToUse = refImage;
+              console.log('[EditorView] Scene 0: No generated image available, using reference image (local path) as fallback');
+            }
+          } else {
+            throw new Error('No image available for video generation. Please generate a scene image first.');
+          }
         }
       } else {
         // Scenes 1-4: Use selected generated image
@@ -363,6 +447,9 @@ export default function EditorView() {
       }
 
       // Upload image to S3 if it's a local path, otherwise use the URL directly
+      if (!imageToUse) {
+        throw new Error('No image available for video generation');
+      }
       let s3Url: string;
       if (imageToUse.startsWith('http://') || imageToUse.startsWith('https://')) {
         // Already a public URL, use it directly
@@ -404,13 +491,17 @@ export default function EditorView() {
         }
       }
 
+      // Get scene duration (customDuration takes precedence over suggestedDuration)
+      const sceneDuration = currentScene.customDuration || currentScene.suggestedDuration;
+      
       // Generate video
       const videoResponse = await generateVideo(
         s3Url,
         currentScene.imagePrompt,
         project.id,
         currentSceneIndex,
-        seedFrameUrl // Pass seed frame for scenes 1-4
+        seedFrameUrl, // Pass seed frame for scenes 1-4
+        sceneDuration // Pass scene-specific duration (will be rounded up to model-acceptable values)
       );
 
       // Poll for video completion (pass projectId and sceneIndex to trigger download)
@@ -424,6 +515,7 @@ export default function EditorView() {
       });
 
       if (videoStatus.status === 'succeeded' && videoStatus.videoPath) {
+        // Set the video path for the current scene
         setVideoPath(currentSceneIndex, videoStatus.videoPath);
         setSceneStatus(currentSceneIndex, 'video_ready');
 
@@ -437,18 +529,63 @@ export default function EditorView() {
         if (currentSceneIndex < 4) {
           setIsExtractingFrames(true);
           try {
-            // Check if video path is a URL (Replicate URL) or local path
+            // Clear any existing seed frames for this scene before extracting new ones
+            // This ensures we only use frames from the current video generation
+            setSeedFrames(currentSceneIndex, []);
+            console.log(`[EditorView] Cleared existing seed frames for Scene ${currentSceneIndex + 1} before extraction`);
+            
+            // IMPORTANT: Use the video path from videoStatus (which we just received)
+            // and verify it's for the correct scene index
             let videoPath = videoStatus.videoPath;
+            
+            // Verify the video path matches the current scene index
+            // Video files are named like: scene-{sceneIndex}-{timestamp}.mp4
+            const sceneIndexInPath = videoPath.match(/scene-(\d+)-/);
+            if (sceneIndexInPath) {
+              const pathSceneIndex = parseInt(sceneIndexInPath[1]);
+              if (pathSceneIndex !== currentSceneIndex) {
+                console.error(`[EditorView] CRITICAL: Video path scene index mismatch!`);
+                console.error(`[EditorView] Expected scene ${currentSceneIndex}, but video path contains scene ${pathSceneIndex}`);
+                console.error(`[EditorView] Video path: ${videoPath}`);
+                console.error(`[EditorView] This will cause seed frames to be extracted from the wrong scene!`);
+                // Try to get the correct video path from scene state (might be updated by now)
+                const currentSceneState = scenes[currentSceneIndex];
+                const currentSelectedVideo = currentSceneState?.generatedVideos?.find((v: GeneratedVideo) => v.id === currentSceneState.selectedVideoId)
+                  || (currentSceneState?.videoLocalPath ? { localPath: currentSceneState.videoLocalPath } : undefined);
+                if (currentSelectedVideo?.localPath) {
+                  const correctPathSceneIndex = currentSelectedVideo.localPath.match(/scene-(\d+)-/);
+                  if (correctPathSceneIndex && parseInt(correctPathSceneIndex[1]) === currentSceneIndex) {
+                    console.log(`[EditorView] Using corrected video path from scene state: ${currentSelectedVideo.localPath}`);
+                    videoPath = currentSelectedVideo.localPath;
+                  } else {
+                    throw new Error(`Cannot extract seed frames: Video path is for scene ${pathSceneIndex}, but we need scene ${currentSceneIndex}`);
+                  }
+                } else {
+                  throw new Error(`Cannot extract seed frames: Video path is for scene ${pathSceneIndex}, but we need scene ${currentSceneIndex}`);
+                }
+              } else {
+                console.log(`[EditorView] ✓ Verified: Video path matches current scene ${currentSceneIndex + 1}`);
+              }
+            } else {
+              console.warn(`[EditorView] Could not verify scene index in video path: ${videoPath}`);
+              console.warn(`[EditorView] Proceeding with extraction, but path format may be unexpected`);
+            }
+            
+            console.log(`[EditorView] Extracting seed frames from Scene ${currentSceneIndex + 1} video: ${videoPath}`);
+            console.log(`[EditorView] Calling extractFrames with sceneIndex=${currentSceneIndex} (Scene ${currentSceneIndex + 1})`);
 
             // If it's a URL, we can't extract frames from it directly
             if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
               console.warn('Video path is a URL, cannot extract frames. Expected local path.');
             } else {
+              // Double-check the video file exists and matches the scene
+              console.log(`[EditorView] Verifying video file exists and is for correct scene...`);
               const response = await extractFrames(
                 videoPath,
                 project.id,
                 currentSceneIndex
               );
+              console.log(`[EditorView] ✓ extractFrames completed for Scene ${currentSceneIndex + 1}, got ${response.frames?.length || 0} frames`);
 
               if (response.frames && response.frames.length > 0) {
                 // Upload seed frames to S3 so they can be used for video generation
@@ -511,7 +648,7 @@ export default function EditorView() {
   };
 
   const handleApproveAndContinue = async () => {
-    if (!project?.id || !sceneState?.videoLocalPath) return;
+    if (!project?.id || !selectedVideo) return;
 
     // Mark current scene as completed
     setSceneStatus(currentSceneIndex, 'completed');
@@ -528,6 +665,7 @@ export default function EditorView() {
   };
 
   const handleSelectSeedFrame = (frameIndex: number) => {
+    // Just select the frame - the checkbox controls whether it's actually used
     selectSeedFrame(currentSceneIndex, frameIndex);
   };
 
@@ -542,8 +680,23 @@ export default function EditorView() {
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
         : [];
       setCustomImageFiles([]);
-      setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      // Populate droppedImageUrls with saved images so they're preserved when adding new ones
+      setDroppedImageUrls(imageInputs.map((url: string) => {
+        // Convert serveable URLs back to original paths if needed
+        if (url.startsWith('/api/serve-image?path=')) {
+          return decodeURIComponent(url.split('path=')[1]);
+        }
+        return url;
+      }));
+      // Set previews with properly formatted URLs
+      setCustomImagePreviews(imageInputs.map((url: string) => {
+        // Convert local paths to serveable URLs for preview
+        let previewUrl = url;
+        if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/api') && !url.startsWith('blob:')) {
+          previewUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+        }
+        return { url: previewUrl, source: 'media' as const };
+      }));
       setIsEditingPrompt(true);
       setIsPromptExpanded(true);
     } else {
@@ -639,7 +792,7 @@ export default function EditorView() {
     // Search in generated images
     for (const scene of scenes) {
       if (scene.generatedImages) {
-        const image = scene.generatedImages.find(img => img.id === itemId);
+        const image = scene.generatedImages.find((img: GeneratedImage) => img.id === itemId);
         if (image) {
           // Return the URL - could be local path or S3 URL
           return image.url || image.localPath || null;
@@ -650,7 +803,7 @@ export default function EditorView() {
     // Search in seed frames
     for (const scene of scenes) {
       if (scene.seedFrames) {
-        const frame = scene.seedFrames.find(f => f.id === itemId);
+        const frame = scene.seedFrames.find((f: SeedFrame) => f.id === itemId);
         if (frame) {
           // Return the URL - could be S3 URL or local path
           return frame.url || frame.localPath || null;
@@ -661,7 +814,7 @@ export default function EditorView() {
     // Search in uploaded images
     if (project?.uploadedImages) {
       // Check original images
-      const uploadedImage = project.uploadedImages.find(img => img.id === itemId);
+      const uploadedImage = project.uploadedImages.find((img: UploadedImage) => img.id === itemId);
       if (uploadedImage) {
         return uploadedImage.url || uploadedImage.localPath || null;
       }
@@ -669,7 +822,7 @@ export default function EditorView() {
       // Check processed versions
       for (const uploadedImage of project.uploadedImages) {
         if (uploadedImage.processedVersions) {
-          const processed = uploadedImage.processedVersions.find(p => p.id === itemId);
+          const processed = uploadedImage.processedVersions.find((p: ProcessedImage) => p.id === itemId);
           if (processed) {
             return processed.url || processed.localPath || null;
           }
@@ -803,21 +956,24 @@ export default function EditorView() {
       const mediaUrls: string[] = [];
       const fileUrls: string[] = [];
 
-      // Get URLs from media drawer drops
-      if (droppedImageUrls.length > 0) {
-        mediaUrls.push(...droppedImageUrls);
-      } else {
-        // Get URLs from existing media previews
-        customImagePreviews
-          .filter(p => p.source === 'media')
-          .forEach(preview => {
-            // Extract original URL from preview (remove /api/serve-image wrapper if present)
-            const url = preview.url.startsWith('/api/serve-image?path=')
-              ? decodeURIComponent(preview.url.split('path=')[1])
-              : preview.url;
-            mediaUrls.push(url);
-          });
-      }
+      // Get URLs from media drawer drops (primary source)
+      // Also include any media previews that aren't in droppedImageUrls yet
+      const existingMediaUrls = new Set(droppedImageUrls);
+      customImagePreviews
+        .filter(p => p.source === 'media')
+        .forEach(preview => {
+          // Extract original URL from preview (remove /api/serve-image wrapper if present)
+          const url = preview.url.startsWith('/api/serve-image?path=')
+            ? decodeURIComponent(preview.url.split('path=')[1])
+            : preview.url;
+          // Only add if not already in droppedImageUrls
+          if (!existingMediaUrls.has(url)) {
+            existingMediaUrls.add(url);
+          }
+        });
+      
+      // Use all collected media URLs
+      mediaUrls.push(...Array.from(existingMediaUrls));
 
       // Upload files if any were selected (only if not skipping)
       if (!skipImages && customImageFiles.length > 0 && project) {
@@ -912,8 +1068,23 @@ export default function EditorView() {
       ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
       : [];
     setCustomImageFiles([]);
-    setDroppedImageUrls([]);
-    setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+    // Populate droppedImageUrls with saved images
+    setDroppedImageUrls(imageInputs.map((url: string) => {
+      // Convert serveable URLs back to original paths if needed
+      if (url.startsWith('/api/serve-image?path=')) {
+        return decodeURIComponent(url.split('path=')[1]);
+      }
+      return url;
+    }));
+    // Set previews with properly formatted URLs
+    setCustomImagePreviews(imageInputs.map((url: string) => {
+      // Convert local paths to serveable URLs for preview
+      let previewUrl = url;
+      if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/api') && !url.startsWith('blob:')) {
+        previewUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+      }
+      return { url: previewUrl, source: 'media' as const };
+    }));
     
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -995,12 +1166,13 @@ export default function EditorView() {
                         />
                       </div>
 
-                      {/* Duration (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
-                        </label>
-                        <div className="flex items-center gap-4">
+                      {/* Duration and Use Seed Frame - Side by Side */}
+                      <div className="flex items-start gap-8">
+                        {/* Duration (Optional) */}
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-white mb-1">
+                            Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
+                          </label>
                           <div className="flex items-center gap-2">
                             <input
                               type="number"
@@ -1017,19 +1189,24 @@ export default function EditorView() {
                             />
                             <span className="text-xs text-white/60">seconds</span>
                           </div>
+                        </div>
+                        
+                        {/* Use Seed Frame Toggle */}
+                        {currentSceneIndex > 0 && (() => {
+                          const previousScene = scenes[currentSceneIndex - 1];
+                          const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
+                          const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
+                          const seedFrameUrl = seedFrame?.url 
+                            ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
+                                ? seedFrame.url
+                                : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
+                            : null;
                           
-                          {/* Use Seed Frame Toggle */}
-                          {currentSceneIndex > 0 && (() => {
-                            const previousScene = scenes[currentSceneIndex - 1];
-                            const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
-                            const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
-                            const seedFrameUrl = seedFrame?.url 
-                              ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
-                                  ? seedFrame.url
-                                  : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
-                              : null;
-                            
-                            return (
+                          return (
+                            <div className="flex-1">
+                              <label className="block text-xs font-medium text-white mb-1">
+                                Use seed frame
+                              </label>
                               <div className="flex items-center gap-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                   <input
@@ -1056,9 +1233,9 @@ export default function EditorView() {
                                   </div>
                                 )}
                               </div>
-                            );
-                          })()}
-                        </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Image Input (Optional) */}
@@ -1160,7 +1337,7 @@ export default function EditorView() {
 
       {/* Main Preview Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {!sceneHasImage && !sceneHasVideo && (
+        {!sceneHasImage && !sceneHasVideo && !isGeneratingImage && (
           <div className="flex flex-col items-center justify-center h-full bg-white/5 rounded-lg border-2 border-dashed border-white/20">
             <ImageIcon className="w-12 h-12 text-white/40 mb-4" />
             <p className="text-sm text-white/60 mb-4">
@@ -1171,17 +1348,8 @@ export default function EditorView() {
               disabled={isGeneratingImage}
               className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
             >
-              {isGeneratingImage ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating 5 images...
-                </>
-              ) : (
-                <>
-                  <ImageIcon className="w-4 h-4" />
-                  Generate Images
-                </>
-              )}
+              <ImageIcon className="w-4 h-4" />
+              Generate Images
             </button>
           </div>
         )}
@@ -1225,13 +1393,13 @@ export default function EditorView() {
                     onDoubleClick={() => !isGenerating && image.localPath && setPreviewImage(image)}
                     className={`relative aspect-video rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
                       isSelected && !isGenerating
-                        ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        ? 'border-white ring-2 ring-white/20'
+                        : 'border-white/20 hover:border-white/40'
                     } ${isGenerating ? 'cursor-not-allowed' : ''}`}
                   >
                     {isLoading ? (
-                      <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
                       </div>
                     ) : image.localPath ? (
                       <>
@@ -1241,14 +1409,14 @@ export default function EditorView() {
                           className="w-full h-full object-cover"
                         />
                         {isSelected && !isGenerating && (
-                          <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full p-1">
+                          <div className="absolute top-2 right-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white rounded-full p-1">
                             <CheckCircle2 className="w-4 h-4" />
                           </div>
                         )}
                       </>
                     ) : (
-                      <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        <ImageIcon className="w-8 h-8 text-gray-400" />
+                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                        <ImageIcon className="w-8 h-8 text-white/40" />
                       </div>
                     )}
               </div>
@@ -1256,8 +1424,8 @@ export default function EditorView() {
               })}
             </div>
 
-            {/* Generate Video Button */}
-            {selectedImage && !isGeneratingImage && (
+            {/* Generate Video Button - Show as soon as one image is ready */}
+            {selectedImage && selectedImage.localPath && (
             <button
               onClick={handleGenerateVideo}
               disabled={isGeneratingVideo}
@@ -1271,7 +1439,11 @@ export default function EditorView() {
               ) : (
                 <>
                   <Video className="w-5 h-5" />
-                    Generate Video from Selected Image
+                  {isGeneratingImage ? (
+                    <>Generate Video from Selected Image (other images still generating...)</>
+                  ) : (
+                    <>Generate Video from Selected Image</>
+                  )}
                 </>
               )}
             </button>
@@ -1284,11 +1456,7 @@ export default function EditorView() {
             {/* Video Preview */}
             <div className="relative">
               <VideoPlayer
-                src={sceneState?.videoLocalPath ? (
-                  sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
-                    ? sceneState.videoLocalPath // Use Replicate URL directly
-                    : `/api/serve-video?path=${encodeURIComponent(sceneState.videoLocalPath)}` // Use local path via API
-                ) : undefined}
+                src={videoUrl}
                 className="w-full"
               />
               {/* Regenerate Button */}

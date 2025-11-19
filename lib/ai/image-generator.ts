@@ -179,9 +179,9 @@ export async function createImagePrediction(
       console.log(`${logPrefix} Using Gen-4 Image reference_images with ${referenceImageUrls.length} reference image(s) for object consistency`);
     } else {
       // FLUX models use IP-Adapter
-      input.ip_adapter_images = referenceImageUrls;
-      input.ip_adapter_scale = ipAdapterScale ?? DEFAULT_IP_ADAPTER_SCALE;
-      console.log(`${logPrefix} Using IP-Adapter with ${referenceImageUrls.length} reference image(s) for object consistency`);
+    input.ip_adapter_images = referenceImageUrls;
+    input.ip_adapter_scale = ipAdapterScale ?? DEFAULT_IP_ADAPTER_SCALE;
+    console.log(`${logPrefix} Using IP-Adapter with ${referenceImageUrls.length} reference image(s) for object consistency`);
     }
   }
 

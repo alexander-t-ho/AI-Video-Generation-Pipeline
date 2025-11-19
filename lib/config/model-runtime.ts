@@ -16,6 +16,8 @@ import {
 
 export type ModelCategory = 'text' | 't2i' | 'i2i' | 'video';
 
+export type PromptAdjustmentMode = 'disabled' | 'less-aggressive' | 'scene-specific';
+
 export interface RuntimeModelConfig {
   text: string;
   t2i: string;
@@ -23,6 +25,7 @@ export interface RuntimeModelConfig {
   video: string;
   enableBackgroundRemoval?: boolean; // Optional: Enable/disable background removal on upload
   edgeCleanupIterations?: number; // Optional: Number of edge cleanup passes (0-3, default: 1)
+  promptAdjustmentMode?: PromptAdjustmentMode; // Optional: How to adjust prompts when reference images are present (default: 'scene-specific')
 }
 
 const STORAGE_KEY = 'ai-pipeline-runtime-models';
@@ -37,6 +40,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeModelConfig = {
   video: AVAILABLE_VIDEO_MODELS[0].id, // wan-2.2 (fast and cost-effective)
   enableBackgroundRemoval: true, // Default: enabled
   edgeCleanupIterations: 1, // Default: 1 iteration
+  promptAdjustmentMode: 'scene-specific', // Default: Scene 1 uses full prompt, others use adjusted
 };
 
 /**
@@ -60,6 +64,10 @@ export function getRuntimeConfig(): RuntimeModelConfig {
         // Ensure edgeCleanupIterations has a default if not present
         if (parsed.edgeCleanupIterations === undefined) {
           parsed.edgeCleanupIterations = DEFAULT_RUNTIME_CONFIG.edgeCleanupIterations;
+        }
+        // Ensure promptAdjustmentMode has a default if not present
+        if (parsed.promptAdjustmentMode === undefined) {
+          parsed.promptAdjustmentMode = DEFAULT_RUNTIME_CONFIG.promptAdjustmentMode;
         }
         return parsed;
       }

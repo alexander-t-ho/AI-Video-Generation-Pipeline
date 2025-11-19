@@ -162,7 +162,7 @@ export default function AgentChat() {
 
   return (
     <div className="py-2">
-      {chatMessages.map((message, index) => renderMessage(message, index))}
+      {chatMessages.map((message: ChatMessage, index: number) => renderMessage(message, index))}
     </div>
   );
 }

@@ -326,3 +326,4 @@ echo "# Poll Image Status:"
 echo "curl '$BASE_URL/api/generate-image/PREDICTION_ID?projectId=$PROJECT_ID&sceneIndex=0'"
 echo ""
 
+

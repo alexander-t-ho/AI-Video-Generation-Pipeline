@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { ProjectState, Scene, SceneWithState, GeneratedImage, SeedFrame, ValidationStage, AngleType } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -24,24 +24,24 @@ interface ProjectStore {
   // Character validation state
   needsCharacterValidation: boolean;
   hasUploadedImages: boolean;
-  characterValidationStage: ValidationStage;
-  mainReferenceImage: CharacterReferenceImage | null;
-  angleReferenceImages: Record<AngleType, CharacterReferenceImage>;
-  selectedAngles: AngleType[];
-  currentAngleIndex: number;
-  characterReferenceModel: string; // For dev panel override
-  angleGenerationMethod: 'turnaround' | 'sequential';
-  consistencyCheckResult: { score: number; issues: string[] } | null;
-  
+
   // UI state
   viewMode: ViewMode;
   currentSceneIndex: number;
   mediaDrawer: MediaDrawerState;
   dragDrop: DragDropState;
   chatMessages: ChatMessage[];
-  
+
   // Scene state (extended scenes with generation state)
   scenes: SceneWithState[];
+
+  // Timeline state
+  timelineClips: TimelineClip[];
+
+  // Timeline undo/redo history
+  timelineHistory: TimelineClip[][];
+  timelineFuture: TimelineClip[][];
+  selectedClipId: string | null;
   
   // Workflow state (Phase 5.1.2)
   currentWorkflowStep: WorkflowStep;
@@ -76,6 +76,8 @@ interface ProjectStore {
   addGeneratedImage: (sceneIndex: number, image: GeneratedImage) => void;
   selectImage: (sceneIndex: number, imageId: string) => void;
   setVideoPath: (sceneIndex: number, videoPath: string, actualDuration?: number) => void;
+  addGeneratedVideo: (sceneIndex: number, video: GeneratedVideo) => void;
+  selectVideo: (sceneIndex: number, videoId: string) => void;
   setSeedFrames: (sceneIndex: number, frames: SeedFrame[]) => void;
   selectSeedFrame: (sceneIndex: number, frameIndex: number) => void;
   setFinalVideo: (url: string, s3Key?: string) => void;
@@ -116,25 +118,6 @@ interface ProjectStore {
   setHasUploadedImages: (has: boolean) => void;
   setUploadedImageUrls: (urls: string[]) => void;
   
-  // Brand identity context management
-  setAssetDescription: (description: string) => void;
-  setSelectedColor: (color: string) => void;
-  setCurrentReferenceImageUrl: (url: string) => void;
-
-  // Character validation state management
-  setCharacterValidationStage: (stage: ValidationStage) => void;
-  setMainReferenceImage: (image: CharacterReferenceImage) => void;
-  setAngleReferenceImage: (angleType: AngleType, image: CharacterReferenceImage) => void;
-  removeAngleReferenceImage: (angleType: AngleType) => void;
-  setSelectedAngles: (angles: AngleType[]) => void;
-  addSelectedAngle: (angle: AngleType) => void;
-  removeSelectedAngle: (angle: AngleType) => void;
-  selectAllAngles: () => void;
-  setCurrentAngleIndex: (index: number) => void;
-  setCharacterReferenceModel: (model: string) => void;
-  setAngleGenerationMethod: (method: 'turnaround' | 'sequential') => void;
-  setConsistencyCheckResult: (result: { score: number; issues: string[] } | null) => void;
-
   reset: () => void;
 }
 
@@ -152,20 +135,16 @@ const initialState = {
   },
   chatMessages: [],
   scenes: [] as SceneWithState[],
+  timelineClips: [] as TimelineClip[],
+  timelineHistory: [] as TimelineClip[][],
+  timelineFuture: [] as TimelineClip[][],
+  selectedClipId: null as string | null,
   currentWorkflowStep: 'idle' as WorkflowStep,
   isWorkflowPaused: false,
   processingSceneIndex: null as number | null,
   sceneErrors: {} as Record<number, { message: string; timestamp: string; retryable: boolean }>,
   needsCharacterValidation: false,
   hasUploadedImages: false,
-  characterValidationStage: 'confirmation' as ValidationStage,
-  mainReferenceImage: null,
-  angleReferenceImages: {} as Record<AngleType, CharacterReferenceImage>,
-  selectedAngles: [] as AngleType[],
-  currentAngleIndex: 0,
-  characterReferenceModel: 'black-forest-labs/flux-1.1-pro', // Default model for character references (faster)
-  angleGenerationMethod: 'sequential' as 'turnaround' | 'sequential', // Changed to sequential for separate file generation
-  consistencyCheckResult: null,
 };
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -382,12 +361,83 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set((state) => {
       const updatedScenes = [...state.scenes];
       if (updatedScenes[sceneIndex]) {
+        // Create a GeneratedVideo object for the new video
+        const videoId = uuidv4();
+        const newVideo: GeneratedVideo = {
+          id: videoId,
+          url: videoPath.startsWith('http://') || videoPath.startsWith('https://') 
+            ? videoPath 
+            : `/api/serve-video?path=${encodeURIComponent(videoPath)}`,
+          localPath: videoPath,
+          actualDuration,
+          timestamp: new Date().toISOString(),
+        };
+        
+        // Add to generatedVideos array (or create array if it doesn't exist)
+        const existingVideos = updatedScenes[sceneIndex].generatedVideos || [];
+        
         updatedScenes[sceneIndex] = {
           ...updatedScenes[sceneIndex],
+          generatedVideos: [...existingVideos, newVideo],
+          selectedVideoId: videoId, // Auto-select the newly generated video
+          // Keep backward compatibility
           videoLocalPath: videoPath,
           actualDuration,
           status: 'video_ready',
         };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+  
+  addGeneratedVideo: (sceneIndex: number, video: GeneratedVideo) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]) {
+        const existingVideos = updatedScenes[sceneIndex].generatedVideos || [];
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          generatedVideos: [...existingVideos, video],
+          // Auto-select if no video is currently selected
+          selectedVideoId: updatedScenes[sceneIndex].selectedVideoId || video.id,
+          // Update backward compatibility fields if this is the selected video
+          ...(updatedScenes[sceneIndex].selectedVideoId === video.id || !updatedScenes[sceneIndex].selectedVideoId ? {
+            videoLocalPath: video.localPath,
+            actualDuration: video.actualDuration,
+          } : {}),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+  
+  selectVideo: (sceneIndex: number, videoId: string) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]) {
+        // If videoId is empty string, deselect
+        if (!videoId) {
+          updatedScenes[sceneIndex] = {
+            ...updatedScenes[sceneIndex],
+            selectedVideoId: undefined,
+            // Keep backward compatibility but clear it
+            videoLocalPath: undefined,
+            actualDuration: undefined,
+            videoS3Key: undefined,
+          };
+        } else {
+          const video = updatedScenes[sceneIndex].generatedVideos?.find(v => v.id === videoId);
+          if (video) {
+            updatedScenes[sceneIndex] = {
+              ...updatedScenes[sceneIndex],
+              selectedVideoId: videoId,
+              // Update backward compatibility fields
+              videoLocalPath: video.localPath,
+              actualDuration: video.actualDuration,
+              videoS3Key: video.s3Key,
+            };
+          }
+        }
       }
       return { scenes: updatedScenes };
     });
@@ -655,7 +705,14 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     
     const { stitchVideos } = await import('@/lib/api-client');
     const videoPaths = state.scenes
-      .map(s => s.videoLocalPath)
+      .map(s => {
+        // Use selected video if available, otherwise fallback to videoLocalPath for backward compatibility
+        if (s.selectedVideoId && s.generatedVideos) {
+          const selectedVideo = s.generatedVideos.find(v => v.id === s.selectedVideoId);
+          return selectedVideo?.localPath;
+        }
+        return s.videoLocalPath;
+      })
       .filter((path): path is string => !!path);
     
     if (videoPaths.length === 0) throw new Error('No videos available');
@@ -791,151 +848,6 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     });
   },
   
-  // Brand identity context management
-  setAssetDescription: (description: string) => {
-    set((state) => {
-      // Create project if it doesn't exist (for brand identity flow)
-      if (!state.project) {
-        const newProject: ProjectState = {
-          id: uuidv4(),
-          prompt: `Brand identity for ${description}`,
-          targetDuration: 15,
-          status: 'storyboard',
-          createdAt: new Date().toISOString(),
-          storyboard: [],
-          currentSceneIndex: 0,
-          assetDescription: description,
-        };
-        return { project: newProject };
-      }
-      
-      return {
-        project: {
-          ...state.project,
-          assetDescription: description,
-        },
-      };
-    });
-  },
-  
-  setSelectedColor: (color: string) => {
-    set((state) => {
-      // Create project if it doesn't exist (for brand identity flow)
-      if (!state.project) {
-        const newProject: ProjectState = {
-          id: uuidv4(),
-          prompt: 'Brand identity project',
-          targetDuration: 15,
-          status: 'storyboard',
-          createdAt: new Date().toISOString(),
-          storyboard: [],
-          currentSceneIndex: 0,
-          selectedColor: color,
-        };
-        return { project: newProject };
-      }
-      
-      return {
-        project: {
-          ...state.project,
-          selectedColor: color,
-        },
-      };
-    });
-  },
-  
-  setCurrentReferenceImageUrl: (url: string) => {
-    set((state) => {
-      // Create project if it doesn't exist (for brand identity flow)
-      if (!state.project) {
-        const newProject: ProjectState = {
-          id: uuidv4(),
-          prompt: 'Brand identity project',
-          targetDuration: 15,
-          status: 'storyboard',
-          createdAt: new Date().toISOString(),
-          storyboard: [],
-          currentSceneIndex: 0,
-          currentReferenceImageUrl: url,
-        };
-        return { project: newProject };
-      }
-      
-      return {
-        project: {
-          ...state.project,
-          currentReferenceImageUrl: url,
-        },
-      };
-    });
-  },
-
-  // Character validation state management
-  setCharacterValidationStage: (stage: ValidationStage) => {
-    set({ characterValidationStage: stage });
-  },
-
-  setMainReferenceImage: (image: CharacterReferenceImage) => {
-    set({ mainReferenceImage: image });
-  },
-
-  setAngleReferenceImage: (angleType: AngleType, image: CharacterReferenceImage) => {
-    set((state) => ({
-      angleReferenceImages: {
-        ...state.angleReferenceImages,
-        [angleType]: image,
-      },
-    }));
-  },
-
-  removeAngleReferenceImage: (angleType: AngleType) => {
-    set((state) => {
-      const updated = { ...state.angleReferenceImages };
-      delete updated[angleType];
-      return { angleReferenceImages: updated };
-    });
-  },
-
-  setSelectedAngles: (angles: AngleType[]) => {
-    set({ selectedAngles: angles });
-  },
-
-  addSelectedAngle: (angle: AngleType) => {
-    set((state) => ({
-      selectedAngles: state.selectedAngles.includes(angle)
-        ? state.selectedAngles
-        : [...state.selectedAngles, angle],
-    }));
-  },
-
-  removeSelectedAngle: (angle: AngleType) => {
-    set((state) => ({
-      selectedAngles: state.selectedAngles.filter(a => a !== angle),
-    }));
-  },
-
-  selectAllAngles: () => {
-    set({
-      selectedAngles: ['front', 'rear', 'left-side', 'right-side', 'front-left-45', 'front-right-45', 'top', 'low-angle']
-    });
-  },
-
-  setCurrentAngleIndex: (index: number) => {
-    set({ currentAngleIndex: index });
-  },
-
-  setCharacterReferenceModel: (model: string) => {
-    set({ characterReferenceModel: model });
-  },
-
-  setAngleGenerationMethod: (method: 'turnaround' | 'sequential') => {
-    set({ angleGenerationMethod: method });
-  },
-
-  setConsistencyCheckResult: (result: { score: number; issues: string[] } | null) => {
-    set({ consistencyCheckResult: result });
-  },
-
   reset: () => {
     set(initialState);
   },

@@ -12,6 +12,7 @@ import https from 'https';
 import http from 'http';
 
 import { VIDEO_CONFIG } from '@/lib/config/ai-models';
+import { enhanceVideoPrompt } from '@/lib/utils/video-prompt-enhancer';
 
 // ============================================================================
 // Constants
@@ -92,20 +93,19 @@ function createReplicateClient(): Replicate {
 
 /**
  * Validates and adjusts duration based on model requirements
+ * Rounds UP to the next acceptable duration (never rounds down)
  * @param duration Requested duration in seconds
  * @param model Model identifier
- * @returns Valid duration for the model
+ * @returns Valid duration for the model (rounded up)
  */
 function validateAndAdjustDuration(duration: number, model: string): number {
   // Google Veo 3.1 Fast only accepts 4, 6, or 8 seconds
   if (model.includes('veo-3.1-fast') || model.includes('google/veo-3.1-fast')) {
     const validDurations = [4, 6, 8];
-    // Find the closest valid duration
-    const adjusted = validDurations.reduce((prev, curr) => 
-      Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
-    );
+    // Find the next valid duration that is >= requested duration (round UP)
+    const adjusted = validDurations.find(d => d >= duration) || validDurations[validDurations.length - 1];
     if (adjusted !== duration) {
-      console.log(`[VideoGenerator] Adjusted duration from ${duration}s to ${adjusted}s for ${model}`);
+      console.log(`[VideoGenerator] Rounded duration UP from ${duration}s to ${adjusted}s for ${model}`);
     }
     return adjusted;
   }
@@ -125,12 +125,14 @@ function validateAndAdjustDuration(duration: number, model: string): number {
  * @param imageUrl Image URL to use as starting frame
  * @param prompt Text description of desired motion/action
  * @param seedFrame Optional seed frame URL (for Scene 1-4)
+ * @param duration Optional duration in seconds (will be rounded up to model-acceptable values)
  * @returns Prediction ID
  */
 export async function createVideoPrediction(
   imageUrl: string,
   prompt: string,
-  seedFrame?: string
+  seedFrame?: string,
+  duration?: number
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -147,7 +149,21 @@ export async function createVideoPrediction(
   console.log(`${logPrefix} Creating video prediction`);
   console.log(`${logPrefix} Timestamp: ${timestamp}`);
   console.log(`${logPrefix} Model: ${REPLICATE_MODEL}`);
-  console.log(`${logPrefix} Prompt: "${prompt}"`);
+  console.log(`${logPrefix} Original Prompt: "${prompt}"`);
+  
+  // Enhance the prompt for video generation (especially for automotive content)
+  const { enhancedPrompt, negativePrompt } = enhanceVideoPrompt(prompt, {
+    ensureHeadlights: true,
+    ensureCorrectWheelRotation: true,
+    addMotionDetails: true,
+    useNegativePrompt: true,
+  });
+  
+  console.log(`${logPrefix} Enhanced Prompt: "${enhancedPrompt}"`);
+  if (negativePrompt) {
+    console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
+  }
+  
   console.log(`${logPrefix} Inputs:`);
   console.log(`${logPrefix}   - Image URL: ${imageUrl}`);
   if (seedFrame) {
@@ -156,10 +172,11 @@ export async function createVideoPrediction(
   } else {
     console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
   }
-  // Validate and adjust duration based on model requirements
-  const validatedDuration = validateAndAdjustDuration(VIDEO_DURATION, REPLICATE_MODEL);
+  // Use provided duration or fall back to default, then validate and adjust
+  const requestedDuration = duration || VIDEO_DURATION;
+  const validatedDuration = validateAndAdjustDuration(requestedDuration, REPLICATE_MODEL);
   console.log(`${logPrefix} Settings:`);
-  console.log(`${logPrefix}   - Duration: ${validatedDuration}s${validatedDuration !== VIDEO_DURATION ? ` (adjusted from ${VIDEO_DURATION}s)` : ''}`);
+  console.log(`${logPrefix}   - Duration: ${validatedDuration}s${validatedDuration !== requestedDuration ? ` (rounded up from ${requestedDuration}s)` : ''}`);
   console.log(`${logPrefix}   - Resolution: ${VIDEO_RESOLUTION}`);
 
   const replicate = createReplicateClient();
@@ -191,7 +208,9 @@ export async function createVideoPrediction(
     } : {
       image: inputImageUrl,
     }),
-    prompt: prompt.trim(),
+    prompt: enhancedPrompt.trim(),
+    // Add negative prompt if available
+    ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // WAN models use 'duration' and 'resolution'
     // Gen-4 models may use different parameters - adjust if needed
     ...(isGen4 ? {
@@ -303,9 +322,10 @@ async function retryWithBackoff<T>(
 export async function createVideoPredictionWithRetry(
   imageUrl: string,
   prompt: string,
-  seedFrame?: string
+  seedFrame?: string,
+  duration?: number
 ): Promise<string> {
-  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame));
+  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration));
 }
 
 // ============================================================================

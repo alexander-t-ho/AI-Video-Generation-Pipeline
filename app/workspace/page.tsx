@@ -43,26 +43,60 @@ function WorkspaceContent() {
       return;
     }
 
+    // If we have a project in store, use it (even if projectId doesn't match - might be from navigation)
+    if (project && (!projectId || project.id === projectId)) {
+      // Project is already in store, no need to load
+      return;
+    }
+    
     // Load project if projectId is in URL but not in store
     if (projectId && !project) {
       setIsLoading(true);
-      loadProject(projectId)
-        .catch((error) => {
-          console.error('Failed to load project:', error);
-          // Don't redirect immediately - projects are in-memory only
-          // If project is not in store, it might be a navigation issue
-          // Wait a bit and check if project appears in store
-          setTimeout(() => {
-            const { project: currentProject } = projectStore.getState();
-            if (!currentProject) {
-              console.error('Project not found in store after retry, redirecting to home');
-              window.location.href = '/';
-            }
-          }, 500);
-        })
-        .finally(() => {
+      
+      // Wait for project to appear in store (it might be created asynchronously)
+      // Use multiple retries with progressive delays to handle race conditions
+      let retryCount = 0;
+      const maxRetries = 10; // Increased retries
+      const retryDelays = [100, 200, 300, 500, 500, 500, 500, 500, 500, 1000];
+      
+      const checkForProject = () => {
+        const { project: currentProject } = projectStore.getState();
+        if (currentProject && currentProject.id === projectId) {
+          // Project found, stop loading
+          console.log(`[Workspace] Project found in store after ${retryCount} retries`);
           setIsLoading(false);
-        });
+          return;
+        }
+        
+        retryCount++;
+        if (retryCount < maxRetries) {
+          const delay = retryDelays[retryCount - 1] || 500;
+          console.log(`[Workspace] Project ${projectId} not in store yet, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})...`);
+          setTimeout(checkForProject, delay);
+        } else {
+          // Still not available after all retries
+          console.error(`[Workspace] Project ${projectId} not found in store after ${maxRetries} retries`);
+          setIsLoading(false);
+          
+          // Try loading via API as last resort
+          loadProject(projectId)
+            .catch((error) => {
+              console.error('[Workspace] Failed to load project:', error);
+              // Only redirect if we're absolutely sure the project doesn't exist
+              // Give it one more check after a longer delay
+              setTimeout(() => {
+                const { project: finalCheck } = projectStore.getState();
+                if (!finalCheck || finalCheck.id !== projectId) {
+                  console.error('[Workspace] Project still not found, redirecting to home');
+                  window.location.href = '/';
+                }
+              }, 2000);
+            });
+        }
+      };
+      
+      // Start checking after initial delay
+      setTimeout(checkForProject, retryDelays[0]);
     } else if (!project && !projectId) {
       // Redirect to home if no project and no projectId
       window.location.href = '/';

@@ -2,7 +2,7 @@
  * Frame Extractor - FFmpeg Integration
  * 
  * This module handles extracting seed frames from video files using FFmpeg.
- * Extracts 5 frames from the last 0.5 seconds of a video for use as seed frames
+ * Extracts 5 frames from the last 1 second of a video for use as seed frames
  * in the next scene's video generation.
  */
 
@@ -20,10 +20,10 @@ const execAsync = promisify(exec);
 // ============================================================================
 
 const FRAME_COUNT = 5;
-const FRAME_DURATION = 0.5; // seconds from end
+const FRAME_DURATION = 1.0; // seconds from end (last 1 second)
 const FRAME_QUALITY = 2; // High quality (1-31, lower is better)
 const MAX_RETRIES = 1;
-const FRAME_TIMESTAMPS = [0.1, 0.2, 0.3, 0.4, 0.5]; // seconds from end
+const FRAME_TIMESTAMPS = [0.2, 0.4, 0.6, 0.8, 1.0]; // seconds from end (evenly spaced in last 1 second)
 
 // ============================================================================
 // Types
@@ -71,53 +71,64 @@ async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
 }
 
 /**
- * Extract frames from video using FFmpeg
+ * Extract frames from video using FFmpeg at specific timestamps
  */
 async function extractFramesWithFFmpeg(
   videoPath: string,
   outputDir: string,
-  startTime: number,
-  frameCount: number
+  videoDuration: number,
+  frameTimestamps: number[]
 ): Promise<string[]> {
   const framePaths: string[] = [];
 
   // Create output directory if it doesn't exist
   await fs.mkdir(outputDir, { recursive: true });
 
-  // Extract frames using FFmpeg
-  // -ss: seek to start time
-  // -vframes: number of frames to extract
-  // -q:v: quality (2 = high quality)
-  // -y: overwrite output files
-  const outputPattern = path.join(outputDir, 'frame_%d.png');
-  const command = `ffmpeg -ss ${startTime} -i "${videoPath}" -vframes ${frameCount} -q:v ${FRAME_QUALITY} -y "${outputPattern}"`;
-
-  try {
-    await execAsync(command);
+  // Extract frames at specific timestamps (relative to end of video)
+  // Each timestamp is relative to the end (e.g., 0.1 means 0.1s before the end)
+  // We need to calculate the absolute timestamp for each frame
+  for (let i = 0; i < frameTimestamps.length; i++) {
+    const relativeTimestamp = frameTimestamps[i];
+    // Calculate absolute timestamp: duration - relativeTimestamp
+    // e.g., if video is 3s long and relativeTimestamp is 0.1, extract at 2.9s
+    const absoluteTimestamp = Math.max(0, videoDuration - relativeTimestamp);
+    const framePath = path.join(outputDir, `frame_${i + 1}.png`);
     
-    // Verify frames were created
-    for (let i = 1; i <= frameCount; i++) {
-      const framePath = path.join(outputDir, `frame_${i}.png`);
+    // Extract single frame at specific timestamp
+    // Use output seeking (-ss after -i) for more accurate frame extraction
+    // Input seeking (-ss before -i) is faster but less accurate
+    // Output seeking is slower but ensures we get the exact frame at the timestamp
+    // -i: input file
+    // -ss: seek to specific time (output seeking for accuracy)
+    // -vframes 1: extract only 1 frame
+    // -q:v: quality (2 = high quality)
+    // -y: overwrite output file
+    const command = `ffmpeg -i "${videoPath}" -ss ${absoluteTimestamp} -vframes 1 -q:v ${FRAME_QUALITY} -y "${framePath}"`;
+
+    try {
+      await execAsync(command);
+      
+      // Verify frame was created
       try {
         await fs.access(framePath);
         framePaths.push(framePath);
       } catch {
-        throw new Error(`Frame ${i} was not created at ${framePath}`);
+        throw new Error(`Frame ${i + 1} was not created at ${framePath}`);
       }
-    }
-
-    return framePaths;
-  } catch (error: any) {
-    // Clean up any partial frames
-    for (const framePath of framePaths) {
-      try {
-        await fs.unlink(framePath);
-      } catch {
-        // Ignore cleanup errors
+    } catch (error: any) {
+      // Clean up any partial frames
+      for (const createdPath of framePaths) {
+        try {
+          await fs.unlink(createdPath);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
+      throw new Error(`FFmpeg frame extraction failed at timestamp ${relativeTimestamp}s: ${error.message}`);
     }
-    throw new Error(`FFmpeg frame extraction failed: ${error.message}`);
   }
+
+  return framePaths;
 }
 
 // ============================================================================
@@ -125,7 +136,7 @@ async function extractFramesWithFFmpeg(
 // ============================================================================
 
 /**
- * Extract 5 frames from the last 0.5 seconds of a video
+ * Extract 5 frames from the last 1 second of a video
  * 
  * @param videoPath - Path to the input video file
  * @param projectId - Project ID for organizing output files
@@ -163,14 +174,35 @@ export async function extractFrames(
     throw new Error(`Failed to get video info: ${error.message}`);
   }
 
-  // Calculate start time (last 0.5 seconds)
-  const startTime = Math.max(0, videoInfo.duration - FRAME_DURATION);
-
   // Create output directory
   const outputDir = path.join('/tmp', 'projects', projectId, 'frames', `scene-${sceneIndex}`);
   await fs.mkdir(outputDir, { recursive: true });
 
-  // Extract frames with retry logic
+  // Extract frames at specific timestamps (relative to end of video)
+  // FRAME_TIMESTAMPS are relative to the end: [0.2, 0.4, 0.6, 0.8, 1.0]
+  // This means: 0.2s before end, 0.4s before end, etc. (evenly spaced in last 1 second)
+  console.log(`[FrameExtractor] Extracting frames from video: ${videoPath}`);
+  console.log(`[FrameExtractor] Video duration: ${videoInfo.duration}s`);
+  console.log(`[FrameExtractor] Scene index: ${sceneIndex}`);
+  console.log(`[FrameExtractor] Frame timestamps (relative to end): ${FRAME_TIMESTAMPS.join(', ')}s`);
+  
+  // Calculate and log absolute timestamps for verification
+  const absoluteTimestamps = FRAME_TIMESTAMPS.map(ts => Math.max(0, videoInfo.duration - ts));
+  console.log(`[FrameExtractor] Absolute timestamps: ${absoluteTimestamps.map(ts => ts.toFixed(2)).join(', ')}s`);
+  
+  // Verify all timestamps are within video duration
+  const invalidTimestamps = absoluteTimestamps.filter(ts => ts >= videoInfo.duration);
+  if (invalidTimestamps.length > 0) {
+    throw new Error(`Cannot extract frames: Some timestamps (${invalidTimestamps.join(', ')}) are beyond video duration (${videoInfo.duration}s)`);
+  }
+  
+  // Verify we're extracting from the last 1 second
+  const earliestTimestamp = Math.min(...absoluteTimestamps);
+  const expectedEarliest = Math.max(0, videoInfo.duration - FRAME_DURATION);
+  if (Math.abs(earliestTimestamp - expectedEarliest) > 0.1) {
+    console.warn(`[FrameExtractor] Warning: Earliest timestamp (${earliestTimestamp.toFixed(2)}s) doesn't match expected (${expectedEarliest.toFixed(2)}s) for last ${FRAME_DURATION}s`);
+  }
+  
   let framePaths: string[] = [];
   let lastError: Error | null = null;
 
@@ -179,9 +211,10 @@ export async function extractFrames(
       framePaths = await extractFramesWithFFmpeg(
         videoPath,
         outputDir,
-        startTime,
-        FRAME_COUNT
+        videoInfo.duration,
+        FRAME_TIMESTAMPS
       );
+      console.log(`[FrameExtractor] Successfully extracted ${framePaths.length} frames`);
       break; // Success
     } catch (error: any) {
       lastError = error;

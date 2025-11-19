@@ -56,7 +56,7 @@ export async function GET(
     }
 
     // Check scene status by looking for generated files
-    const scenes = [];
+    const scenes: { status: 'pending' | 'image_ready' | 'video_ready' }[] = [];
     for (let i = 0; i < 5; i++) {
       const sceneDir = path.join(projectDir, 'scenes', `scene-${i}`);
       let status: 'pending' | 'image_ready' | 'video_ready' = 'pending';

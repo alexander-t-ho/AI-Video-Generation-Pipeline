@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 
 /**
  * POST /api/extract-frames
- * Extracts 5 seed frames from the last 0.5 seconds of a video
+ * Extracts 5 seed frames from the last 1 second of a video
  * 
  * Request Body:
  * {

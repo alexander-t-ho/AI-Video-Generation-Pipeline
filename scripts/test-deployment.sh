@@ -65,3 +65,4 @@ echo "   2. Run 'vercel' to deploy to preview"
 echo "   3. Test all endpoints on preview"
 echo "   4. Run 'vercel --prod' for production"
 
+

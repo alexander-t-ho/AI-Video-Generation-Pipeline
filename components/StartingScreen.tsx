@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
@@ -10,14 +10,14 @@ export default function StartingScreen({
   onCreateProject,
   isLoading: externalLoading,
 }: StartingScreenProps) {
-  const [targetDuration, setTargetDuration] = useState<number>(15);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Use ref to prevent race conditions from rapid clicks
+  const isTransitioningRef = useRef(false);
 
   const router = useRouter();
 
@@ -61,18 +61,25 @@ export default function StartingScreen({
   };
 
   const handleInitialPrompt = () => {
-    if (!prompt.trim() || loading) return;
+    // Prevent multiple rapid clicks (race condition fix)
+    if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current) {
+      console.warn('[StartingScreen] handleInitialPrompt called but already transitioning or invalid state');
+      return;
+    }
 
-    // Trigger smooth fade-out transition
+    isTransitioningRef.current = true;
+
+    // Trigger crumble animation
     setIsTransitioning(true);
 
     // After smooth transition, navigate to your story page with prompt as query param
+    // The new flow: / -> /your-story -> /brand-identity -> /workspace
     setTimeout(() => {
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
       router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}`);
     }, 600);
   };
-
-  const loading = isLoading || externalLoading;
 
   return (
     <div 
@@ -138,13 +145,13 @@ export default function StartingScreen({
                 // Enter submits, Shift+Enter creates new line
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  if (prompt.trim() && !loading) {
+                  if (prompt.trim() && !externalLoading) {
                     handleInitialPrompt();
                   }
                 }
               }}
               placeholder="Create a cinematic advertisement for a Porsche 911"
-              disabled={loading}
+              disabled={externalLoading}
               rows={6}
               className="w-full px-8 py-6 bg-white/5 border border-white/20 rounded-3xl text-white text-xl font-light placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/10 backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl"
             />
@@ -194,7 +201,7 @@ export default function StartingScreen({
           <div className="fixed bottom-6 right-6 z-40">
             <button
               onClick={handleInitialPrompt}
-              disabled={!prompt.trim() || loading}
+              disabled={!prompt.trim() || externalLoading}
               className="group relative px-10 py-5 bg-white text-black rounded-full text-lg font-medium hover:bg-white/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-3 shadow-2xl shadow-white/20"
             >
               <span>Continue</span>

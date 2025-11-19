@@ -144,16 +144,96 @@ export default function SceneCard({
         type: 'status',
       });
 
-      // For product consistency: use Scene 0's image as seed for all subsequent scenes
-      const productReferenceImage = getProductReferenceImage();
-      const seedFrameUrl = productReferenceImage || getSeedFrameUrl();
-      const referenceImageUrls = getReferenceImageUrls();
+      // Get reference images from project (uploaded images for object consistency)
+      let referenceImageUrls = project.referenceImageUrls || [];
+
+      // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
+      let seedImageUrl: string | undefined = undefined;
+      let seedFrameUrl: string | undefined = undefined;
+
+      // Priority: Custom image input > seed frame > reference image
+      // Handle custom image inputs (can be single string or array)
+      const customImageInputs = scene.customImageInput
+        ? (Array.isArray(scene.customImageInput) ? scene.customImageInput : [scene.customImageInput])
+        : [];
+
+      if (customImageInputs.length > 0) {
+        // Validate and format custom image URLs
+        const validatedCustomImages: string[] = [];
+        for (const url of customImageInputs) {
+          if (!url || typeof url !== 'string') {
+            console.warn(`[SceneCard] Invalid custom image URL: ${url}`);
+            continue;
+          }
+          
+          // Convert local paths to serveable URLs
+          let formattedUrl = url;
+          if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://') && !formattedUrl.startsWith('/api')) {
+            formattedUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+          }
+          validatedCustomImages.push(formattedUrl);
+        }
+        
+        if (validatedCustomImages.length === 0) {
+          console.error(`[SceneCard] No valid custom images found after validation`);
+        } else {
+          // Use first custom image as seed image (for image-to-image)
+          seedImageUrl = validatedCustomImages[0];
+          console.log(`[SceneCard] Scene ${sceneIndex}: Using custom image input as seed image:`, seedImageUrl.substring(0, 80) + '...');
+          
+          // Add all custom images to reference images for IP-Adapter
+          referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls];
+          console.log(`[SceneCard] Scene ${sceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
+        }
+      } else if (sceneIndex > 0) {
+        // Only use seed frame if explicitly enabled via checkbox
+        const useSeedFrame = scene.useSeedFrame === true;
+        if (useSeedFrame) {
+          const previousScene = scenes[sceneIndex - 1];
+          if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
+            // Use selected seed frame, or default to first frame if none selected
+            const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
+            const selectedFrame = previousScene.seedFrames[selectedIndex];
+
+            // Ensure the seed frame URL is a public URL (S3 or serveable)
+            if (selectedFrame?.url) {
+              const frameUrl = selectedFrame.url;
+              // If it's a local path, convert to serveable URL
+              if (!frameUrl.startsWith('http://') && !frameUrl.startsWith('https://') && !frameUrl.startsWith('/api')) {
+                seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || frameUrl)}`;
+              } else {
+                seedFrameUrl = frameUrl;
+              }
+
+              // Use the seed frame as the seed image for image-to-image generation
+              seedImageUrl = seedFrameUrl;
+              console.log(`[SceneCard] Scene ${sceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl!.substring(0, 80) + '...');
+            }
+          }
+        } else {
+          console.log(`[SceneCard] Scene ${sceneIndex}: Seed frame checkbox is disabled, not using seed frame`);
+        }
+      } else if (referenceImageUrls.length > 0) {
+        // For Scene 0: Use reference image as seed image if available
+        seedImageUrl = referenceImageUrls[0];
+        console.log(`[SceneCard] Scene ${sceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
+      }
+
+      // Get prompt adjustment mode from runtime config
+      const { getRuntimeConfig } = await import('@/lib/config/model-runtime');
+      const runtimeConfig = getRuntimeConfig();
+      const promptAdjustmentMode = runtimeConfig.promptAdjustmentMode || 'scene-specific';
+
+      // Generate 1 image (storyboard page generates 1, editor page generates 5)
       const request: ImageGenerationRequest = {
         prompt: scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedFrameUrl, // Use product reference image for consistency
-        referenceImageUrls,
+        seedImage: seedImageUrl, // Custom image input, seed frame from previous scene, or reference image for Scene 0
+        referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
+        seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
+        negativePrompt: scene.negativePrompt, // Optional negative prompt
+        promptAdjustmentMode, // Prompt adjustment mode from runtime config
       };
 
       const response = await generateImage(request);
