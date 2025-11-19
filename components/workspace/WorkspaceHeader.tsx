@@ -30,22 +30,22 @@ export default function WorkspaceHeader() {
           {/* Project Info */}
           {project && (
             <div>
-              <h1 className="text-sm font-semibold text-white line-clamp-1">
+              <h1 className="text-base font-semibold text-white line-clamp-1">
                 {project.prompt.length > 50
                   ? `${project.prompt.substring(0, 50)}...`
                   : project.prompt}
               </h1>
-              <p className="text-xs text-white/60">
+              <p className="text-sm text-white/60">
                 {project.storyboard.length} scenes • {project.targetDuration}s target
               </p>
             </div>
           )}
         </div>
 
-        {/* Center Section - Take 5 Logo */}
+        {/* Center Section - Scene3 Logo */}
         <div className="flex-1 flex items-center justify-center">
           <h1 className="text-xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-            Take 5
+            Scene3
           </h1>
         </div>
 

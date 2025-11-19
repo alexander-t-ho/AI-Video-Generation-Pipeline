@@ -101,6 +101,11 @@ export interface ProjectState {
   characterDescription?: string; // Optional: Description of the character/product
   uploadedImageUrls?: string[]; // Optional: Original uploaded image URLs (before background removal)
   uploadedImages?: Array<import('./storage/image-storage').UploadedImage>; // Full uploaded image objects with processed versions
+  
+  // Brand identity context (for asset-based generation)
+  assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
+  selectedColor?: string; // Hex color code of last selected color
+  currentReferenceImageUrl?: string; // URL of currently displayed reference image in AssetViewer
 }
 
 // Extended Scene type for project state (includes generation state)

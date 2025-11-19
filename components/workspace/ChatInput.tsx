@@ -202,7 +202,7 @@ export default function ChatInput({
               placeholder={placeholder}
               disabled={disabled}
               rows={1}
-              className="flex-1 resize-none border-none outline-none bg-transparent text-white placeholder-white/40 text-sm leading-6 min-h-[24px] max-h-[120px] overflow-y-auto custom-scrollbar"
+              className="flex-1 resize-none border-none outline-none bg-transparent text-white placeholder-white/40 text-base leading-6 min-h-[28px] max-h-[120px] overflow-y-auto custom-scrollbar"
             />
 
             {/* Send Button - subtle when disabled */}
@@ -222,8 +222,8 @@ export default function ChatInput({
       {isDragActive && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/10 border-t border-white/40 pointer-events-none z-10">
           <div className="flex items-center gap-2 text-white/80">
-            <ImageIcon className="w-4 h-4" />
-            <span className="text-xs font-medium">Drop images here</span>
+            <ImageIcon className="w-5 h-5" />
+            <span className="text-sm font-medium">Drop images here</span>
           </div>
         </div>
       )}

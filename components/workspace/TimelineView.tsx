@@ -158,7 +158,7 @@ export default function TimelineView() {
                       <div className="h-full flex items-center justify-center p-2">
                         <div className="text-center">
                           <p className="text-xs font-medium text-white line-clamp-1">
-                            {scene.description}
+                            {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
                           </p>
                           <p className="text-xs text-white/60 mt-1">
                             {startTime.toFixed(1)}s - {endTime.toFixed(1)}s

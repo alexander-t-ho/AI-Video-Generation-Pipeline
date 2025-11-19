@@ -39,3 +39,7 @@ export function ProgressIndicator({ currentStage, totalStages }: ProgressIndicat
     </div>
   );
 }
+
+
+
+

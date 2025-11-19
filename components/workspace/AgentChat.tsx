@@ -49,8 +49,8 @@ export default function AgentChat() {
           className="mb-2 flex justify-end group"
         >
           <div className="max-w-[85%]">
-            <div className="rounded-md bg-gray-100 dark:bg-gray-800/50 px-2.5 py-1.5">
-              <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-normal">
+            <div className="rounded-md bg-gray-100 dark:bg-gray-800/50 px-3 py-2">
+              <p className="text-base text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-normal">
                 {message.content}
               </p>
             </div>
@@ -62,9 +62,9 @@ export default function AgentChat() {
     // Agent message styling - Cursor style: clean, left-aligned with subtle background
     const getStatusIcon = () => {
       if (isError) {
-        return <AlertCircle className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />;
+        return <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400" />;
       } else if (isSuggestion) {
-        return <Lightbulb className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />;
+        return <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400" />;
       } else if (isStatus) {
         // Only show spinner for "in progress" messages, not completed ones
         const contentLower = message.content.toLowerCase();
@@ -92,7 +92,7 @@ export default function AgentChat() {
                               contentLower.includes('progress') ||
                               contentLower.endsWith('...');
           if (isInProgress) {
-            return <Loader2 className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 animate-spin" />;
+            return <Loader2 className="w-4 h-4 text-blue-500 dark:text-blue-400 animate-spin" />;
           }
         }
         
@@ -121,7 +121,7 @@ export default function AgentChat() {
         {/* Message Content */}
         <div className="flex-1 min-w-0">
           <div
-            className={`rounded-md px-2.5 py-1.5 ${
+            className={`rounded-md px-3 py-2 ${
               isError
                 ? 'bg-red-50/50 dark:bg-red-950/20'
                 : isSuggestion
@@ -131,14 +131,14 @@ export default function AgentChat() {
                 : 'bg-gray-50/50 dark:bg-gray-800/30'
             }`}
           >
-            <p className="text-sm whitespace-pre-wrap break-words leading-normal">
+            <p className="text-base whitespace-pre-wrap break-words leading-normal">
               {message.content}
             </p>
           </div>
           
           {/* Timestamp - subtle, only on hover */}
           {message.timestamp && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {new Date(message.timestamp).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -151,13 +151,13 @@ export default function AgentChat() {
   };
 
   if (chatMessages.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center">
-        <p className="text-sm text-gray-400 dark:text-gray-500">
-          Start a conversation with the agent...
-        </p>
-      </div>
-    );
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center">
+          <p className="text-base text-gray-400 dark:text-gray-500">
+            Start a conversation with the agent...
+          </p>
+        </div>
+      );
   }
 
   return (

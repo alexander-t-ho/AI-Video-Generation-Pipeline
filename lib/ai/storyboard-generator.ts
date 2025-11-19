@@ -32,7 +32,7 @@ export function setRuntimeTextModel(model: string) {
  * System prompt for storyboard generation
  * From PRD Appendix: Prompt Templates
  *
- * Updated to enforce structured scene descriptions for advertising, with a default
+ * Updated to enforce SHORT, concise scene descriptions for advertising, with a default
  * bias toward product and automotive work and an Arri Alexa commercial look.
  */
 const STORYBOARD_SYSTEM_PROMPT = `You are a professional video storyboard creator specializing in performance-focused advertising,
@@ -43,18 +43,21 @@ Given a short creative brief for a video advertisement, create exactly 5 scenes 
 For each scene:
 - Duration: 2–4 seconds
 - Clear visual focus and logical progression from the previous scene
-- Written as a single, concrete film shot the crew could execute on set
+- Keep the description SHORT and CONCISE - 3-6 words maximum per scene
 
-Each scene's description must follow this structure in one sentence:
-[SHOT TYPE] + [SUBJECT] + [ACTION] + [STYLE] + [CAMERA MOVEMENT] + [AUDIO CUES]
+Each scene's description must be a SHORT phrase like:
+"driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
 
-Where:
-- SHOT TYPE: e.g. "Wide shot", "Low tracking shot", "Close-up", "Over-the-shoulder", etc.
-- SUBJECT: the concrete subject (car, driver, product, hands, environment, etc.)
-- ACTION: what is happening on screen in this moment
-- STYLE: visual look, lighting, mood, and references (e.g. "Leigh Powis–style commercial film, tight and action-driven")
-- CAMERA MOVEMENT: how the camera moves (e.g. "aggressive tracking", "slow push-in", "handheld", or "static")
-- AUDIO CUES: key sound design and music elements that define the moment (engines, tires, ambience, score, VO, etc.)
+Examples of good short descriptions:
+- "driver close-up" (not "Close-up of a driver's focused expression as they grip the steering wheel tightly")
+- "wide car approach" (not "Wide establishing shot of a sleek sports car approaching through urban streets")
+- "interior cockpit" (not "Interior shot of the car's cockpit with dashboard lights glowing")
+- "engine roar" (not "Extreme close-up of the engine bay with mechanical details and steam")
+- "hero product shot" (not "Dramatic hero shot of the product with perfect lighting and composition")
+
+The description should be a brief, memorable phrase that captures the essence of the shot.
+
+For the imagePrompt field, provide detailed visual guidance for image generation.
 
 Unless the brief clearly specifies otherwise, assume:
 - The spot is shot on Arri Alexa with a high-end commercial finish
@@ -65,7 +68,7 @@ Output strictly valid JSON in this format:
   "scenes": [
     {
       "order": 0,
-      "description": "Full sentence using the structure above",
+      "description": "Short 3-6 word phrase describing the scene",
       "imagePrompt": "Detailed prompt for image generation that matches the description, including shot type, subject, action, style, lighting, composition, camera movement, and any audio cues that can be implied visually.",
       "duration": 3
     },
@@ -73,7 +76,7 @@ Output strictly valid JSON in this format:
   ]
 }
 
-Keep prompts specific, visual, and production-ready. Avoid vague marketing language like "brand awareness" or "emotional connection" in the scene descriptions; show those ideas through concrete shots.`;
+Keep image prompts specific, visual, and production-ready. The description field should be short and punchy, while imagePrompt contains all the detail.`;
 
 // ============================================================================
 // Types

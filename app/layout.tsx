@@ -3,7 +3,7 @@ import '@/app/globals.css';
 import ErrorHandler from '@/components/ErrorHandler';
 
 export const metadata: Metadata = {
-  title: 'Take 5 | Share Your Vision',
+  title: 'Scene3 | Share Your Vision',
   description: 'Five steps to a cinematic, performance-ready car advertisement. Transform your vision into reality with AI-powered video generation.',
 };
 

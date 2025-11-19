@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage } from './brand-identity/types';
 import { mockCarDatabase } from './brand-identity/mockData';
 import CarSelector from './brand-identity/CarSelector';
@@ -66,6 +67,13 @@ export default function BrandIdentityScreen() {
 
   const handleCarSelect = (car: CarVariant | CustomAsset) => {
     setSelectedCar(car);
+    
+    // Extract and store asset description in project state
+    const { setAssetDescription } = useProjectStore.getState();
+    const description = 'brand' in car 
+      ? car.displayName  // CarVariant
+      : car.name;         // CustomAsset
+    setAssetDescription(description);
   };
 
   const handleContinue = () => {
@@ -82,33 +90,52 @@ export default function BrandIdentityScreen() {
   };
 
   const handleAddRecoloredImage = (baseCarId: string, imageUrl: string, colorHex: string) => {
+    console.log('[BrandIdentityScreen] handleAddRecoloredImage called:', { baseCarId, imageUrl: imageUrl.substring(0, 50) + '...', colorHex });
+    
     // Check if we're recoloring a custom asset (existing custom asset selected)
     const existingCustomAsset = customAssets.find(asset => asset.id === baseCarId);
 
     if (existingCustomAsset) {
+      console.log('[BrandIdentityScreen] Adding image to existing custom asset:', existingCustomAsset.name);
       // Add recolored image to existing custom asset
+      const newImage = {
+        id: `recolored-${Date.now()}`,
+        url: imageUrl,
+        type: 'custom' as const,
+        filename: `recolored-${colorHex.replace('#', '')}.jpg`,
+        alt: `${existingCustomAsset.name} recolored to ${colorHex}`,
+      };
+      
       setCustomAssets(prev => prev.map(asset =>
         asset.id === baseCarId
           ? {
               ...asset,
-              referenceImages: [...asset.referenceImages, {
-                id: `recolored-${Date.now()}`,
-                url: imageUrl,
-                type: 'custom',
-                filename: `recolored-${colorHex.replace('#', '')}.jpg`,
-                alt: `${asset.name} recolored to ${colorHex}`,
-              }],
+              referenceImages: [...asset.referenceImages, newImage],
               adjustments: [...asset.adjustments, `Recolored to ${colorHex}`],
             }
           : asset
       ));
-      // Keep the same selected car
+      
+      // CRITICAL: Update selectedCar to reflect the new image
+      if (selectedCar?.id === baseCarId) {
+        setSelectedCar(prev => prev ? {
+          ...prev,
+          referenceImages: [...prev.referenceImages, newImage],
+          adjustments: 'adjustments' in prev ? [...prev.adjustments, `Recolored to ${colorHex}`] : [],
+        } as CustomAsset : null);
+      }
+      
+      console.log('[BrandIdentityScreen] Image added to existing custom asset and selectedCar updated');
       return;
     }
 
+    console.log('[BrandIdentityScreen] Creating new custom asset from base car:', baseCarId);
     // Otherwise, create a new custom asset based on a standard car variant
     const baseCar = mockCarDatabase.variants.find(car => car.id === baseCarId);
-    if (!baseCar) return;
+    if (!baseCar) {
+      console.error('[BrandIdentityScreen] Base car not found:', baseCarId);
+      return;
+    }
 
     const newCustomAsset: CustomAsset = {
       id: `custom-${Date.now()}`,
@@ -130,6 +157,7 @@ export default function BrandIdentityScreen() {
 
     // Auto-select the new custom asset
     setSelectedCar(newCustomAsset);
+    console.log('[BrandIdentityScreen] Created new custom asset and selected it:', newCustomAsset.name);
   };
 
   const handleAddCustomAsset = (baseCarId: string, name: string) => {
@@ -252,6 +280,17 @@ export default function BrandIdentityScreen() {
       }
       return asset;
     }));
+
+    // Update selectedCar if it's the asset being modified
+    if (selectedCar && selectedCar.id === assetId) {
+      setSelectedCar(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          referenceImages: prev.referenceImages.filter(img => img.id !== imageId),
+        } as CustomAsset;
+      });
+    }
   };
 
   const handleRemoveCustomAsset = (assetId: string) => {
@@ -301,12 +340,19 @@ export default function BrandIdentityScreen() {
       {/* Top Left Logo */}
       <div className="fixed top-6 left-6 z-40">
         <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-          Take 5
+          Scene3
         </h1>
       </div>
 
-      {/* Continue Button */}
-      <div className="fixed top-6 right-6 z-40">
+      {/* Back and Continue Buttons - Bottom Right */}
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+        <button
+          onClick={() => router.push('/')}
+          className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
         <button
           onClick={handleContinue}
           className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
@@ -315,21 +361,21 @@ export default function BrandIdentityScreen() {
         </button>
       </div>
 
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-6 mt-20 mb-6">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 mt-20 mb-6">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h2 className="text-4xl font-light text-white/90 tracking-tight mb-2">
+        <div className="text-center mb-6 sm:mb-8">
+          <h2 className="text-3xl sm:text-4xl font-light text-white/90 tracking-tight mb-2">
             Brand Identity
           </h2>
-          <p className="text-white/60">
+          <p className="text-sm sm:text-base text-white/60">
             Select and customize your vehicle's reference assets
           </p>
         </div>
 
         {/* Two Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-300px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8 min-h-[calc(100vh-300px)] max-h-[calc(100vh-200px)]">
           {/* Left Column - Car Selection */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 h-[400px] lg:h-auto overflow-auto">
             <CarSelector
               cars={mockCarDatabase.variants}
               customAssets={customAssets}
@@ -343,7 +389,7 @@ export default function BrandIdentityScreen() {
           </div>
 
           {/* Right Column - Asset Viewer */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 min-h-[500px] lg:h-auto">
             <AssetViewer
               selectedCar={selectedCar}
               onAddRecoloredImage={handleAddRecoloredImage}

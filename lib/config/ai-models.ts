@@ -140,6 +140,13 @@ export const AVAILABLE_T2I_MODELS: ModelOption[] = [
     provider: 'Recraft',
     description: 'High-quality vector-style images',
   },
+  {
+    id: 'google/imagen-4',
+    name: 'Imagen 4',
+    provider: 'Google',
+    description: 'High-quality, fast text-to-image generation',
+    supportedInputs: ['prompt', 'aspect_ratio', 'output_format', 'negative_prompt', 'seed'],
+  },
 ];
 
 /**
@@ -313,6 +320,13 @@ export const AVAILABLE_VIDEO_MODELS: ModelOption[] = [
     provider: 'Stability AI',
     description: 'Open-source video generation',
   },
+  {
+    id: 'openai/sora-2-pro',
+    name: 'Sora 2 Pro',
+    provider: 'OpenAI',
+    description: 'Advanced video generation with high realism',
+    supportedInputs: ['image', 'prompt', 'duration', 'aspect_ratio', 'seed'],
+  },
 ];
 
 // ============================================================================
@@ -386,6 +400,11 @@ function resolveVideoModel(envModel?: string): string {
     return 'runwayml/gen4-turbo';
   }
 
+  // OpenAI Sora aliases
+  if (normalized === 'sora' || normalized === 'sora-2-pro' || normalized === 'sora-2') {
+    return 'openai/sora-2-pro';
+  }
+
   // Return as-is if it's already a full identifier
   return envModel;
 }
@@ -440,6 +459,7 @@ function getVideoModelName(model: string): string {
   if (model.includes('luma') || model.includes('ray')) return 'Luma Ray';
   if (model.includes('kling')) return 'Kling V2.5 Turbo Proto';
   if (model.includes('hailuo')) return 'Hailuo 2.3 Fast';
+  if (model.includes('sora')) return 'Sora 2 Pro';
   return 'Custom Model';
 }
 
@@ -455,7 +475,7 @@ function getVideoModelName(model: string): string {
  *
  * Video Generation:
  * - REPLICATE_VIDEO_MODEL: Model identifier or alias (default: wan2.2)
- *   Aliases: wan2.5, wan2.2, veo, veo-fast, luma, ray, gen4, gen4-turbo
+ *   Aliases: wan2.5, wan2.2, veo, veo-fast, luma, ray, gen4, gen4-turbo, sora
  * - VIDEO_DURATION: Duration in seconds (default: 5, supports 5 or 10 for WAN)
  * - VIDEO_RESOLUTION: Resolution (default: 720p, supports 720p, 1080p, 4K)
  *

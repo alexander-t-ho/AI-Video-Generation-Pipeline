@@ -58,6 +58,8 @@ interface ProjectStore {
   // Actions
   createProject: (prompt: string, targetDuration?: number) => void;
   setStoryboard: (scenes: Scene[]) => void;
+  updateScene: (sceneId: string, updates: Partial<Scene>) => void;
+  reorderScenes: (scenes: Scene[]) => void;
   updateScenePrompt: (sceneIndex: number, imagePrompt: string) => void;
   updateSceneSettings: (sceneIndex: number, settings: {
     imagePrompt?: string;
@@ -117,6 +119,11 @@ interface ProjectStore {
   setNeedsCharacterValidation: (needs: boolean) => void;
   setHasUploadedImages: (has: boolean) => void;
   setUploadedImageUrls: (urls: string[]) => void;
+  
+  // Brand identity context management
+  setAssetDescription: (description: string) => void;
+  setSelectedColor: (color: string) => void;
+  setCurrentReferenceImageUrl: (url: string) => void;
 
   // Character validation state management
   setCharacterValidationStage: (stage: ValidationStage) => void;
@@ -196,19 +203,73 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setStoryboard: (scenes: Scene[]) => {
     set((state) => {
       if (!state.project) return state;
-      
+
       // Convert scenes to SceneWithState
       const scenesWithState: SceneWithState[] = scenes.map((scene) => ({
         ...scene,
         generatedImages: [],
         status: 'pending',
       }));
-      
+
       return {
         project: {
           ...state.project,
           storyboard: scenes,
           status: 'scene_generation',
+        },
+        scenes: scenesWithState,
+      };
+    });
+  },
+
+  updateScene: (sceneId: string, updates: Partial<Scene>) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard) return state;
+
+      // Update the scene in the storyboard
+      const updatedStoryboard = state.project.storyboard.map((scene) =>
+        scene.id === sceneId ? { ...scene, ...updates } : scene
+      );
+
+      // Update the scene in scenes array (SceneWithState)
+      const updatedScenes = state.scenes.map((sceneWithState) =>
+        sceneWithState.id === sceneId
+          ? { ...sceneWithState, ...updates }
+          : sceneWithState
+      );
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        },
+        scenes: updatedScenes,
+      };
+    });
+  },
+
+  reorderScenes: (reorderedScenes: Scene[]) => {
+    set((state) => {
+      if (!state.project) return state;
+
+      // Update order property for each scene
+      const scenesWithOrder = reorderedScenes.map((scene, index) => ({
+        ...scene,
+        order: index,
+      }));
+
+      // Convert to SceneWithState, preserving existing state
+      const scenesWithState: SceneWithState[] = scenesWithOrder.map((scene) => {
+        const existingSceneState = state.scenes.find(s => s.id === scene.id);
+        return existingSceneState
+          ? { ...existingSceneState, ...scene }
+          : { ...scene, generatedImages: [], status: 'pending' as const };
+      });
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: scenesWithOrder,
         },
         scenes: scenesWithState,
       };
@@ -729,6 +790,85 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         project: {
           ...state.project,
           uploadedImageUrls: urls,
+        },
+      };
+    });
+  },
+  
+  // Brand identity context management
+  setAssetDescription: (description: string) => {
+    set((state) => {
+      // Create project if it doesn't exist (for brand identity flow)
+      if (!state.project) {
+        const newProject: ProjectState = {
+          id: uuidv4(),
+          prompt: `Brand identity for ${description}`,
+          targetDuration: 15,
+          status: 'storyboard',
+          createdAt: new Date().toISOString(),
+          storyboard: [],
+          currentSceneIndex: 0,
+          assetDescription: description,
+        };
+        return { project: newProject };
+      }
+      
+      return {
+        project: {
+          ...state.project,
+          assetDescription: description,
+        },
+      };
+    });
+  },
+  
+  setSelectedColor: (color: string) => {
+    set((state) => {
+      // Create project if it doesn't exist (for brand identity flow)
+      if (!state.project) {
+        const newProject: ProjectState = {
+          id: uuidv4(),
+          prompt: 'Brand identity project',
+          targetDuration: 15,
+          status: 'storyboard',
+          createdAt: new Date().toISOString(),
+          storyboard: [],
+          currentSceneIndex: 0,
+          selectedColor: color,
+        };
+        return { project: newProject };
+      }
+      
+      return {
+        project: {
+          ...state.project,
+          selectedColor: color,
+        },
+      };
+    });
+  },
+  
+  setCurrentReferenceImageUrl: (url: string) => {
+    set((state) => {
+      // Create project if it doesn't exist (for brand identity flow)
+      if (!state.project) {
+        const newProject: ProjectState = {
+          id: uuidv4(),
+          prompt: 'Brand identity project',
+          targetDuration: 15,
+          status: 'storyboard',
+          createdAt: new Date().toISOString(),
+          storyboard: [],
+          currentSceneIndex: 0,
+          currentReferenceImageUrl: url,
+        };
+        return { project: newProject };
+      }
+      
+      return {
+        project: {
+          ...state.project,
+          currentReferenceImageUrl: url,
         },
       };
     });

@@ -878,6 +878,42 @@ export const VIDEO_SCHEMAS: Record<string, ModelSchema> = {
     capabilities: ['fast', 'cost-effective'],
     limitations: ['limited-duration'],
     notes: ['Cost: $0.19 per video', 'Fast generation speed']
+  },
+
+  'openai/sora-2-pro': {
+    id: 'openai/sora-2-pro',
+    name: 'Sora 2 Pro',
+    provider: 'OpenAI',
+    type: 'image-to-video',
+    input: {
+      parameters: {
+        image: COMMON_PARAMETERS.image,
+        prompt: COMMON_PARAMETERS.prompt,
+        duration: {
+          name: 'duration',
+          type: 'number' as const,
+          required: false,
+          default: 5,
+          description: 'Video duration in seconds',
+          validation: { min: 2, max: 20 }
+        },
+        aspect_ratio: COMMON_PARAMETERS.aspect_ratio,
+        seed: COMMON_PARAMETERS.seed
+      },
+      requiredParameters: ['image', 'prompt'],
+      optionalParameters: ['duration', 'aspect_ratio', 'seed']
+    },
+    output: {
+      type: 'video',
+      format: 'mp4',
+      structure: {
+        type: 'string',
+        description: 'URL of generated video'
+      }
+    },
+    capabilities: ['high-realism', 'flexible-duration', 'advanced-motion'],
+    limitations: [],
+    notes: ['Advanced video generation from OpenAI', 'High realism and coherent motion']
   }
 };
 
