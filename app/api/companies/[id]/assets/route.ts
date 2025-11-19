@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/auth-utils';
 import { uploadBufferToS3 } from '@/lib/storage/s3-uploader';
@@ -66,8 +67,10 @@ export async function POST(
     }
 
     // Build asset data
-    const assetCreateData: Parameters<typeof prisma.companyAsset.create>[0]['data'] = {
-      companyId: id,
+    const assetCreateData: Prisma.CompanyAssetCreateInput = {
+      company: {
+        connect: { id },
+      },
       type: type as 'LOGO' | 'COLOR_SCHEME' | 'BADGE' | 'OTHER',
     };
 
