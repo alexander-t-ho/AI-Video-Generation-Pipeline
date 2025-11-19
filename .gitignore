@@ -263,3 +263,5 @@ cdk.out/
 
 .playwright-mcp
 
+
+/lib/generated/prisma

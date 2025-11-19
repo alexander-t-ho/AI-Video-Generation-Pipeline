@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import '@/app/globals.css';
 import ErrorHandler from '@/components/ErrorHandler';
+import { AuthProvider } from '@/lib/auth/auth-context';
 
 export const metadata: Metadata = {
   title: 'Scene3 | Share Your Vision',
@@ -18,8 +19,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body suppressHydrationWarning>
-        <ErrorHandler />
-        {children}
+        <AuthProvider>
+          <ErrorHandler />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
