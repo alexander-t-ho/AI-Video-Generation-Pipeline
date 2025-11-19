@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera, Check, CheckSquare, Square } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage } from './types';
 import ColorPicker from './ColorPicker';
 import AngleSelectionModal from './AngleSelectionModal';
@@ -18,6 +18,10 @@ interface AssetViewerProps {
   onUploadImages?: () => void;
   onRemoveImage?: (assetId: string, imageId: string) => void;
   isUploading?: boolean;
+  selectedAssetIds?: Set<string>;
+  onAssetToggle?: (assetId: string) => void;
+  onSelectAll?: () => void;
+  onDeselectAll?: () => void;
 }
 
 export default function AssetViewer({
@@ -26,7 +30,11 @@ export default function AssetViewer({
   onAddCustomAsset,
   onUploadImages,
   onRemoveImage,
-  isUploading = false
+  isUploading = false,
+  selectedAssetIds = new Set(),
+  onAssetToggle,
+  onSelectAll,
+  onDeselectAll
 }: AssetViewerProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [adjustmentText, setAdjustmentText] = useState('');
@@ -414,6 +422,28 @@ export default function AssetViewer({
       {/* Thumbnail Strip */}
       {(images.length > 1 || (selectedCar && onUploadImages)) && (
         <div className="p-3 sm:p-4 border-t border-white/10 flex-shrink-0">
+          {/* Select All / Deselect All buttons */}
+          {images.length > 0 && onSelectAll && onDeselectAll && (
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                onClick={onSelectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-xs transition-all"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>Select All</span>
+              </button>
+              <button
+                onClick={onDeselectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-xs transition-all"
+              >
+                <Square className="w-3.5 h-3.5" />
+                <span>Deselect All</span>
+              </button>
+              <span className="text-white/40 text-xs ml-2">
+                {selectedAssetIds.size} / {images.length} selected
+              </span>
+            </div>
+          )}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
             {/* Upload button - always available when a car is selected */}
             {selectedCar && onUploadImages && (
@@ -447,6 +477,24 @@ export default function AssetViewer({
                     className="w-full h-full object-cover"
                   />
                 </button>
+
+                {/* Selection checkbox - inside the thumbnail */}
+                {onAssetToggle && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssetToggle(image.id);
+                    }}
+                    className={`absolute top-1 left-1 w-4 h-4 rounded flex items-center justify-center shadow-md border transition-all z-10 ${
+                      selectedAssetIds.has(image.id)
+                        ? 'bg-green-500 border-green-400 text-white'
+                        : 'bg-black/70 border-white/50 text-white/60 hover:border-white/80'
+                    }`}
+                    title={selectedAssetIds.has(image.id) ? 'Deselect asset' : 'Select asset'}
+                  >
+                    {selectedAssetIds.has(image.id) && <Check className="w-2.5 h-2.5" />}
+                  </button>
+                )}
 
                 {/* Remove button for custom assets */}
                 {selectedCar && 'adjustments' in selectedCar && onRemoveImage && (

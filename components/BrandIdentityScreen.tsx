@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage } from './brand-identity/types';
 import { mockCarDatabase } from './brand-identity/mockData';
-import CarSelector from './brand-identity/CarSelector';
+import CarSelector, { SuggestedCarInfo } from './brand-identity/CarSelector';
 import AssetViewer from './brand-identity/AssetViewer';
 import { useProjectStore } from '@/lib/state/project-store';
 
@@ -14,17 +14,71 @@ export default function BrandIdentityScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customAssets, setCustomAssets] = useState<CustomAsset[]>(mockCarDatabase.customAssets);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Extract car info from URL params or user prompt
-  useEffect(() => {
-    // For now, default to the first car in the database
-    // TODO: Extract from user prompt in StartingScreen
-    if (mockCarDatabase.variants.length > 0 && !selectedCar) {
-      setSelectedCar(mockCarDatabase.variants[0]);
+  // Extract suggested car info from URL params
+  const suggestedCar: SuggestedCarInfo | undefined = useMemo(() => {
+    const carBrand = searchParams.get('carBrand');
+    const carModel = searchParams.get('carModel');
+    const carYear = searchParams.get('carYear');
+    const carConfidence = searchParams.get('carConfidence') as SuggestedCarInfo['confidence'];
+
+    if (!carConfidence || carConfidence === 'none') {
+      return undefined;
     }
-  }, []); // Only run once on mount
+
+    return {
+      brand: carBrand || undefined,
+      model: carModel || undefined,
+      year: carYear ? parseInt(carYear, 10) : undefined,
+      confidence: carConfidence,
+    };
+  }, [searchParams]);
+
+  // Auto-select the best matching car based on AI suggestion
+  useEffect(() => {
+    if (mockCarDatabase.variants.length === 0) return;
+    if (selectedCar) return; // Don't override if already selected
+
+    let carToSelect: CarVariant | null = null;
+
+    // If we have a suggestion, find the best match
+    if (suggestedCar && suggestedCar.confidence !== 'none') {
+      const suggestedBrand = suggestedCar.brand?.toLowerCase() || '';
+      const suggestedModel = suggestedCar.model?.toLowerCase() || '';
+
+      // Find exact match first
+      let bestMatch = mockCarDatabase.variants.find(car => {
+        const brandMatch = suggestedBrand && car.brand.toLowerCase() === suggestedBrand;
+        const modelMatch = suggestedModel && car.model.toLowerCase() === suggestedModel;
+        return brandMatch && modelMatch;
+      });
+
+      // If no exact match, try brand only
+      if (!bestMatch && suggestedBrand) {
+        bestMatch = mockCarDatabase.variants.find(car =>
+          car.brand.toLowerCase() === suggestedBrand
+        );
+      }
+
+      if (bestMatch) {
+        carToSelect = bestMatch;
+      }
+    }
+
+    // Default to first car if no match found
+    if (!carToSelect) {
+      carToSelect = mockCarDatabase.variants[0];
+    }
+
+    // Set the selected car and auto-select all its assets
+    setSelectedCar(carToSelect);
+    const allAssetIds = new Set(carToSelect.referenceImages.map(img => img.id));
+    setSelectedAssetIds(allAssetIds);
+  }, [suggestedCar]); // Run when suggestedCar changes
 
   // Load uploaded images as custom assets
   useEffect(() => {
@@ -67,13 +121,39 @@ export default function BrandIdentityScreen() {
 
   const handleCarSelect = (car: CarVariant | CustomAsset) => {
     setSelectedCar(car);
-    
+
+    // Auto-select all assets when a car is selected
+    const allAssetIds = new Set(car.referenceImages.map(img => img.id));
+    setSelectedAssetIds(allAssetIds);
+
     // Extract and store asset description in project state
     const { setAssetDescription } = useProjectStore.getState();
-    const description = 'brand' in car 
+    const description = 'brand' in car
       ? car.displayName  // CarVariant
       : car.name;         // CustomAsset
     setAssetDescription(description);
+  };
+
+  const handleAssetToggle = (assetId: string) => {
+    setSelectedAssetIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(assetId)) {
+        newSet.delete(assetId);
+      } else {
+        newSet.add(assetId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (!selectedCar) return;
+    const allAssetIds = new Set(selectedCar.referenceImages.map(img => img.id));
+    setSelectedAssetIds(allAssetIds);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedAssetIds(new Set());
   };
 
   const handleContinue = () => {
@@ -318,7 +398,7 @@ export default function BrandIdentityScreen() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col cinematic-gradient relative overflow-hidden">
+    <div className="min-h-screen flex flex-col cinematic-gradient relative overflow-y-auto overflow-x-hidden">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -373,6 +453,7 @@ export default function BrandIdentityScreen() {
               customAssets={customAssets}
               selectedCar={selectedCar}
               searchQuery={searchQuery}
+              suggestedCar={suggestedCar}
               onSearchChange={setSearchQuery}
               onCarSelect={handleCarSelect}
               onAddCustomAsset={handleAddCustomAsset}
@@ -389,6 +470,10 @@ export default function BrandIdentityScreen() {
               onUploadImages={triggerFileUpload}
               onRemoveImage={handleRemoveImage}
               isUploading={isUploading}
+              selectedAssetIds={selectedAssetIds}
+              onAssetToggle={handleAssetToggle}
+              onSelectAll={handleSelectAll}
+              onDeselectAll={handleDeselectAll}
             />
           </div>
         </div>

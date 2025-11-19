@@ -60,7 +60,7 @@ export default function StartingScreen({
     setImages(prevImages => prevImages.filter((_, i) => i !== index));
   };
 
-  const handleInitialPrompt = () => {
+  const handleInitialPrompt = async () => {
     // Prevent multiple rapid clicks (race condition fix)
     if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current) {
       console.warn('[StartingScreen] handleInitialPrompt called but already transitioning or invalid state');
@@ -72,12 +72,40 @@ export default function StartingScreen({
     // Trigger crumble animation
     setIsTransitioning(true);
 
+    // Extract car model from prompt using AI
+    let carParams = '';
+    try {
+      const response = await fetch('/api/extract-car-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim() }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.carInfo) {
+          const { brand, model, year, confidence } = data.carInfo;
+          if (confidence !== 'none') {
+            const params = new URLSearchParams();
+            if (brand) params.set('carBrand', brand);
+            if (model) params.set('carModel', model);
+            if (year) params.set('carYear', year.toString());
+            params.set('carConfidence', confidence);
+            carParams = `&${params.toString()}`;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[StartingScreen] Failed to extract car model:', error);
+      // Continue without car info - not critical
+    }
+
     // After smooth transition, navigate to your story page with prompt as query param
     // The new flow: / -> /your-story -> /brand-identity -> /workspace
     setTimeout(() => {
       setIsTransitioning(false);
       isTransitioningRef.current = false;
-      router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}`);
+      router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}${carParams}`);
     }, 600);
   };
 

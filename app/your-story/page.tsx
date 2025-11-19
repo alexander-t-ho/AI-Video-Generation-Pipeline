@@ -335,8 +335,20 @@ function YourStoryContent() {
   };
 
   const handleContinue = () => {
-    // Navigate to brand identity page
-    router.push('/brand-identity');
+    // Navigate to brand identity page, preserving car extraction params
+    const carBrand = searchParams.get('carBrand');
+    const carModel = searchParams.get('carModel');
+    const carYear = searchParams.get('carYear');
+    const carConfidence = searchParams.get('carConfidence');
+
+    const params = new URLSearchParams();
+    if (carBrand) params.set('carBrand', carBrand);
+    if (carModel) params.set('carModel', carModel);
+    if (carYear) params.set('carYear', carYear);
+    if (carConfidence) params.set('carConfidence', carConfidence);
+
+    const queryString = params.toString();
+    router.push(`/brand-identity${queryString ? `?${queryString}` : ''}`);
   };
 
   return (
