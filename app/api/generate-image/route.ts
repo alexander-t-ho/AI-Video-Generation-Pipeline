@@ -18,80 +18,112 @@ import {
 import { ImageGenerationRequest, ImageGenerationResponse } from '@/lib/types';
 import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
 import { DEFAULT_RUNTIME_CONFIG, PromptAdjustmentMode } from '@/lib/config/model-runtime';
+import { adjustPromptForReferenceImage } from '@/lib/utils/prompt-optimizer';
 import path from 'path';
 
 // ============================================================================
-// Prompt Adjustment for Reference Images
+// Module-level Constants
+// ============================================================================
+
+const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
+
+// ============================================================================
+// Helper Functions
 // ============================================================================
 
 /**
- * Adjusts the prompt to be less specific about object details when a reference image is present.
- * This allows the reference image to define the object while the prompt focuses on scene composition.
- * 
- * @param originalPrompt The original prompt from the storyboard
- * @param mode Adjustment mode: 'less-aggressive' keeps more scene details, 'aggressive' removes more
- * @returns Adjusted prompt that prioritizes reference image
+ * Gets MIME type from file extension
+ * OPTIMIZATION: Centralized function instead of inline conditionals
  */
-function adjustPromptForReferenceImage(originalPrompt: string, mode: 'less-aggressive' | 'aggressive' = 'less-aggressive'): string {
-  let adjustedPrompt = originalPrompt;
+function getContentType(url: string): string {
+  const ext = path.extname(url).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+  };
+  return mimeTypes[ext] || 'image/png';
+}
 
-  if (mode === 'aggressive') {
-    // OLD AGGRESSIVE MODE: Remove ALL object-specific descriptions
-    // Remove all color/material descriptions that might override the reference image
-    adjustedPrompt = adjustedPrompt.replace(/\b(silver|black|red|blue|white|gray|grey|gold|metal|leather|wood|plastic|stainless steel|matte|glossy|shiny|dull)\s+/gi, '');
-    
-    // Remove all object type descriptions
-    adjustedPrompt = adjustedPrompt.replace(/\b(modern|sleek|luxury|sports|vintage|classic|premium|high-end|budget|affordable)\s+/gi, '');
-    
-    // Replace specific object mentions with generic reference
-    adjustedPrompt = adjustedPrompt.replace(/\b(car|vehicle|automobile|sedan|suv|coupe|convertible|sports car|luxury car|modern car|vintage car|classic car)\b/gi, 'the same object from the reference image');
-    adjustedPrompt = adjustedPrompt.replace(/\b(watch|timepiece|wristwatch|clock)\b/gi, 'the same object from the reference image');
-    adjustedPrompt = adjustedPrompt.replace(/\b(product|item|object|thing)\s+(with|featuring|showing|displaying)\s+[^,]+/gi, 'the same object from the reference image');
-    
-    // Remove object-specific features that might conflict with reference image
-    adjustedPrompt = adjustedPrompt.replace(/\b(with|featuring|showing|displaying|including)\s+[^,]+(headlights|wheels|tires|doors|windows|buttons|dials|straps|bands|bezels)\b/gi, '');
-    
-    // Keep only scene composition words: location, lighting, background, atmosphere
-    const sceneWords = [
-      'at', 'in', 'on', 'with', 'during', 'sunset', 'sunrise', 'background', 'foreground', 
-      'lighting', 'dramatic', 'soft', 'bright', 'dark', 'golden hour', 'blue hour',
-      'mountain', 'beach', 'city', 'street', 'road', 'track', 'studio', 'outdoor', 'indoor',
-      'positioned', 'placed', 'situated', 'located', 'standing', 'sitting', 'moving', 'stationary',
-      'vibrant', 'muted', 'warm', 'cool', 'natural', 'artificial', 'ambient', 'direct',
-      'blurred', 'sharp', 'focused', 'depth of field', 'bokeh', 'shallow', 'wide',
-      'atmosphere', 'mood', 'feeling', 'emotion', 'energy', 'dynamic', 'static', 'calm', 'energetic'
-    ];
-    
-    // Extract words that are scene-related
-    const words = adjustedPrompt.split(/\s+/);
-    const filteredWords = words.filter(word => {
-      const lowerWord = word.toLowerCase().replace(/[.,!?;:]/g, '');
-      return sceneWords.some(sceneWord => lowerWord.includes(sceneWord.toLowerCase())) ||
-             lowerWord.includes('reference') ||
-             lowerWord.includes('same') ||
-             lowerWord.includes('object') ||
-             lowerWord.length <= 3; // Keep short words (prepositions, articles)
-    });
-    
-    // Build new prompt with reference image emphasis
-    adjustedPrompt = `The same object from the reference image, ${filteredWords.join(' ')}`;
-  } else {
-    // LESS AGGRESSIVE MODE: Only replace object type mentions, keep all scene details
-    // Replace specific object type mentions with generic reference (let reference image define the object)
-    // But keep all other details (action, scene composition, lighting, camera angles, etc.)
-    adjustedPrompt = adjustedPrompt.replace(/\b(car|vehicle|automobile|sedan|suv|coupe|convertible|sports car|luxury car|modern car|vintage car|classic car)\b/gi, 'the same object from the reference image');
-    adjustedPrompt = adjustedPrompt.replace(/\b(watch|timepiece|wristwatch|clock)\b/gi, 'the same object from the reference image');
-    
-    // Clean up duplicate phrases
-    adjustedPrompt = adjustedPrompt.replace(/\bthe same\s+object\s+from\s+the\s+reference\s+image\s+the\s+same\s+object\s+from\s+the\s+reference\s+image\b/gi, 'the same object from the reference image');
+/**
+ * Converts local paths to public URLs (S3 or ngrok)
+ * OPTIMIZATION: Extracted from handler to avoid recreation on every request
+ */
+async function convertToPublicUrl(url: string, projectId: string): Promise<string> {
+  // S3 URLs may not be publicly accessible (403 errors)
+  // Download and convert to base64 data URL for Replicate
+  if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    try {
+      console.log(`[Image Generation API] Downloading S3 image for base64 conversion: ${url.substring(0, 80)}...`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(`[Image Generation API] Failed to download S3 image (${response.status}), will try ngrok fallback`);
+        // Fallback to ngrok URL if available
+        return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64Image = buffer.toString('base64');
+      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+      console.log(`[Image Generation API] Successfully converted S3 image to base64 (${(base64Image.length / 1024).toFixed(2)} KB)`);
+      return dataUrl;
+    } catch (error: any) {
+      console.error(`[Image Generation API] Failed to convert S3 URL to base64:`, error.message);
+      // Last resort: try ngrok URL
+      return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+    }
   }
   
-  // Clean up duplicate phrases and extra spaces
-  adjustedPrompt = adjustedPrompt.replace(/\bthe same\s+the same\b/gi, 'the same');
-  adjustedPrompt = adjustedPrompt.replace(/\s+/g, ' '); // Multiple spaces to single space
-  adjustedPrompt = adjustedPrompt.replace(/,\s*,/g, ','); // Multiple commas to single comma
+  // If it's already a public URL (external, non-S3), use it as-is
+  if (url.startsWith('https://') || (url.startsWith('http://') && !url.includes('localhost'))) {
+    return url;
+  }
   
-  return adjustedPrompt.trim();
+  // If it's a local path, try to upload to S3 first, then convert to base64
+  if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
+    try {
+      // Read file and convert to base64 directly
+      const fs = await import('fs/promises');
+      const fileBuffer = await fs.readFile(url);
+      const base64Image = fileBuffer.toString('base64');
+      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+      console.log(`[Image Generation API] Converted local path to base64: ${url.substring(0, 50)}... (${(base64Image.length / 1024).toFixed(2)} KB)`);
+      return dataUrl;
+    } catch (localError: any) {
+      console.warn(`[Image Generation API] Failed to read local file, trying S3 upload: ${localError.message}`);
+      
+      // Fallback: try S3 upload
+      try {
+        const s3Key = await uploadToS3(url, projectId, {
+          contentType: getContentType(url),
+        });
+        const s3Url = getS3Url(s3Key);
+        console.log(`[Image Generation API] Uploaded to S3: ${url.substring(0, 50)}... -> ${s3Url.substring(0, 80)}...`);
+        
+        // Now convert the S3 URL to base64 (recursive call)
+        return convertToPublicUrl(s3Url, projectId);
+      } catch (s3Error: any) {
+        const publicUrl = `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
+        console.warn(`[Image Generation API] S3 upload failed, using fallback URL: ${s3Error.message}`);
+        return publicUrl;
+      }
+    }
+  }
+  
+  // If it's already a relative API path, make it absolute
+  if (url.startsWith('/api/')) {
+    const publicUrl = `${NGROK_URL}${url}`;
+    if (publicUrl.includes('localhost')) {
+      console.warn(`[Image Generation API] WARNING: Using localhost URL - Replicate may not be able to access it: ${publicUrl}`);
+    }
+    return publicUrl;
+  }
+  
+  return url;
 }
 
 // ============================================================================
@@ -232,84 +264,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract parameters (sceneIndex already extracted above)
-    let prompt = body.prompt.trim();
+    // Extract and prepare parameters
+    // sceneIndex already extracted above
     const projectId = body.projectId.trim();
-    let seedImage = body.seedImage?.trim();
+    let prompt = body.prompt.trim();
     let referenceImageUrls = body.referenceImageUrls || [];
-    const seedFrame = body.seedFrame?.trim(); // Seed frame for IP-Adapter (scenes 1-4)
+    const seedFrame = body.seedFrame?.trim();
+    let seedImage = body.seedImage?.trim();
 
-    // ACTION 1: Verify and convert all image URLs to publicly accessible URLs
-    // Replicate requires HTTP/HTTPS URLs that are publicly accessible (not localhost)
-    // We need to upload local images to S3 or use ngrok/public URL
-    
-    // Helper function to convert local paths to public URLs (S3 or public URL)
-    const convertToPublicUrl = async (url: string): Promise<string> => {
-      // If it's already a public URL (S3 or external), use it as-is
-      if (url.startsWith('https://') || (url.startsWith('http://') && !url.includes('localhost'))) {
-        return url;
-      }
-      
-      // If it's a local path, try to upload to S3 first, fallback to ngrok/public URL
-      if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
-        try {
-          // Determine content type from file extension
-          const ext = path.extname(url).toLowerCase();
-          const contentType = 
-            ext === '.png' ? 'image/png' :
-            ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-            ext === '.gif' ? 'image/gif' :
-            ext === '.webp' ? 'image/webp' :
-            'image/png'; // Default to PNG
-          
-          // Try to upload to S3
-          const s3Key = await uploadToS3(url, projectId, {
-            contentType,
-          });
-          const s3Url = getS3Url(s3Key);
-          console.log(`[Image Generation API] Uploaded to S3: ${url.substring(0, 50)}... -> ${s3Url.substring(0, 80)}...`);
-          return s3Url;
-        } catch (s3Error: any) {
-          // If S3 upload fails, use ngrok/public URL as fallback
-          // Note: This will only work if ngrok is configured and running
-          const ngrokUrl = process.env.NGROK_URL || 'http://localhost:3000';
-          const publicUrl = `${ngrokUrl}/api/serve-image?path=${encodeURIComponent(url)}`;
-          console.warn(`[Image Generation API] S3 upload failed, using public URL (may not work if not publicly accessible): ${url.substring(0, 50)}... -> ${publicUrl.substring(0, 80)}...`);
-          console.warn(`[Image Generation API] S3 error: ${s3Error.message}`);
-          return publicUrl;
-        }
-      }
-      
-      // If it's already a relative API path, make it absolute (but warn if localhost)
-      if (url.startsWith('/api/')) {
-        const ngrokUrl = process.env.NGROK_URL || 'http://localhost:3000';
-        const publicUrl = `${ngrokUrl}${url}`;
-        if (publicUrl.includes('localhost')) {
-          console.warn(`[Image Generation API] WARNING: Using localhost URL - Replicate may not be able to access it: ${publicUrl}`);
-        }
-        return publicUrl;
-      }
-      
-      return url;
-    };
+    // OPTIMIZATION: Convert ALL URLs in parallel (not sequential)
+    const urlsToConvert: string[] = [
+      ...referenceImageUrls,
+      ...(seedImage ? [seedImage] : []),
+      ...(seedFrame ? [seedFrame] : []),
+    ];
 
-    // Convert reference image URLs (async - need to await)
-    const convertedReferenceUrls = await Promise.all(
-      referenceImageUrls.map(url => convertToPublicUrl(url))
+    const convertedUrls = await Promise.all(
+      urlsToConvert.map(url => convertToPublicUrl(url, projectId))
     );
-    referenceImageUrls = convertedReferenceUrls;
+
+    // Split converted URLs back to their respective variables
+    const refImageCount = referenceImageUrls.length;
+    referenceImageUrls = convertedUrls.slice(0, refImageCount);
     
-    // Convert seed image URL if provided
+    let currentIndex = refImageCount;
     if (seedImage) {
-      seedImage = await convertToPublicUrl(seedImage);
-      console.log(`[Image Generation API] Converted seed image URL: ${seedImage.substring(0, 80)}...`);
+      seedImage = convertedUrls[currentIndex++];
     }
     
-    // Convert seed frame URL if provided
-    let seedFrameUrl: string | undefined = seedFrame;
+    let seedFrameUrl: string | undefined;
     if (seedFrame) {
-      seedFrameUrl = await convertToPublicUrl(seedFrame);
-      console.log(`[Image Generation API] Converted seed frame URL: ${seedFrameUrl.substring(0, 80)}...`);
+      seedFrameUrl = convertedUrls[currentIndex++];
     }
 
     // Log URL verification
@@ -332,19 +317,19 @@ export async function POST(request: NextRequest) {
         // No adjustment - use full prompt
         console.log(`[Image Generation API] Scene ${sceneIndex}: Prompt adjustment disabled - using full prompt`);
       } else if (promptAdjustmentMode === 'scene-specific') {
-        // Scene-specific: Scene 1 uses full prompt (for dynamic shots), others use less-aggressive adjustment
+        // Scene-specific: Scene 1 uses full prompt (for dynamic shots), others use adjusted prompt
         if (sceneIndex === 1) {
           console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - Scene 1 uses full prompt for dynamic shots`);
           // Keep full prompt for Scene 1
         } else {
-          prompt = adjustPromptForReferenceImage(prompt, 'less-aggressive');
-          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - using less-aggressive prompt adjustment`);
+          prompt = adjustPromptForReferenceImage(prompt);
+          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - using prompt adjustment`);
           console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
           console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
         }
       } else if (promptAdjustmentMode === 'less-aggressive') {
         // Less aggressive: Only replace object type mentions, keep all scene details
-        prompt = adjustPromptForReferenceImage(prompt, 'less-aggressive');
+        prompt = adjustPromptForReferenceImage(prompt);
         console.log(`[Image Generation API] Scene ${sceneIndex}: Using less-aggressive prompt adjustment`);
         console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
         console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
@@ -377,7 +362,9 @@ export async function POST(request: NextRequest) {
     console.log('[Image Generation API]   - Reference Images:', referenceImageUrls.length);
     if (referenceImageUrls.length > 0) {
       referenceImageUrls.forEach((url, idx) => {
-        console.log(`[Image Generation API]     [${idx + 1}] ${url}`);
+        // Only log first 30 chars of URL to avoid flooding console with base64 data
+        const urlPreview = url.startsWith('data:') ? `${url.substring(0, 30)}... [base64 data]` : url;
+        console.log(`[Image Generation API]     [${idx + 1}] ${urlPreview}`);
       });
     }
     console.log('[Image Generation API]   - All URLs Public:', allUrlsPublic);

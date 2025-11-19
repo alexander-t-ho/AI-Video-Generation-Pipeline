@@ -348,36 +348,36 @@ export default function SceneCard({
     switch (status) {
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full animate-success border border-white/20">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full animate-success border border-white/20">
+            <CheckCircle2 className="w-4 h-4" />
             Completed
           </span>
         );
       case 'video_ready':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
+            <CheckCircle2 className="w-4 h-4" />
             Video Ready
           </span>
         );
       case 'image_ready':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
+            <CheckCircle2 className="w-4 h-4" />
             Image Ready
           </span>
         );
       case 'generating_video':
       case 'generating_image':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/10 text-white/80 rounded-full border border-white/20">
-            <Loader2 className="w-3 h-3 animate-spin" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/80 rounded-full border border-white/20">
+            <Loader2 className="w-4 h-4 animate-spin" />
             Generating...
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white/5 text-white/60 rounded-full border border-white/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/5 text-white/60 rounded-full border border-white/20">
             Pending
           </span>
         );
@@ -397,12 +397,12 @@ export default function SceneCard({
       {/* Scene Number Badge */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20">
+          <span className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 text-base font-semibold text-white/90 border border-white/20">
             {sceneIndex + 1}
           </span>
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-white/60" />
-            <span className="text-xs text-white/60">
+            <Clock className="w-5 h-5 text-white/60" />
+            <span className="text-sm text-white/60">
               {scene.suggestedDuration}s
             </span>
           </div>
@@ -411,12 +411,12 @@ export default function SceneCard({
       </div>
 
       {/* Description */}
-      <h3 className="text-sm font-medium text-white mb-2 line-clamp-2">
-        {scene.description}
+      <h3 className="text-base font-medium text-white mb-2 line-clamp-2">
+        {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
       </h3>
 
       {/* Image Prompt Preview */}
-      <p className="text-xs text-white/60 line-clamp-3">
+      <p className="text-sm text-white/60 line-clamp-3">
         {scene.imagePrompt}
       </p>
 
@@ -424,9 +424,9 @@ export default function SceneCard({
       {sceneError && (
         <div className="mt-3 p-2 bg-white/5 border border-white/20 rounded-md">
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-white/80 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-white/80 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs text-white/80">{sceneError.message}</p>
+              <p className="text-sm text-white/80">{sceneError.message}</p>
               {sceneError.retryable && (
                 <button
                   onClick={async (e) => {
@@ -438,7 +438,7 @@ export default function SceneCard({
                     }
                   }}
                   disabled={isGenerating}
-                  className="mt-1 text-xs text-white/60 hover:text-white/80 underline disabled:opacity-50"
+                  className="mt-1 text-sm text-white/60 hover:text-white/80 underline disabled:opacity-50"
                 >
                   Retry
                 </button>
@@ -463,12 +463,12 @@ export default function SceneCard({
           <button
             onClick={handleGenerateImage}
             disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
           >
             {isGenerating ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <ImageIcon className="w-3 h-3" />
+              <ImageIcon className="w-4 h-4" />
             )}
             Generate Image
           </button>
@@ -477,12 +477,12 @@ export default function SceneCard({
           <button
             onClick={handleGenerateVideo}
             disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
           >
             {isGenerating ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Video className="w-3 h-3" />
+              <Video className="w-4 h-4" />
             )}
             Generate Video
           </button>

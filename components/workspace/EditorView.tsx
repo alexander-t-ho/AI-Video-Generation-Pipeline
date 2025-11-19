@@ -1120,7 +1120,7 @@ export default function EditorView() {
         <div className="flex items-start justify-between">
           <div className="flex-1 pr-12">
             <h3 className="text-lg font-semibold text-white">
-              Scene {currentSceneIndex + 1}: {currentScene.description}
+              Scene {currentSceneIndex + 1}: {currentScene.description.charAt(0).toUpperCase() + currentScene.description.slice(1)}
             </h3>
             <div className="mt-2">
               <div className="flex items-start gap-2">

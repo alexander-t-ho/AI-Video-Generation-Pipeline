@@ -258,15 +258,24 @@ export async function uploadImages(
  * Generate an image for a scene
  */
 export async function generateImage(
-  request: ImageGenerationRequest
+  request: ImageGenerationRequest,
+  options?: { model?: string }
 ): Promise<ImageGenerationResponse> {
   return retryRequest(async () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...getRuntimeModelHeaders(),
+    };
+    
+    // Override with specific model if provided
+    if (options?.model) {
+      headers['X-Model-I2I'] = options.model;
+      headers['X-Model-T2I'] = options.model;
+    }
+    
     const response = await fetch(`${API_BASE_URL}/api/generate-image`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getRuntimeModelHeaders(),
-      },
+      headers,
       body: JSON.stringify(request),
     });
 

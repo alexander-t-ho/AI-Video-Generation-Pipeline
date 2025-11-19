@@ -6,7 +6,9 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { uploadToS3, getS3Url } from './s3-uploader';
+import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 
 // ============================================================================
 // Types
@@ -21,6 +23,7 @@ export interface UploadedImage {
   size: number;
   mimeType: string;
   createdAt: string;
+  isDuplicate?: boolean;    // Whether this is a duplicate of an existing image
   processedVersions?: ProcessedImage[]; // Background-removed versions
 }
 
@@ -37,6 +40,86 @@ export interface ProcessedImage {
 export interface StorageOptions {
   useS3?: boolean;           // Future: enable S3 storage
   projectId: string;
+}
+
+// ============================================================================
+// Duplicate Detection Functions
+// ============================================================================
+
+/**
+ * Calculate MD5 hash of image buffer for duplicate detection
+ */
+function calculateImageHash(buffer: Buffer): string {
+  return crypto.createHash('md5').update(buffer).digest('hex');
+}
+
+/**
+ * Check if an image with the given hash already exists in S3
+ */
+async function findExistingImageInS3(imageHash: string, projectId: string): Promise<UploadedImage | null> {
+  const bucket = process.env.AWS_S3_BUCKET_NAME;
+
+  if (!bucket) {
+    console.warn('[ImageStorage] AWS_S3_BUCKET_NAME not configured, skipping duplicate check');
+    return null;
+  }
+
+  try {
+    // Create S3 client directly
+    const region = process.env.AWS_REGION || 'us-east-1';
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!accessKeyId || !secretAccessKey) {
+      console.warn('[ImageStorage] AWS credentials not configured for duplicate check');
+      return null;
+    }
+
+    const s3Client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+
+    // List objects with the hash as prefix
+    const prefix = `uploads/${projectId}/${imageHash}`;
+    const command = new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      MaxKeys: 1, // We only need to know if at least one exists
+    });
+
+    const response = await s3Client.send(command);
+
+    if (response.Contents && response.Contents.length > 0) {
+      const s3Object = response.Contents[0];
+      const s3Key = s3Object.Key!;
+
+      // Extract filename from S3 key
+      const filename = path.basename(s3Key);
+      const url = getS3Url(s3Key);
+
+      // Return existing image info
+      return {
+        id: imageHash,
+        url,
+        localPath: '', // Not stored locally
+        s3Key,
+        originalName: filename,
+        size: s3Object.Size || 0,
+        mimeType: 'image/jpeg', // Default, could be enhanced
+        createdAt: s3Object.LastModified?.toISOString() || new Date().toISOString(),
+        isDuplicate: true,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[ImageStorage] Failed to check for existing image in S3:', error);
+    return null;
+  }
 }
 
 // ============================================================================
@@ -105,22 +188,38 @@ export async function saveUploadedImage(
   options: StorageOptions
 ): Promise<UploadedImage> {
   const { projectId, useS3 = false } = options;
-  
+
   // Validate image
   if (!buffer || buffer.length === 0) {
     throw new Error('Image buffer is empty');
   }
-  
+
   // Validate MIME type
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
   if (!allowedTypes.includes(mimeType)) {
     throw new Error(`Unsupported image type: ${mimeType}. Allowed types: ${allowedTypes.join(', ')}`);
   }
+
+  // Calculate image hash for duplicate detection
+  const imageHash = calculateImageHash(buffer);
+
+  // Check for existing image in S3 if S3 is enabled
+  if (useS3) {
+    console.log(`[ImageStorage] Checking for duplicate image with hash: ${imageHash.substring(0, 8)}...`);
+    const existingImage = await findExistingImageInS3(imageHash, projectId);
+
+    if (existingImage) {
+      console.log(`[ImageStorage] Found existing image in S3, returning duplicate info`);
+      return {
+        ...existingImage,
+        originalName, // Keep the new filename for reference
+      };
+    }
+  }
   
-  // Generate unique filename
+  // Generate filename using hash for consistent duplicate detection
   const ext = path.extname(originalName) || (mimeType.includes('png') ? '.png' : '.jpg');
-  const imageId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-  const filename = `${imageId}${ext}`;
+  const filename = `${imageHash}${ext}`;
   
   // Save to local storage
   const localPath = await saveImageLocally(buffer, projectId, filename);
@@ -140,7 +239,7 @@ export async function saveUploadedImage(
   }
   
   return {
-    id: imageId,
+    id: imageHash,
     url,
     localPath,
     s3Key,

@@ -203,21 +203,39 @@ export async function GET(
           );
         } catch (downloadError) {
           console.error('[Image Status API] Failed to download image:', downloadError);
-          // Return status succeeded but without image (client can retry with download)
+          // Return status succeeded WITH the raw Replicate URL so client can still display it
+          const { v4: uuidv4 } = require('uuid');
           return NextResponse.json(
             {
               success: true,
               status: 'succeeded',
+              image: {
+                id: uuidv4(),
+                url: imageUrl,
+                localPath: imageUrl, // Use Replicate URL as localPath for display
+                prompt: prompt || '',
+                replicateId: predictionId,
+                createdAt: new Date().toISOString(),
+              },
             } as ImageStatusResponse,
             { status: 200 }
           );
         }
       } else {
-        // Status succeeded but no auto-download (client should provide projectId/sceneIndex)
+        // Status succeeded but no auto-download - return the raw Replicate URL
+        const { v4: uuidv4 } = require('uuid');
         return NextResponse.json(
           {
             success: true,
             status: 'succeeded',
+            image: {
+              id: uuidv4(),
+              url: imageUrl,
+              localPath: imageUrl, // Use Replicate URL as localPath for display
+              prompt: prompt || '',
+              replicateId: predictionId,
+              createdAt: new Date().toISOString(),
+            },
           } as ImageStatusResponse,
           { status: 200 }
         );

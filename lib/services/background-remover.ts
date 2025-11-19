@@ -2,9 +2,11 @@
  * Background Removal Service
  * 
  * This module handles background removal from images using Replicate's RMBG model.
+ * Includes S3 caching to avoid reprocessing the same image multiple times.
  */
 
 import Replicate from 'replicate';
+import { findBackgroundRemovedVersion, uploadProcessedImageToS3, getS3Url } from '@/lib/storage/s3-uploader';
 
 // Use Replicate's RMBG (Remove Background) model
 const RMBG_MODEL = 'lucataco/remove-bg:95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1';
@@ -37,9 +39,10 @@ function createReplicateClient(): Replicate {
 /**
  * Removes background from an image URL
  * @param imageUrl URL of the image to process (must be publicly accessible HTTP/HTTPS URL)
+ * @param s3Key Optional S3 key of the original image (for caching)
  * @returns URL of the processed image with background removed
  */
-export async function removeBackground(imageUrl: string): Promise<string> {
+export async function removeBackground(imageUrl: string, s3Key?: string): Promise<string> {
   if (!imageUrl || typeof imageUrl !== 'string') {
     throw new Error('Image URL is required and must be a string');
   }
@@ -52,6 +55,19 @@ export async function removeBackground(imageUrl: string): Promise<string> {
   const logPrefix = '[BackgroundRemover]';
   console.log(`${logPrefix} Starting background removal`);
   console.log(`${logPrefix} Input image: ${imageUrl.substring(0, 80)}${imageUrl.length > 80 ? '...' : ''}`);
+
+  // Check for existing processed version if we have an S3 key
+  if (s3Key) {
+    console.log(`${logPrefix} Checking for cached background-removed version...`);
+    const existingKey = await findBackgroundRemovedVersion(s3Key);
+    if (existingKey) {
+      const cachedUrl = getS3Url(existingKey);
+      console.log(`${logPrefix} Using cached background-removed image from S3`);
+      console.log(`${logPrefix} Cached URL: ${cachedUrl.substring(0, 80)}${cachedUrl.length > 80 ? '...' : ''}`);
+      return cachedUrl;
+    }
+    console.log(`${logPrefix} No cached version found, processing image...`);
+  }
 
   const replicate = createReplicateClient();
 
@@ -75,6 +91,21 @@ export async function removeBackground(imageUrl: string): Promise<string> {
     
     console.log(`${logPrefix} Background removal completed`);
     console.log(`${logPrefix} Output image: ${outputUrl.substring(0, 80)}${outputUrl.length > 80 ? '...' : ''}`);
+
+    // Upload to S3 if s3Key provided
+    if (s3Key) {
+      try {
+        console.log(`${logPrefix} Uploading processed image to S3 for future caching...`);
+        const processedKey = await uploadProcessedImageToS3(outputUrl, s3Key);
+        const s3Url = getS3Url(processedKey);
+        console.log(`${logPrefix} Processed image uploaded to S3: ${s3Url.substring(0, 80)}${s3Url.length > 80 ? '...' : ''}`);
+        return s3Url;
+      } catch (uploadError) {
+        // If upload fails, still return the Replicate URL
+        console.warn(`${logPrefix} Failed to upload to S3, returning Replicate URL:`, uploadError);
+        return outputUrl;
+      }
+    }
 
     return outputUrl;
   } catch (error) {
@@ -157,11 +188,19 @@ async function pollForCompletion(predictionId: string): Promise<string> {
 /**
  * Removes background from multiple images
  * @param imageUrls Array of image URLs to process
+ * @param s3Keys Optional array of S3 keys for caching (must match imageUrls length if provided)
  * @returns Array of URLs of processed images with backgrounds removed
  */
-export async function removeBackgrounds(imageUrls: string[]): Promise<string[]> {
+export async function removeBackgrounds(
+  imageUrls: string[], 
+  s3Keys?: string[]
+): Promise<string[]> {
   if (!Array.isArray(imageUrls)) {
     throw new Error('Image URLs must be an array');
+  }
+
+  if (s3Keys && s3Keys.length !== imageUrls.length) {
+    throw new Error('S3 keys array length must match imageUrls array length');
   }
 
   const logPrefix = '[BackgroundRemover]';
@@ -173,7 +212,8 @@ export async function removeBackgrounds(imageUrls: string[]): Promise<string[]> 
   for (let i = 0; i < imageUrls.length; i++) {
     console.log(`${logPrefix} Processing image ${i + 1}/${imageUrls.length}`);
     try {
-      const result = await removeBackground(imageUrls[i]);
+      const s3Key = s3Keys?.[i];
+      const result = await removeBackground(imageUrls[i], s3Key);
       results.push(result);
     } catch (error) {
       console.error(`${logPrefix} Failed to process image ${i + 1}:`, error);

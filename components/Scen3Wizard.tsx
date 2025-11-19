@@ -3,8 +3,8 @@
 import { useState, useRef } from 'react';
 import ImageDropZone from './ImageDropZone';
 
-interface Take5WizardProps {
-  onSubmit: (combinedPrompt: string, images?: File[], targetDuration?: number) => void | Promise<void>;
+interface Scen3WizardProps {
+  onSubmit: (combinedPrompt: string, images?: File[], targetDuration?: number, characterSubject?: string) => void | Promise<void>;
   disabled?: boolean;
   initialPrompt?: string;
   initialImages?: File[];
@@ -12,22 +12,21 @@ interface Take5WizardProps {
   onStepChange?: (step: number) => void;
 }
 
-type StepId = 1 | 2 | 3 | 4 | 5;
+type StepId = 1 | 2 | 3;
 
-export default function Take5Wizard({ 
-  onSubmit, 
+export default function Scen3Wizard({
+  onSubmit,
   disabled = false,
   initialPrompt = '',
   initialImages = [],
   currentStep = 1,
   onStepChange
-}: Take5WizardProps) {
+}: Scen3WizardProps) {
   const [activeStep, setActiveStep] = useState<StepId>(currentStep as StepId);
   const [isGenerating, setIsGenerating] = useState(false);
   const isGeneratingRef = useRef(false); // Keep ref for immediate checks
 
-  const [idea, setIdea] = useState('');
-  const [subject, setSubject] = useState(initialPrompt); // Pre-fill with initial prompt
+  const [subject] = useState(initialPrompt); // Pre-fill with initial prompt (no UI step for this)
   const [style, setStyle] = useState('Leigh Powis–style commercial film, tight and action-driven');
   const [audio, setAudio] = useState('');
   const [platform, setPlatform] = useState('');
@@ -36,11 +35,9 @@ export default function Take5Wizard({
   const [images, setImages] = useState<File[]>(initialImages);
 
   const steps: { id: StepId; label: string }[] = [
-    { id: 1, label: 'Subject' },
-    { id: 2, label: 'Idea' },
-    { id: 3, label: 'Style' },
-    { id: 4, label: 'Sound' },
-    { id: 5, label: 'Format' },
+    { id: 1, label: 'Style' },
+    { id: 2, label: 'Sound' },
+    { id: 3, label: 'Format' },
   ];
 
   const handleImagesSelected = (files: File[]) => {
@@ -77,9 +74,7 @@ export default function Take5Wizard({
     const lines: string[] = [];
 
     lines.push(
-      idea.trim()
-        ? `Original idea: ${idea.trim()}`
-        : 'Original idea: The user wants a high-impact performance advertising spot. Infer a strong automotive or product concept from the answers below.'
+      'Original idea: The user wants a high-impact performance advertising spot. Infer a strong automotive or product concept from the answers below.'
     );
 
     lines.push(
@@ -141,100 +136,8 @@ export default function Take5Wizard({
         return (
           <div className="space-y-6">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-white">
-                Step 1 · What&apos;s the main subject?
-              </h2>
-              <p className="text-sm text-white/60">
-                Describe the main character, product, or object in detail. This will be used to create consistent visuals throughout your video.
-              </p>
-            </div>
-
-            <textarea
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              rows={4}
-              className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="E.g., A sleek silver Porsche 911 GT3, studio lighting, pristine condition, sporty and aggressive design, or a young professional in their 30s wearing a modern suit, confident expression..."
-              disabled={disabled}
-            />
-
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-white/40">Quick examples</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  'A red sports car with chrome accents, low angle shot',
-                  'A professional woman in business attire, confident and approachable',
-                  'A premium smartphone with sleek design, modern and minimalist',
-                ].map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setSubject(example)}
-                    disabled={disabled}
-                    className="text-xs rounded-full border border-white/20 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white transition-colors"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-white/40">Optional · Reference images</p>
-              <ImageDropZone onFilesSelected={handleImagesSelected} />
-            </div>
-          </div>
-        );
-      case 2:
-        return (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-white">
-                Step 2 · What&apos;s the core idea?
-              </h2>
-              <p className="text-sm text-white/60">
-                Write it messy. Who is this for, what are you selling, and what should viewers feel or do after
-                watching?
-              </p>
-            </div>
-
-            <textarea
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              rows={4}
-              className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="E.g., A high-energy launch film for a new electric sports car that feels cinematic and aspirational, ending on a bold brand line."
-              disabled={disabled}
-            />
-
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-white/40">Quick starters</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  'Launch film for a new electric car, focused on acceleration and sleek design.',
-                  'Founder story for a small DTC brand, mixing product close-ups with human moments.',
-                  'Customer testimonial-style ad that feels like a mini-documentary.',
-                ].map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setIdea(example)}
-                    disabled={disabled}
-                    className="text-xs rounded-full border border-white/20 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white transition-colors"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      case 3:
-        return (
-          <div className="space-y-6">
-            <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-                Step 3 · Which director or style?
+                Step 1 · Which director or style?
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 We&apos;ll default to a clean, cinematic look shot on Arri Alexa. Choose a direction to shape framing,
@@ -282,14 +185,19 @@ export default function Take5Wizard({
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100"
               />
             </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Optional · Reference images</p>
+              <ImageDropZone onFilesSelected={handleImagesSelected} />
+            </div>
           </div>
         );
-      case 4:
+      case 2:
         return (
           <div className="space-y-6">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-                Step 4 · What should this sound like?
+                Step 2 · What should this sound like?
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Sound is half the story. Think about music, engine presence, and how quiet or loud the world should feel.
@@ -335,12 +243,12 @@ export default function Take5Wizard({
             </div>
           </div>
         );
-      case 5:
+      case 3:
         return (
           <div className="space-y-6">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-                Step 5 · Where does this run?
+                Step 3 · Where does this run?
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 We&apos;ll default to a 15s cinematic spot shot on Arri Alexa. Adjust if you need a different length or
@@ -431,9 +339,9 @@ export default function Take5Wizard({
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-8">
-      {/* 5 Dots Stepper - Monologue style */}
+      {/* 3 Dots Stepper - Monologue style */}
       <div className="flex items-center justify-center gap-3">
-        {[1, 2, 3, 4, 5].map((step) => (
+        {[1, 2, 3].map((step) => (
           <div
             key={step}
             className={`h-2 rounded-full transition-all duration-300 ${
@@ -456,7 +364,7 @@ export default function Take5Wizard({
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-[10px] font-semibold">
               {activeStep}
             </span>
-            <span>Step {activeStep} of 5</span>
+            <span>Step {activeStep} of 3</span>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -471,7 +379,7 @@ export default function Take5Wizard({
               </button>
             )}
 
-            {activeStep < 5 && (
+            {activeStep < 3 && (
               <button
                 type="button"
                 onClick={goNext}
@@ -488,7 +396,7 @@ export default function Take5Wizard({
               disabled={disabled || isGenerating}
               className="px-6 py-2 rounded-full bg-white text-sm font-semibold text-black hover:bg-white/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {activeStep < 5 ? 'Skip · Generate' : 'Generate storyboard'}
+              {activeStep < 3 ? 'Skip · Generate' : 'Generate storyboard'}
             </button>
           </div>
         </div>
@@ -496,4 +404,6 @@ export default function Take5Wizard({
     </div>
   );
 }
+
+
 

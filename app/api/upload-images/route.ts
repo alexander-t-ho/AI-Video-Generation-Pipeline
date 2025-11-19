@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { saveUploadedImage, ProcessedImage } from '@/lib/storage/image-storage';
 import { removeBackgroundIterative } from '@/lib/ai/background-remover';
 import { cleanupImageEdgesIterative } from '@/lib/ai/edge-cleanup';
+import { findBackgroundRemovedVersion, getS3Url } from '@/lib/storage/s3-uploader';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -164,70 +165,165 @@ export async function POST(request: NextRequest) {
           }
         );
 
-        console.log(`[Upload Images API] Successfully uploaded image ${i + 1}/${imageFiles.length}: ${uploadedImage.id}`);
+        if (uploadedImage.isDuplicate) {
+          console.log(`[Upload Images API] Duplicate image detected ${i + 1}/${imageFiles.length}: ${uploadedImage.id} - using existing S3 copy`);
+        } else {
+          console.log(`[Upload Images API] Successfully uploaded image ${i + 1}/${imageFiles.length}: ${uploadedImage.id}`);
+        }
 
-        // Process image through background removal (1 iteration) if enabled
-        if (enableBackgroundRemoval) {
+        // Process image through background removal (2 iterations) if enabled
+        // Skip background removal for duplicates since they already have processed versions
+        if (enableBackgroundRemoval && !uploadedImage.isDuplicate) {
           try {
-            console.log(`[Upload Images API] Starting background removal for image ${i + 1}...`);
-            const processedPaths = await removeBackgroundIterative(
-              uploadedImage.localPath,
-              1 // 1 iteration
-            );
-
-          // Create ProcessedImage objects for each iteration
-          const processedVersions: ProcessedImage[] = [];
-          for (let iter = 0; iter < processedPaths.length; iter++) {
-            const processedPath = processedPaths[iter];
-
-            // Get file stats
-            const stats = await fs.stat(processedPath);
-
-            // Upload processed image to S3 using existing upload-image-s3 API
-            let processedUrl = processedPath; // Default to local path
-            let processedS3Key: string | undefined;
-
-            try {
-              // Use existing upload-image-s3 API which handles S3 upload with fallback
-              const s3Response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/upload-image-s3`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  imagePath: processedPath,
-                  projectId: projectId,
-                }),
-              });
-
-              const s3Data = await s3Response.json();
-              if (s3Data.success && s3Data.data?.s3Url) {
-                processedUrl = s3Data.data.s3Url;
-                processedS3Key = s3Data.data.s3Key;
-                console.log(`[Upload Images API] Uploaded processed image ${iter + 1} to S3`);
-              } else {
-                console.warn(`[Upload Images API] S3 upload failed for processed image ${iter + 1}, using local path`);
-              }
-            } catch (s3Error: any) {
-              console.warn(`[Upload Images API] S3 upload error for processed image ${iter + 1}:`, s3Error.message);
-              // Continue with local path if S3 fails
+            // Check if a background-removed version already exists in S3
+            let cachedS3Key: string | null = null;
+            if (uploadedImage.s3Key) {
+              console.log(`[Upload Images API] Checking for cached background-removed version for image ${i + 1}...`);
+              cachedS3Key = await findBackgroundRemovedVersion(uploadedImage.s3Key);
             }
 
-            const processedImage: ProcessedImage = {
-              id: uuidv4(),
-              iteration: iter + 1,
-              url: processedUrl, // S3 URL or local path
-              localPath: processedPath,
-              s3Key: processedS3Key,
-              size: stats.size,
-              createdAt: new Date().toISOString(),
-            };
+            if (cachedS3Key) {
+              // Use cached version from S3 - instant!
+              console.log(`[Upload Images API] Found cached background-removed version for image ${i + 1}, skipping processing`);
+              const cachedUrl = getS3Url(cachedS3Key);
+              
+              // Create a single processed version using the cached image
+              const processedImage: ProcessedImage = {
+                id: uuidv4(),
+                iteration: 1,
+                url: cachedUrl,
+                localPath: '', // Not stored locally
+                s3Key: cachedS3Key,
+                size: 0, // Size unknown but not critical
+                createdAt: new Date().toISOString(),
+              };
 
-            processedVersions.push(processedImage);
-            console.log(`[Upload Images API] Created processed version ${iter + 1}/1 for image ${i + 1} (background removal)`);
-          }
+              uploadedImage.processedVersions = [processedImage];
+              console.log(`[Upload Images API] Using cached background-removed image from S3 (instant)`);
+            } else {
+              // No cached version - process the image
+              console.log(`[Upload Images API] No cached version found, processing image ${i + 1}...`);
+              const processedPaths = await removeBackgroundIterative(
+                uploadedImage.localPath,
+                1 // Fast single pass for initial upload (was 2)
+              );
 
-            // Attach processed versions to uploaded image
-            uploadedImage.processedVersions = processedVersions;
-            console.log(`[Upload Images API] Background removal completed for image ${i + 1} (${processedVersions.length} version(s))`);
+              // Create ProcessedImage objects for each iteration
+              const processedVersions: ProcessedImage[] = [];
+              for (let iter = 0; iter < processedPaths.length; iter++) {
+                const processedPath = processedPaths[iter];
+
+                // Get file stats
+                const stats = await fs.stat(processedPath);
+
+                // Upload processed image to S3 using existing upload-image-s3 API
+                let processedUrl = processedPath; // Default to local path
+                let processedS3Key: string | undefined;
+
+                try {
+                  // Use existing upload-image-s3 API which handles S3 upload with fallback
+                  const s3Response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/upload-image-s3`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      imagePath: processedPath,
+                      projectId: projectId,
+                    }),
+                  });
+
+                  const s3Data = await s3Response.json();
+                  if (s3Data.success && s3Data.data?.s3Url) {
+                    processedUrl = s3Data.data.s3Url;
+                    processedS3Key = s3Data.data.s3Key;
+                    console.log(`[Upload Images API] Uploaded processed image ${iter + 1} to S3`);
+                  } else {
+                    console.warn(`[Upload Images API] S3 upload failed for processed image ${iter + 1}, using local path`);
+                  }
+                } catch (s3Error: any) {
+                  console.warn(`[Upload Images API] S3 upload error for processed image ${iter + 1}:`, s3Error.message);
+                  // Continue with local path if S3 fails
+                }
+
+                const processedImage: ProcessedImage = {
+                  id: uuidv4(),
+                  iteration: iter + 1,
+                  url: processedUrl, // S3 URL or local path
+                  localPath: processedPath,
+                  s3Key: processedS3Key,
+                  size: stats.size,
+                  createdAt: new Date().toISOString(),
+                };
+
+                processedVersions.push(processedImage);
+                console.log(`[Upload Images API] Created processed version ${iter + 1}/${processedPaths.length} for image ${i + 1} (background removal)`);
+              }
+
+              // Enable edge cleanup for brand identity assets
+              const skipEdgeCleanup = false;
+              if (!skipEdgeCleanup && edgeCleanupIterations > 0 && processedPaths.length > 0) {
+                try {
+                  const lastBgRemovedPath = processedPaths[processedPaths.length - 1];
+                  console.log(`[Upload Images API] Applying ${edgeCleanupIterations} edge cleanup iteration(s) to processed image...`);
+                  const cleanedPaths = await cleanupImageEdgesIterative(lastBgRemovedPath, edgeCleanupIterations);
+                  
+                  // Add all edge cleanup iterations as separate processed versions
+                  // The last one will be the most refined
+                  for (let cleanupIter = 0; cleanupIter < cleanedPaths.length; cleanupIter++) {
+                    const cleanedPath = cleanedPaths[cleanupIter];
+                    const stats = await fs.stat(cleanedPath);
+                    
+                    // Upload cleaned image to S3
+                    let cleanedUrl = cleanedPath;
+                    let cleanedS3Key: string | undefined;
+                  
+                    try {
+                      const s3Response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/upload-image-s3`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          imagePath: cleanedPath,
+                          projectId: projectId,
+                        }),
+                      });
+                      
+                      const s3Data = await s3Response.json();
+                      if (s3Data.success && s3Data.data?.s3Url) {
+                        cleanedUrl = s3Data.data.s3Url;
+                        cleanedS3Key = s3Data.data.s3Key;
+                      }
+                    } catch (s3Error: any) {
+                      console.warn(`[Upload Images API] S3 upload failed for edge-cleaned image ${cleanupIter + 1}, using local path`);
+                    }
+                    
+                    const edgeCleanedImage: ProcessedImage = {
+                      id: uuidv4(),
+                      iteration: processedVersions.length + cleanupIter + 1, // Continue numbering from background removal iterations
+                      url: cleanedUrl,
+                      localPath: cleanedPath,
+                      s3Key: cleanedS3Key,
+                      size: stats.size,
+                      createdAt: new Date().toISOString(),
+                    };
+                    
+                    processedVersions.push(edgeCleanedImage);
+                    console.log(`[Upload Images API] Created edge-cleaned version ${cleanupIter + 1}/${edgeCleanupIterations} for image ${i + 1}`);
+                  }
+                  
+                  console.log(`[Upload Images API] Edge cleanup completed for image ${i + 1} (${edgeCleanupIterations} iteration(s))`);
+                } catch (edgeError: any) {
+                  const edgeErrorMessage = edgeError.message || 'Unknown error';
+                  console.warn(`[Upload Images API] Edge cleanup failed for image ${i + 1}, using un-cleaned version: ${edgeErrorMessage}`);
+                  // Continue with un-cleaned version if edge cleanup fails
+                  errors.push(`Image "${file.name}" edge cleanup: ${edgeErrorMessage}`);
+                }
+              } else {
+                console.log(`[Upload Images API] Skipping edge cleanup for faster initial upload`);
+              }
+
+              // Attach processed versions to uploaded image
+              uploadedImage.processedVersions = processedVersions;
+              console.log(`[Upload Images API] Background removal completed for image ${i + 1} (${processedVersions.length} versions${skipEdgeCleanup ? '' : ', last with edge cleanup'})`);
+            } // End of else block (no cached version found)
           } catch (bgError: any) {
             const bgErrorMessage = bgError.message || 'Unknown error';
             console.error(`[Upload Images API] Background removal failed for image ${i + 1}:`, bgErrorMessage);

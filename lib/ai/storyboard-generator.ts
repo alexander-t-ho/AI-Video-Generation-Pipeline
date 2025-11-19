@@ -32,7 +32,7 @@ export function setRuntimeTextModel(model: string) {
  * System prompt for storyboard generation
  * From PRD Appendix: Prompt Templates
  *
- * Updated to enforce structured scene descriptions for advertising, with a default
+ * Updated to enforce SHORT, concise scene descriptions for advertising, with a default
  * bias toward product and automotive work and an Arri Alexa commercial look.
  */
 const STORYBOARD_SYSTEM_PROMPT = `You are a professional video storyboard creator specializing in performance-focused advertising,
@@ -43,18 +43,21 @@ Given a short creative brief for a video advertisement, create exactly 5 scenes 
 For each scene:
 - Duration: 2–4 seconds
 - Clear visual focus and logical progression from the previous scene
-- Written as a single, concrete film shot the crew could execute on set
+- Keep the description SHORT and CONCISE - 3-6 words maximum per scene
 
-Each scene's description must follow this structure in one sentence:
-[SHOT TYPE] + [SUBJECT] + [ACTION] + [STYLE] + [CAMERA MOVEMENT] + [AUDIO CUES]
+Each scene's description must be a SHORT phrase like:
+"driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
 
-Where:
-- SHOT TYPE: e.g. "Wide shot", "Low tracking shot", "Close-up", "Over-the-shoulder", etc.
-- SUBJECT: the concrete subject (car, driver, product, hands, environment, etc.)
-- ACTION: what is happening on screen in this moment
-- STYLE: visual look, lighting, mood, and references (e.g. "Leigh Powis–style commercial film, tight and action-driven")
-- CAMERA MOVEMENT: how the camera moves (e.g. "aggressive tracking", "slow push-in", "handheld", or "static")
-- AUDIO CUES: key sound design and music elements that define the moment (engines, tires, ambience, score, VO, etc.)
+Examples of good short descriptions:
+- "driver close-up" (not "Close-up of a driver's focused expression as they grip the steering wheel tightly")
+- "wide car approach" (not "Wide establishing shot of a sleek sports car approaching through urban streets")
+- "interior cockpit" (not "Interior shot of the car's cockpit with dashboard lights glowing")
+- "engine roar" (not "Extreme close-up of the engine bay with mechanical details and steam")
+- "hero product shot" (not "Dramatic hero shot of the product with perfect lighting and composition")
+
+The description should be a brief, memorable phrase that captures the essence of the shot.
+
+For the imagePrompt field, provide detailed visual guidance for image generation.
 
 Unless the brief clearly specifies otherwise, assume:
 - The spot is shot on Arri Alexa with a high-end commercial finish
@@ -65,7 +68,7 @@ Output strictly valid JSON in this format:
   "scenes": [
     {
       "order": 0,
-      "description": "Full sentence using the structure above",
+      "description": "Short 3-6 word phrase describing the scene",
       "imagePrompt": "Detailed prompt for image generation that matches the description, including shot type, subject, action, style, lighting, composition, camera movement, and any audio cues that can be implied visually.",
       "duration": 3
     },
@@ -73,7 +76,7 @@ Output strictly valid JSON in this format:
   ]
 }
 
-Keep prompts specific, visual, and production-ready. Avoid vague marketing language like "brand awareness" or "emotional connection" in the scene descriptions; show those ideas through concrete shots.`;
+Keep image prompts specific, visual, and production-ready. The description field should be short and punchy, while imagePrompt contains all the detail.`;
 
 // ============================================================================
 // Types
@@ -173,25 +176,45 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
   if (referenceImageUrls && referenceImageUrls.length > 0) {
     for (const imageUrl of referenceImageUrls) {
       // OpenRouter needs publicly accessible URLs or base64 data URLs
-      // For local file paths, we need to convert to base64 or serve via public endpoint
-      // TODO: When S3 is enabled, use S3 URLs directly
-      // For now, if it's a local path, we'll need to convert it to base64
+      // We need to convert both local paths AND S3 URLs to base64 because:
+      // 1. S3 URLs may not be publicly accessible (403 errors)
+      // 2. Local paths need to be read from filesystem
       let imageUrlForAPI = imageUrl;
       
-      // Check if it's a local file path (starts with /tmp or relative path)
+      // Check if it's a local file path OR an S3 URL
       if (imageUrl.startsWith('/tmp') || imageUrl.startsWith('./') || !imageUrl.startsWith('http')) {
-        // For local paths, we need to read and convert to base64
-        // This is a temporary solution - S3 URLs will work better
+        // Local paths: read directly from filesystem
         try {
           const imageBuffer = fs.readFileSync(imageUrl);
           const base64Image = imageBuffer.toString('base64');
           const mimeType = imageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
           imageUrlForAPI = `data:${mimeType};base64,${base64Image}`;
+          console.log(`[Storyboard] Converted local path to base64: ${imageUrl.substring(0, 50)}...`);
         } catch (error) {
           console.warn(`[Storyboard] Failed to read local image ${imageUrl}, skipping:`, error);
           continue; // Skip this image if we can't read it
         }
+      } else if (imageUrl.includes('s3.amazonaws.com') || imageUrl.includes('s3.')) {
+        // S3 URLs: download and convert to base64 to avoid 403 errors
+        try {
+          console.log(`[Storyboard] Downloading S3 image for base64 conversion: ${imageUrl.substring(0, 50)}...`);
+          const response = await fetch(imageUrl);
+          if (!response.ok) {
+            console.warn(`[Storyboard] Failed to download S3 image (${response.status}), skipping: ${imageUrl}`);
+            continue;
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const base64Image = buffer.toString('base64');
+          const mimeType = imageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
+          imageUrlForAPI = `data:${mimeType};base64,${base64Image}`;
+          console.log(`[Storyboard] Successfully converted S3 image to base64`);
+        } catch (error) {
+          console.warn(`[Storyboard] Failed to download S3 image ${imageUrl}, skipping:`, error);
+          continue;
+        }
       }
+      // Otherwise, use the URL as-is (for publicly accessible URLs)
       
       userMessageContent.push({
         type: 'image_url',

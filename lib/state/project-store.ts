@@ -3,11 +3,19 @@
  */
 
 import { create } from 'zustand';
-import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, TimelineClip } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { v4 as uuidv4 } from 'uuid';
 
 type WorkflowStep = 'idle' | 'generating_image' | 'image_ready' | 'generating_video' | 'video_ready' | 'extracting_frames' | 'frames_ready' | 'completed';
+
+export interface CharacterReferenceImage extends GeneratedImage {
+  angleType: AngleType;
+  generationModel: string;
+  isUpscaled: boolean;
+  originalPrompt: string;
+  consistencyScore?: number; // 0-100, for quality checking
+}
 
 interface ProjectStore {
   // Project state
@@ -46,6 +54,8 @@ interface ProjectStore {
   // Actions
   createProject: (prompt: string, targetDuration?: number) => void;
   setStoryboard: (scenes: Scene[]) => void;
+  updateScene: (sceneId: string, updates: Partial<Scene>) => void;
+  reorderScenes: (scenes: Scene[]) => void;
   updateScenePrompt: (sceneIndex: number, imagePrompt: string) => void;
   updateSceneSettings: (sceneIndex: number, settings: {
     imagePrompt?: string;
@@ -96,6 +106,18 @@ interface ProjectStore {
   setMediaFilter: (filter: MediaDrawerState['filters']) => void;
   setMediaSearchQuery: (query: string) => void;
   
+  // Timeline management
+  setSelectedClipId: (clipId: string | null) => void;
+  initializeTimelineClips: () => void;
+  splitClip: (clipId: string, splitTime: number) => void;
+  splitAtPlayhead: (time: number) => void;
+  deleteClip: (clipId: string) => void;
+  cropClip: (clipId: string, trimStart: number, trimEnd: number) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  
   // Navigation
   navigateToWorkspace: (projectId: string) => void;
   loadProject: (projectId: string) => Promise<void>;
@@ -108,23 +130,11 @@ interface ProjectStore {
   setHasUploadedImages: (has: boolean) => void;
   setUploadedImageUrls: (urls: string[]) => void;
   
-  // Timeline clip management
-  initializeTimelineClips: () => void;
-  splitClip: (clipId: string, splitTime: number) => void;
-  deleteClip: (clipId: string) => void;
-  cropClip: (clipId: string, trimStart: number, trimEnd: number) => void;
-  moveClip: (clipId: string, newStartTime: number) => void;
-
-  // Timeline undo/redo
-  undo: () => void;
-  redo: () => void;
-  canUndo: () => boolean;
-  canRedo: () => boolean;
-  setSelectedClipId: (clipId: string | null) => void;
-
-  // Split at playhead
-  splitAtPlayhead: (playheadTime: number) => void;
-
+  // Brand identity asset management
+  setSelectedColor: (color: string) => void;
+  setCurrentReferenceImageUrl: (url: string) => void;
+  setAssetDescription: (description: string) => void;
+  
   reset: () => void;
 }
 
@@ -185,19 +195,73 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setStoryboard: (scenes: Scene[]) => {
     set((state) => {
       if (!state.project) return state;
-      
+
       // Convert scenes to SceneWithState
       const scenesWithState: SceneWithState[] = scenes.map((scene) => ({
         ...scene,
         generatedImages: [],
         status: 'pending',
       }));
-      
+
       return {
         project: {
           ...state.project,
           storyboard: scenes,
           status: 'scene_generation',
+        },
+        scenes: scenesWithState,
+      };
+    });
+  },
+
+  updateScene: (sceneId: string, updates: Partial<Scene>) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard) return state;
+
+      // Update the scene in the storyboard
+      const updatedStoryboard = state.project.storyboard.map((scene) =>
+        scene.id === sceneId ? { ...scene, ...updates } : scene
+      );
+
+      // Update the scene in scenes array (SceneWithState)
+      const updatedScenes = state.scenes.map((sceneWithState) =>
+        sceneWithState.id === sceneId
+          ? { ...sceneWithState, ...updates }
+          : sceneWithState
+      );
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        },
+        scenes: updatedScenes,
+      };
+    });
+  },
+
+  reorderScenes: (reorderedScenes: Scene[]) => {
+    set((state) => {
+      if (!state.project) return state;
+
+      // Update order property for each scene
+      const scenesWithOrder = reorderedScenes.map((scene, index) => ({
+        ...scene,
+        order: index,
+      }));
+
+      // Convert to SceneWithState, preserving existing state
+      const scenesWithState: SceneWithState[] = scenesWithOrder.map((scene) => {
+        const existingSceneState = state.scenes.find(s => s.id === scene.id);
+        return existingSceneState
+          ? { ...existingSceneState, ...scene }
+          : { ...scene, generatedImages: [], status: 'pending' as const };
+      });
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: scenesWithOrder,
         },
         scenes: scenesWithState,
       };
@@ -801,127 +865,196 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     });
   },
   
-  // Timeline clip management
+  // Brand identity asset management
+  setSelectedColor: (color: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          selectedColor: color,
+        },
+      };
+    });
+  },
+  
+  setCurrentReferenceImageUrl: (url: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          currentReferenceImageUrl: url,
+        },
+      };
+    });
+  },
+  
+  setAssetDescription: (description: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          assetDescription: description,
+        },
+      };
+    });
+  },
+  
+  // Timeline management
+  setSelectedClipId: (clipId: string | null) => {
+    set({ selectedClipId: clipId });
+  },
+  
   initializeTimelineClips: () => {
     set((state) => {
-      if (!state.project || !state.scenes) return state;
+      if (!state.project) return state;
       
       const clips: TimelineClip[] = [];
-      let currentStartTime = 0;
+      let currentTime = 0;
       
       state.scenes.forEach((scene, index) => {
-        // Get the selected video for this scene
-        const selectedVideo = scene.selectedVideoId && scene.generatedVideos
-          ? scene.generatedVideos.find(v => v.id === scene.selectedVideoId)
-          : null;
+        // Get the selected video or first available video
+        let video: GeneratedVideo | undefined;
+        if (scene.selectedVideoId && scene.generatedVideos) {
+          video = scene.generatedVideos.find(v => v.id === scene.selectedVideoId);
+        }
         
-        // Fallback to legacy videoLocalPath
-        const videoPath = selectedVideo?.localPath || scene.videoLocalPath;
-        const videoId = selectedVideo?.id || 'legacy';
-        const videoDuration = selectedVideo?.actualDuration || scene.actualDuration || scene.suggestedDuration;
+        // Fallback to videoLocalPath for backward compatibility
+        if (!video && scene.videoLocalPath) {
+          video = {
+            id: uuidv4(),
+            url: scene.videoLocalPath.startsWith('http') 
+              ? scene.videoLocalPath 
+              : `/api/serve-video?path=${encodeURIComponent(scene.videoLocalPath)}`,
+            localPath: scene.videoLocalPath,
+            actualDuration: scene.actualDuration,
+            timestamp: new Date().toISOString(),
+          };
+        }
         
-        if (videoPath && videoDuration) {
-          const clip: TimelineClip = {
+        if (video && video.localPath) {
+          const duration = video.actualDuration || scene.suggestedDuration || 3;
+          clips.push({
             id: uuidv4(),
             sceneIndex: index,
             sceneId: scene.id,
             title: scene.description,
-            videoId,
-            videoLocalPath: videoPath,
-            startTime: currentStartTime,
-            duration: videoDuration,
-            endTime: currentStartTime + videoDuration,
-            sourceDuration: videoDuration,
-          };
-          
-          clips.push(clip);
-          currentStartTime += videoDuration;
+            videoId: video.id,
+            videoLocalPath: video.localPath,
+            startTime: currentTime,
+            duration,
+            trimStart: 0,
+            trimEnd: duration,
+            sourceDuration: duration,
+            endTime: currentTime + duration,
+          });
+          currentTime += duration;
         }
       });
       
-      return { timelineClips: clips };
+      return {
+        timelineClips: clips,
+        timelineHistory: [clips],
+        timelineFuture: [],
+      };
     });
   },
   
   splitClip: (clipId: string, splitTime: number) => {
     set((state) => {
-      const clips = [...state.timelineClips];
-      const clipIndex = clips.findIndex(c => c.id === clipId);
-
-      if (clipIndex === -1) return state;
-
-      const clip = clips[clipIndex];
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Calculate split point relative to clip start
       const relativeSplitTime = splitTime - clip.startTime;
-
       if (relativeSplitTime <= 0 || relativeSplitTime >= clip.duration) return state;
-
-      // Save current state to history for undo
-      const newHistory = [...state.timelineHistory, state.timelineClips].slice(-50);
-
-      // Create two clips from the split
-      // Calculate trim values based on original clip's trim or source duration
-      const originalTrimStart = clip.trimStart || 0;
-      const originalTrimEnd = clip.trimEnd || clip.sourceDuration;
-      const splitPointInSource = originalTrimStart + relativeSplitTime;
-
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Create two clips
       const firstClip: TimelineClip = {
         ...clip,
-        id: uuidv4(),
         duration: relativeSplitTime,
+        trimEnd: (clip.trimStart || 0) + relativeSplitTime,
         endTime: clip.startTime + relativeSplitTime,
-        trimStart: originalTrimStart,
-        trimEnd: splitPointInSource,
       };
-
+      
       const secondClip: TimelineClip = {
         ...clip,
         id: uuidv4(),
         startTime: clip.startTime + relativeSplitTime,
         duration: clip.duration - relativeSplitTime,
-        endTime: clip.endTime,
-        trimStart: splitPointInSource,
-        trimEnd: originalTrimEnd,
+        trimStart: (clip.trimStart || 0) + relativeSplitTime,
         isSplit: true,
-        originalClipId: clip.id,
+        originalClipId: clipId,
+        endTime: clip.endTime,
       };
-
-      clips.splice(clipIndex, 1, firstClip, secondClip);
-
-      // Recalculate ALL clip positions to ensure consistency
-      let currentTime = 0;
-      const updatedClips = clips.map(c => {
-        const updated = { ...c, startTime: currentTime, endTime: currentTime + c.duration };
-        currentTime = updated.endTime;
-        return updated;
-      });
-
+      
+      const newClips = state.timelineClips
+        .filter(c => c.id !== clipId)
+        .map(c => {
+          // Adjust start times for clips after the split
+          if (c.startTime > clip.startTime) {
+            return { ...c, startTime: c.startTime, endTime: c.startTime + c.duration };
+          }
+          return c;
+        });
+      
+      // Insert the two new clips in the correct position
+      const insertIndex = newClips.findIndex(c => c.startTime > clip.startTime);
+      if (insertIndex === -1) {
+        newClips.push(firstClip, secondClip);
+      } else {
+        newClips.splice(insertIndex, 0, firstClip, secondClip);
+      }
+      
       return {
-        timelineClips: updatedClips,
+        timelineClips: newClips,
         timelineHistory: newHistory,
-        timelineFuture: [], // Clear redo stack on new action
+        timelineFuture: [],
       };
     });
   },
-
+  
+  splitAtPlayhead: (time: number) => {
+    const state = useProjectStore.getState();
+    const clip = state.timelineClips.find(
+      c => time >= c.startTime && time < c.endTime
+    );
+    if (clip) {
+      useProjectStore.getState().splitClip(clip.id, time);
+    }
+  },
+  
   deleteClip: (clipId: string) => {
     set((state) => {
-      // Save current state to history for undo
-      const newHistory = [...state.timelineHistory, state.timelineClips].slice(-50);
-
-      const clips = state.timelineClips.filter(c => c.id !== clipId);
-
-      // Recalculate start times for remaining clips
-      let currentTime = 0;
-      const updatedClips = clips.map(clip => {
-        const updated = { ...clip, startTime: currentTime, endTime: currentTime + clip.duration };
-        currentTime = updated.endTime;
-        return updated;
-      });
-
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Remove the clip and adjust start times
+      const newClips = state.timelineClips
+        .filter(c => c.id !== clipId)
+        .map((c, index, arr) => {
+          // Recalculate start times sequentially
+          const prevClip = index > 0 ? arr[index - 1] : null;
+          const newStartTime = prevClip ? prevClip.endTime : 0;
+          return {
+            ...c,
+            startTime: newStartTime,
+            endTime: newStartTime + c.duration,
+          };
+        });
+      
       return {
-        timelineClips: updatedClips,
+        timelineClips: newClips,
         timelineHistory: newHistory,
-        timelineFuture: [], // Clear redo stack on new action
+        timelineFuture: [],
         selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
       };
     });
@@ -929,101 +1062,56 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   
   cropClip: (clipId: string, trimStart: number, trimEnd: number) => {
     set((state) => {
-      // Save current state to history for undo
-      const newHistory = [...state.timelineHistory, state.timelineClips].slice(-50);
-
-      const clips = state.timelineClips.map(clip => {
-        if (clip.id !== clipId) return clip;
-
-        // trimStart and trimEnd are absolute times in the source video
-        // Ensure they're within bounds
-        const sourceDuration = clip.sourceDuration;
-        const newTrimStart = Math.max(0, Math.min(trimStart, sourceDuration));
-        const newTrimEnd = Math.max(newTrimStart, Math.min(trimEnd, sourceDuration));
-        const newDuration = newTrimEnd - newTrimStart;
-
-        return {
-          ...clip,
-          trimStart: newTrimStart,
-          trimEnd: newTrimEnd,
-          duration: newDuration,
-          endTime: clip.startTime + newDuration,
-        };
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Validate trim values
+      const sourceDuration = clip.sourceDuration;
+      const validTrimStart = Math.max(0, Math.min(trimStart, sourceDuration));
+      const validTrimEnd = Math.max(validTrimStart, Math.min(trimEnd, sourceDuration));
+      const newDuration = validTrimEnd - validTrimStart;
+      
+      const newClips = state.timelineClips.map(c => {
+        if (c.id === clipId) {
+          return {
+            ...c,
+            trimStart: validTrimStart,
+            trimEnd: validTrimEnd,
+            duration: newDuration,
+            endTime: c.startTime + newDuration,
+          };
+        }
+        // Adjust subsequent clips
+        if (c.startTime > clip.startTime) {
+          const offset = clip.duration - newDuration;
+          return {
+            ...c,
+            startTime: c.startTime - offset,
+            endTime: c.endTime - offset,
+          };
+        }
+        return c;
       });
-
-      // Recalculate start times for subsequent clips
-      let currentTime = 0;
-      const updatedClips = clips.map(clip => {
-        const updated = { ...clip, startTime: currentTime, endTime: currentTime + clip.duration };
-        currentTime = updated.endTime;
-        return updated;
-      });
-
+      
       return {
-        timelineClips: updatedClips,
+        timelineClips: newClips,
         timelineHistory: newHistory,
-        timelineFuture: [], // Clear redo stack on new action
+        timelineFuture: [],
       };
     });
   },
   
-  moveClip: (clipId: string, newStartTime: number) => {
-    set((state) => {
-      const clips = [...state.timelineClips];
-      const clipIndex = clips.findIndex(c => c.id === clipId);
-
-      if (clipIndex === -1) return state;
-
-      const clip = clips[clipIndex];
-      const newEndTime = newStartTime + clip.duration;
-
-      // Check for overlaps
-      const hasOverlap = clips.some((c, i) =>
-        i !== clipIndex &&
-        ((newStartTime >= c.startTime && newStartTime < c.endTime) ||
-         (newEndTime > c.startTime && newEndTime <= c.endTime) ||
-         (newStartTime <= c.startTime && newEndTime >= c.endTime))
-      );
-
-      if (hasOverlap) return state; // Don't move if it would overlap
-
-      // Save current state to history for undo
-      const newHistory = [...state.timelineHistory, state.timelineClips].slice(-50);
-
-      clips[clipIndex] = {
-        ...clip,
-        startTime: newStartTime,
-        endTime: newEndTime,
-      };
-
-      // Sort clips by start time
-      clips.sort((a, b) => a.startTime - b.startTime);
-
-      // Recalculate all start times to remove gaps
-      let currentTime = 0;
-      const updatedClips = clips.map(c => {
-        const updated = { ...c, startTime: currentTime, endTime: currentTime + c.duration };
-        currentTime = updated.endTime;
-        return updated;
-      });
-
-      return {
-        timelineClips: updatedClips,
-        timelineHistory: newHistory,
-        timelineFuture: [], // Clear redo stack on new action
-      };
-    });
-  },
-
-  // Undo/Redo functionality
   undo: () => {
     set((state) => {
-      if (state.timelineHistory.length === 0) return state;
-
+      if (state.timelineHistory.length <= 1) return state;
+      
       const previousState = state.timelineHistory[state.timelineHistory.length - 1];
       const newHistory = state.timelineHistory.slice(0, -1);
       const newFuture = [state.timelineClips, ...state.timelineFuture];
-
+      
       return {
         timelineClips: previousState,
         timelineHistory: newHistory,
@@ -1031,15 +1119,15 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
-
+  
   redo: () => {
     set((state) => {
       if (state.timelineFuture.length === 0) return state;
-
+      
       const nextState = state.timelineFuture[0];
       const newFuture = state.timelineFuture.slice(1);
       const newHistory = [...state.timelineHistory, state.timelineClips];
-
+      
       return {
         timelineClips: nextState,
         timelineHistory: newHistory,
@@ -1047,87 +1135,17 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
-
+  
   canUndo: () => {
-    return useProjectStore.getState().timelineHistory.length > 0;
+    const state = useProjectStore.getState();
+    return state.timelineHistory.length > 1;
   },
-
+  
   canRedo: () => {
-    return useProjectStore.getState().timelineFuture.length > 0;
+    const state = useProjectStore.getState();
+    return state.timelineFuture.length > 0;
   },
-
-  setSelectedClipId: (clipId: string | null) => {
-    set({ selectedClipId: clipId });
-  },
-
-  // Split at playhead position
-  splitAtPlayhead: (playheadTime: number) => {
-    set((state) => {
-      // Find clip at playhead position
-      const clipAtPlayhead = state.timelineClips.find(
-        clip => playheadTime > clip.startTime && playheadTime < clip.endTime
-      );
-
-      if (!clipAtPlayhead) return state;
-
-      const clips = [...state.timelineClips];
-      const clipIndex = clips.findIndex(c => c.id === clipAtPlayhead.id);
-
-      if (clipIndex === -1) return state;
-
-      const clip = clips[clipIndex];
-      const relativeSplitTime = playheadTime - clip.startTime;
-
-      if (relativeSplitTime <= 0 || relativeSplitTime >= clip.duration) return state;
-
-      // Save current state to history for undo
-      const newHistory = [...state.timelineHistory, state.timelineClips].slice(-50);
-
-      // Create two clips from the split
-      // Calculate trim values based on original clip's trim or source duration
-      const originalTrimStart = clip.trimStart || 0;
-      const originalTrimEnd = clip.trimEnd || clip.sourceDuration;
-      const splitPointInSource = originalTrimStart + relativeSplitTime;
-
-      const firstClip: TimelineClip = {
-        ...clip,
-        id: uuidv4(),
-        duration: relativeSplitTime,
-        endTime: clip.startTime + relativeSplitTime,
-        trimStart: originalTrimStart,
-        trimEnd: splitPointInSource,
-      };
-
-      const secondClip: TimelineClip = {
-        ...clip,
-        id: uuidv4(),
-        startTime: clip.startTime + relativeSplitTime,
-        duration: clip.duration - relativeSplitTime,
-        endTime: clip.endTime,
-        trimStart: splitPointInSource,
-        trimEnd: originalTrimEnd,
-        isSplit: true,
-        originalClipId: clip.id,
-      };
-
-      clips.splice(clipIndex, 1, firstClip, secondClip);
-
-      // Recalculate ALL clip positions to ensure consistency
-      let currentTime = 0;
-      const updatedClips = clips.map(c => {
-        const updated = { ...c, startTime: currentTime, endTime: currentTime + c.duration };
-        currentTime = updated.endTime;
-        return updated;
-      });
-
-      return {
-        timelineClips: updatedClips,
-        timelineHistory: newHistory,
-        timelineFuture: [], // Clear redo stack on new action
-      };
-    });
-  },
-
+  
   reset: () => {
     set(initialState);
   },

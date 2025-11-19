@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 interface RemoveBackgroundRequest {
   imageUrl?: string;
   imageUrls?: string[];
+  s3Keys?: string[]; // Optional S3 keys for caching
   projectId?: string;
 }
 
@@ -42,8 +43,19 @@ export async function POST(req: NextRequest): Promise<NextResponse<RemoveBackgro
       );
     }
 
-    // Process multiple images
-    const processedUrls = await removeBackgrounds(body.imageUrls);
+    // Validate s3Keys if provided
+    if (body.s3Keys && body.s3Keys.length !== body.imageUrls.length) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 's3Keys array length must match imageUrls array length',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Process multiple images with optional S3 caching
+    const processedUrls = await removeBackgrounds(body.imageUrls, body.s3Keys);
     const processedImages: ProcessedImage[] = processedUrls.map(url => ({
       id: uuidv4(),
       url,

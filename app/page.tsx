@@ -1,7 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import StartingScreen from '@/components/StartingScreen';
 
 export default function Home() {
-  return <StartingScreen onCreateProject={async (prompt: string, images?: File[], targetDuration?: number) => {}} />;
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <StartingScreen onCreateProject={async (prompt: string, images?: File[], targetDuration?: number) => {}} />
+    </Suspense>
+  );
 }

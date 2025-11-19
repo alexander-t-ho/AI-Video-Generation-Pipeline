@@ -108,6 +108,10 @@ body {
   .animate-crumble {
     animation: crumble 0.8s cubic-bezier(0.4, 0, 1, 1) forwards;
   }
+
+  .animate-fade-out {
+    animation: fadeOut 0.6s ease-in-out forwards;
+  }
 }
 
 @keyframes fadeIn {
@@ -116,6 +120,15 @@ body {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 

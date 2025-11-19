@@ -102,6 +102,11 @@ export interface ProjectState {
   characterDescription?: string; // Optional: Description of the character/product
   uploadedImageUrls?: string[]; // Optional: Original uploaded image URLs (before background removal)
   uploadedImages?: Array<import('./storage/image-storage').UploadedImage>; // Full uploaded image objects with processed versions
+  
+  // Brand identity context (for asset-based generation)
+  assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
+  selectedColor?: string; // Hex color code of last selected color
+  currentReferenceImageUrl?: string; // URL of currently displayed reference image in AssetViewer
 }
 
 // Extended Scene type for project state (includes generation state)
@@ -209,4 +214,52 @@ export interface APIError {
   code?: ErrorCode;
   retryable?: boolean;
 }
+
+// ============================================================================
+// Character Generation Types
+// ============================================================================
+
+export interface CharacterGenerationOptions {
+  description: string;
+  projectId: string;
+  count?: number;
+  mode: 'batch' | 'single';
+  generateTurnaround?: boolean;
+  referenceImages?: string[];
+  feedback?: string;
+  selectedReferenceImage?: string;
+  model?: string;
+  ipAdapterScale?: number;
+}
+
+export interface CharacterVariation {
+  id: string;
+  url: string;
+  type: 'turnaround' | 'closeup' | 'full-body' | 'detail';
+  angle: number;
+  scale: 'full' | 'medium' | 'close';
+  metadata?: {
+    prompt: string;
+    model: string;
+    replicateId: string;
+  };
+}
+
+// ============================================================================
+// Brand Identity / Character Validation Types
+// ============================================================================
+
+export type AngleType = 'front' | 'rear' | 'left-side' | 'right-side' | 'front-left-45' | 'front-right-45' | 'top' | 'low-angle';
+
+export interface AngleDefinition {
+  label: string;
+  prompt: string;
+  description?: string;
+}
+
+export interface AngleOption extends AngleDefinition {
+  id: AngleType;
+}
+
+export type ValidationStage = 'confirmation' | 'main-reference' | 'angle-selection' | 'angle-generation' | 'complete';
 
