@@ -66,7 +66,15 @@ export async function POST(
     }
 
     // Build asset data
-    const assetCreateData: Parameters<typeof prisma.companyAsset.create>[0]['data'] = {
+    const assetCreateData: {
+      companyId: string;
+      type: 'LOGO' | 'COLOR_SCHEME' | 'BADGE' | 'OTHER';
+      s3Key?: string;
+      filename?: string;
+      mimeType?: string;
+      size?: number;
+      value?: any;
+    } = {
       companyId: id,
       type: type as 'LOGO' | 'COLOR_SCHEME' | 'BADGE' | 'OTHER',
     };

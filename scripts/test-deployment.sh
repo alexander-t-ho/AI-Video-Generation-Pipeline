@@ -16,7 +16,7 @@ fi
 # Check if .env.local exists
 echo "✓ Checking environment variables..."
 if [ ! -f ".env.local" ]; then
-  echo "⚠️  Warning: .env.local not found. Make sure to set env vars in Vercel dashboard."
+  echo "⚠️  Warning: .env.local not found. Make sure to set env vars in Railway dashboard."
 fi
 
 # Check required env vars (if .env.local exists)
@@ -60,9 +60,9 @@ fi
 echo ""
 echo "✅ Deployment readiness check complete!"
 echo "📝 Next steps:"
-echo "   1. Set environment variables in Vercel dashboard"
-echo "   2. Run 'vercel' to deploy to preview"
-echo "   3. Test all endpoints on preview"
-echo "   4. Run 'vercel --prod' for production"
+echo "   1. Set environment variables in Railway dashboard"
+echo "   2. Push to your main branch to deploy"
+echo "   3. Test all endpoints on Railway deployment"
+echo "   4. Monitor deployment in Railway dashboard"
 
 

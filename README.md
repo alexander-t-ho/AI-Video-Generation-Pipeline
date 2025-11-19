@@ -175,13 +175,14 @@ Create a `.env.local` file with the following variables (see `.env.example` for 
 
 ## Deployment
 
-### Vercel Deployment
+### Railway Deployment
 
-The project is configured for Vercel deployment:
+The project is configured for Railway deployment:
 
-1. Push to `prod` branch (auto-deploys)
-2. Set environment variables in Vercel dashboard
-3. Ensure FFmpeg works on serverless (test with `/api/test-ffmpeg`)
+1. Push to `main` branch (auto-deploys)
+2. Set environment variables in Railway dashboard
+3. Railway automatically provisions PostgreSQL database
+4. Monitor deployment and logs in Railway dashboard
 
 See [docs/ARCHITECTURE_ANALYSIS.md](docs/ARCHITECTURE_ANALYSIS.md) for deployment considerations.
 
