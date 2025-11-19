@@ -43,6 +43,8 @@ Users input a prompt → AI generates 5-scene storyboard → User refines each s
 - **Framework**: Next.js 14+ (App Router)
 - **Language**: TypeScript
 - **State Management**: Zustand
+- **Database**: PostgreSQL with Prisma ORM
+- **Authentication**: NextAuth.js (credentials provider, JWT sessions)
 - **Storage**: Local filesystem (temp) + AWS S3 (finals)
 - **Video Processing**: FFmpeg (server-side)
 - **Deployment**: Vercel (GitHub Actions from `prod` branch)
@@ -70,6 +72,109 @@ Available API Keys:
 - OpenRouter API (storyboard LLM)
 - OpenAI API (backup)
 ```
+
+---
+
+## Backend & Database Architecture
+
+### Company Hierarchy
+The system supports a multi-tenant company hierarchy where:
+- **Companies** are the top-level organizational unit
+- **Users** belong to companies with roles (ADMIN/MEMBER)
+- **Projects** belong to companies but have individual owners
+- **Company Assets** (logos, color schemes, badges) are shared within companies
+
+### Database Schema
+
+#### Core Entities
+- **Company**: Organization with name and assets
+- **User**: Authentication with email/password, bcrypt hashing, company assignment, role
+- **CompanyAsset**: Logos, color schemes, badges stored in S3
+
+#### Car Model Hierarchy
+- **CarModel**: Car models belonging to a company (e.g., "Mustang", "Camaro")
+- **CarVariant**: Year/trim combinations (e.g., "2024 GT")
+- **CarMedia**: Exterior/interior photos, sounds, 3D models in S3
+
+#### Project Entities
+- **Project**: Video projects with company and owner associations
+- **Scene**: Scenes with sceneNumber, sceneTitle, sceneSummary
+- **GeneratedImage/GeneratedVideo**: AI-generated content per scene
+- **SeedFrame/TimelineClip/UploadedImage**: Timeline and editing support
+
+### Authentication System
+- **NextAuth.js** with credentials provider
+- **JWT sessions** containing userId, companyId, companyName, role
+- **Protected routes** via middleware
+- **Role-based access control**: ADMIN can manage company settings/users, MEMBER can manage own projects
+
+### API Endpoints
+
+#### Authentication
+- `POST /api/auth/signin` - Sign in
+- `POST /api/auth/signup` - Sign up (creates user + optionally company)
+- `GET /api/auth/session` - Get current session
+
+#### Company Management
+- `GET/POST /api/companies` - List/create companies
+- `GET/PATCH /api/companies/[id]` - Get/update company
+- `GET/POST/DELETE /api/companies/[id]/assets` - Manage company assets
+- `GET/POST /api/companies/[id]/users` - List/invite users
+- `GET/POST /api/companies/[id]/cars` - List/create car models
+
+#### Car Management
+- `GET/PATCH/DELETE /api/cars/[modelId]` - Manage car models
+- `GET/POST /api/cars/[modelId]/variants` - Manage variants
+- `GET/POST /api/cars/variants/[variantId]/media` - Manage car media
+- `DELETE /api/cars/media/[mediaId]` - Delete media
+
+#### Project Management
+- `GET/POST /api/projects` - List/create projects (supports `?scope=mine|company`)
+- `GET/PATCH/DELETE /api/projects/[id]` - Manage project
+- `GET/POST /api/projects/[id]/scenes` - Manage scenes
+- `GET/POST /api/projects/[id]/scenes/[sceneId]/images` - Scene images
+- `GET/POST /api/projects/[id]/scenes/[sceneId]/videos` - Scene videos
+
+### S3 Storage Structure
+```
+s3://bucket/
+├── companies/
+│   └── [companyId]/
+│       ├── assets/
+│       │   ├── logos/
+│       │   ├── badges/
+│       │   └── color-schemes/
+│       └── cars/
+│           └── [modelId]/
+│               └── [variantId]/
+│                   ├── exterior/
+│                   ├── interior/
+│                   ├── sounds/
+│                   └── 3d-models/
+└── projects/
+    └── [projectId]/
+        ├── uploads/
+        ├── scenes/
+        │   └── [sceneId]/
+        │       ├── images/
+        │       ├── videos/
+        │       └── seed-frames/
+        └── final/
+```
+
+### Environment Variables (Database & Auth)
+```env
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/ai_video_pipeline"
+
+# NextAuth
+NEXTAUTH_SECRET="your-secret-key"
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+### Test Credentials
+- `admin@demo.com` / `password123` (ADMIN role)
+- `member@demo.com` / `password123` (MEMBER role)
 
 ---
 
@@ -976,7 +1081,7 @@ jobs:
 ### Open Questions
 - [ ] How to handle user leaving page during generation?
 - [ ] Should we cache API responses for faster re-testing?
-- [ ] Do we need authentication/user accounts?
+- [x] Do we need authentication/user accounts? **Yes - implemented with NextAuth.js, company hierarchy, and role-based access**
 - [ ] What's the S3 bucket retention policy?
 
 ---
