@@ -3,15 +3,11 @@
  */
 
 import { create } from 'zustand';
-import { ProjectState, Scene, SceneWithState, GeneratedImage, SeedFrame } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, GeneratedImage, SeedFrame, ValidationStage, AngleType } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { v4 as uuidv4 } from 'uuid';
 
 type WorkflowStep = 'idle' | 'generating_image' | 'image_ready' | 'generating_video' | 'video_ready' | 'extracting_frames' | 'frames_ready' | 'completed';
-
-export type ValidationStage = 'confirmation' | 'main-reference' | 'angle-selection' | 'angle-generation' | 'complete';
-
-export type AngleType = 'front' | 'rear' | 'left-side' | 'right-side' | 'front-left-45' | 'front-right-45' | 'top' | 'low-angle';
 
 export interface CharacterReferenceImage extends GeneratedImage {
   angleType: AngleType;

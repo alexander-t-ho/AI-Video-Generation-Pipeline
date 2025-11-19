@@ -191,3 +191,21 @@ export interface CharacterVariation {
   };
 }
 
+// ============================================================================
+// Brand Identity / Character Validation Types
+// ============================================================================
+
+export type AngleType = 'front' | 'rear' | 'left-side' | 'right-side' | 'front-left-45' | 'front-right-45' | 'top' | 'low-angle';
+
+export interface AngleDefinition {
+  label: string;
+  prompt: string;
+  description?: string;
+}
+
+export interface AngleOption extends AngleDefinition {
+  id: AngleType;
+}
+
+export type ValidationStage = 'confirmation' | 'main-reference' | 'angle-selection' | 'angle-generation' | 'complete';
+

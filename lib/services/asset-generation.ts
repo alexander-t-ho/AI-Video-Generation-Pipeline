@@ -7,8 +7,8 @@
 
 import { generateImage, pollImageStatus } from '../api-client';
 import { buildAssetPrompt } from '../utils/asset-prompt-builder';
-import type { AngleType } from '../../components/character-validation/types';
-import { ANGLE_DEFINITIONS } from '../../components/character-validation/constants';
+import type { AngleType } from '@/lib/types';
+import { ANGLE_DEFINITIONS } from '@/lib/constants';
 
 // ============================================================================
 // Type Definitions

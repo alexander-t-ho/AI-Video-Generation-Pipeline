@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { X, Camera } from 'lucide-react';
-import { ANGLE_OPTIONS } from '../character-validation/constants';
-import type { AngleType } from '../character-validation/types';
+import { ANGLE_OPTIONS } from '@/lib/constants';
+import type { AngleType } from '@/lib/types';
 
 interface AngleSelectionModalProps {
   isOpen: boolean;

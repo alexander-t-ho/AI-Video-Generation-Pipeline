@@ -9,7 +9,7 @@ import { useProjectStore } from '@/lib/state/project-store';
 import { buildAssetPrompt, parseAssetRequest, validateAssetContext } from '@/lib/utils/asset-prompt-builder';
 import { generateImage, pollImageStatus } from '@/lib/api-client';
 import { generateAssetAngles } from '@/lib/services/asset-generation';
-import type { AngleType } from '../character-validation/types';
+import type { AngleType } from '@/lib/types';
 
 interface AssetViewerProps {
   selectedCar: CarVariant | CustomAsset | null;

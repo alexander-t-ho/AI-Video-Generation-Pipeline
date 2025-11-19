@@ -77,16 +77,8 @@ export default function BrandIdentityScreen() {
   };
 
   const handleContinue = () => {
-    const project = useProjectStore.getState().project;
-    const hasUploadedImages = project?.uploadedImages && project.uploadedImages.length > 0;
-
-    if (hasUploadedImages) {
-      // Images were uploaded - go directly to workspace
-      router.push('/workspace');
-    } else {
-      // No images uploaded - go back to starting screen to show wizard
-      router.push('/?showWizard=true');
-    }
+    // Go directly to the main workspace
+    router.push('/workspace');
   };
 
   const handleAddRecoloredImage = (baseCarId: string, imageUrl: string, colorHex: string) => {

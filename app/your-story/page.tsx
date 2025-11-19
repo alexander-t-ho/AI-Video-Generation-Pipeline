@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import SceneCard from '@/components/wizard/SceneCard';
 import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverEvent, PointerSensor, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragOverlay, MeasuringStrategy } from '@dnd-kit/core';
@@ -10,7 +10,8 @@ import { useProjectStore } from '@/lib/state/project-store';
 import { createProject } from '@/lib/api-client';
 import { Loader2, ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
 
-export default function YourStoryPage() {
+// Wrapper component that uses useSearchParams
+function YourStoryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { project } = useProjectStore();
@@ -529,5 +530,28 @@ export default function YourStoryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function YourStoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex flex-col cinematic-gradient relative overflow-hidden">
+        <div className="fixed top-6 left-6 z-40">
+          <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
+            Scene3
+          </h1>
+        </div>
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 mt-20 mb-6 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+            <p className="text-white/60">Loading your story...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <YourStoryContent />
+    </Suspense>
   );
 }
