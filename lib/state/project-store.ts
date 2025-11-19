@@ -106,6 +106,18 @@ interface ProjectStore {
   setMediaFilter: (filter: MediaDrawerState['filters']) => void;
   setMediaSearchQuery: (query: string) => void;
   
+  // Timeline management
+  setSelectedClipId: (clipId: string | null) => void;
+  initializeTimelineClips: () => void;
+  splitClip: (clipId: string, splitTime: number) => void;
+  splitAtPlayhead: (time: number) => void;
+  deleteClip: (clipId: string) => void;
+  cropClip: (clipId: string, trimStart: number, trimEnd: number) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  
   // Navigation
   navigateToWorkspace: (projectId: string) => void;
   loadProject: (projectId: string) => Promise<void>;
@@ -117,6 +129,11 @@ interface ProjectStore {
   setNeedsCharacterValidation: (needs: boolean) => void;
   setHasUploadedImages: (has: boolean) => void;
   setUploadedImageUrls: (urls: string[]) => void;
+  
+  // Brand identity asset management
+  setSelectedColor: (color: string) => void;
+  setCurrentReferenceImageUrl: (url: string) => void;
+  setAssetDescription: (description: string) => void;
   
   reset: () => void;
 }
@@ -846,6 +863,287 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         },
       };
     });
+  },
+  
+  // Brand identity asset management
+  setSelectedColor: (color: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          selectedColor: color,
+        },
+      };
+    });
+  },
+  
+  setCurrentReferenceImageUrl: (url: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          currentReferenceImageUrl: url,
+        },
+      };
+    });
+  },
+  
+  setAssetDescription: (description: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      return {
+        project: {
+          ...state.project,
+          assetDescription: description,
+        },
+      };
+    });
+  },
+  
+  // Timeline management
+  setSelectedClipId: (clipId: string | null) => {
+    set({ selectedClipId: clipId });
+  },
+  
+  initializeTimelineClips: () => {
+    set((state) => {
+      if (!state.project) return state;
+      
+      const clips: TimelineClip[] = [];
+      let currentTime = 0;
+      
+      state.scenes.forEach((scene, index) => {
+        // Get the selected video or first available video
+        let video: GeneratedVideo | undefined;
+        if (scene.selectedVideoId && scene.generatedVideos) {
+          video = scene.generatedVideos.find(v => v.id === scene.selectedVideoId);
+        }
+        
+        // Fallback to videoLocalPath for backward compatibility
+        if (!video && scene.videoLocalPath) {
+          video = {
+            id: uuidv4(),
+            url: scene.videoLocalPath.startsWith('http') 
+              ? scene.videoLocalPath 
+              : `/api/serve-video?path=${encodeURIComponent(scene.videoLocalPath)}`,
+            localPath: scene.videoLocalPath,
+            actualDuration: scene.actualDuration,
+            timestamp: new Date().toISOString(),
+          };
+        }
+        
+        if (video && video.localPath) {
+          const duration = video.actualDuration || scene.suggestedDuration || 3;
+          clips.push({
+            id: uuidv4(),
+            sceneIndex: index,
+            sceneId: scene.id,
+            title: scene.description,
+            videoId: video.id,
+            videoLocalPath: video.localPath,
+            startTime: currentTime,
+            duration,
+            trimStart: 0,
+            trimEnd: duration,
+            sourceDuration: duration,
+            endTime: currentTime + duration,
+          });
+          currentTime += duration;
+        }
+      });
+      
+      return {
+        timelineClips: clips,
+        timelineHistory: [clips],
+        timelineFuture: [],
+      };
+    });
+  },
+  
+  splitClip: (clipId: string, splitTime: number) => {
+    set((state) => {
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Calculate split point relative to clip start
+      const relativeSplitTime = splitTime - clip.startTime;
+      if (relativeSplitTime <= 0 || relativeSplitTime >= clip.duration) return state;
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Create two clips
+      const firstClip: TimelineClip = {
+        ...clip,
+        duration: relativeSplitTime,
+        trimEnd: (clip.trimStart || 0) + relativeSplitTime,
+        endTime: clip.startTime + relativeSplitTime,
+      };
+      
+      const secondClip: TimelineClip = {
+        ...clip,
+        id: uuidv4(),
+        startTime: clip.startTime + relativeSplitTime,
+        duration: clip.duration - relativeSplitTime,
+        trimStart: (clip.trimStart || 0) + relativeSplitTime,
+        isSplit: true,
+        originalClipId: clipId,
+        endTime: clip.endTime,
+      };
+      
+      const newClips = state.timelineClips
+        .filter(c => c.id !== clipId)
+        .map(c => {
+          // Adjust start times for clips after the split
+          if (c.startTime > clip.startTime) {
+            return { ...c, startTime: c.startTime, endTime: c.startTime + c.duration };
+          }
+          return c;
+        });
+      
+      // Insert the two new clips in the correct position
+      const insertIndex = newClips.findIndex(c => c.startTime > clip.startTime);
+      if (insertIndex === -1) {
+        newClips.push(firstClip, secondClip);
+      } else {
+        newClips.splice(insertIndex, 0, firstClip, secondClip);
+      }
+      
+      return {
+        timelineClips: newClips,
+        timelineHistory: newHistory,
+        timelineFuture: [],
+      };
+    });
+  },
+  
+  splitAtPlayhead: (time: number) => {
+    const state = useProjectStore.getState();
+    const clip = state.timelineClips.find(
+      c => time >= c.startTime && time < c.endTime
+    );
+    if (clip) {
+      useProjectStore.getState().splitClip(clip.id, time);
+    }
+  },
+  
+  deleteClip: (clipId: string) => {
+    set((state) => {
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Remove the clip and adjust start times
+      const newClips = state.timelineClips
+        .filter(c => c.id !== clipId)
+        .map((c, index, arr) => {
+          // Recalculate start times sequentially
+          const prevClip = index > 0 ? arr[index - 1] : null;
+          const newStartTime = prevClip ? prevClip.endTime : 0;
+          return {
+            ...c,
+            startTime: newStartTime,
+            endTime: newStartTime + c.duration,
+          };
+        });
+      
+      return {
+        timelineClips: newClips,
+        timelineHistory: newHistory,
+        timelineFuture: [],
+        selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
+      };
+    });
+  },
+  
+  cropClip: (clipId: string, trimStart: number, trimEnd: number) => {
+    set((state) => {
+      const clip = state.timelineClips.find(c => c.id === clipId);
+      if (!clip) return state;
+      
+      // Save current state to history
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      // Validate trim values
+      const sourceDuration = clip.sourceDuration;
+      const validTrimStart = Math.max(0, Math.min(trimStart, sourceDuration));
+      const validTrimEnd = Math.max(validTrimStart, Math.min(trimEnd, sourceDuration));
+      const newDuration = validTrimEnd - validTrimStart;
+      
+      const newClips = state.timelineClips.map(c => {
+        if (c.id === clipId) {
+          return {
+            ...c,
+            trimStart: validTrimStart,
+            trimEnd: validTrimEnd,
+            duration: newDuration,
+            endTime: c.startTime + newDuration,
+          };
+        }
+        // Adjust subsequent clips
+        if (c.startTime > clip.startTime) {
+          const offset = clip.duration - newDuration;
+          return {
+            ...c,
+            startTime: c.startTime - offset,
+            endTime: c.endTime - offset,
+          };
+        }
+        return c;
+      });
+      
+      return {
+        timelineClips: newClips,
+        timelineHistory: newHistory,
+        timelineFuture: [],
+      };
+    });
+  },
+  
+  undo: () => {
+    set((state) => {
+      if (state.timelineHistory.length <= 1) return state;
+      
+      const previousState = state.timelineHistory[state.timelineHistory.length - 1];
+      const newHistory = state.timelineHistory.slice(0, -1);
+      const newFuture = [state.timelineClips, ...state.timelineFuture];
+      
+      return {
+        timelineClips: previousState,
+        timelineHistory: newHistory,
+        timelineFuture: newFuture,
+      };
+    });
+  },
+  
+  redo: () => {
+    set((state) => {
+      if (state.timelineFuture.length === 0) return state;
+      
+      const nextState = state.timelineFuture[0];
+      const newFuture = state.timelineFuture.slice(1);
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+      
+      return {
+        timelineClips: nextState,
+        timelineHistory: newHistory,
+        timelineFuture: newFuture,
+      };
+    });
+  },
+  
+  canUndo: () => {
+    const state = useProjectStore.getState();
+    return state.timelineHistory.length > 1;
+  },
+  
+  canRedo: () => {
+    const state = useProjectStore.getState();
+    return state.timelineFuture.length > 0;
   },
   
   reset: () => {
