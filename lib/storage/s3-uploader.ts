@@ -279,8 +279,79 @@ export async function uploadToS3(
 }
 
 /**
+ * Upload a buffer directly to S3
+ *
+ * @param buffer - Buffer containing file data
+ * @param s3Key - Full S3 key for the file
+ * @param contentType - MIME type of the file
+ * @param metadata - Optional metadata
+ * @returns S3 key of the uploaded file
+ */
+export async function uploadBufferToS3(
+  buffer: Buffer,
+  s3Key: string,
+  contentType: string,
+  metadata?: Record<string, string>
+): Promise<string> {
+  if (!buffer || buffer.length === 0) {
+    throw new Error('Buffer is required and cannot be empty');
+  }
+
+  if (!s3Key) {
+    throw new Error('S3 key is required');
+  }
+
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: contentType,
+        Metadata: {
+          ...metadata,
+          'file-size': buffer.length.toString(),
+          'uploaded-at': new Date().toISOString(),
+        },
+      });
+
+      await client.send(command);
+
+      // Verify upload
+      const verified = await verifyUpload(client, bucket, s3Key);
+      if (!verified) {
+        throw new Error('Upload verification failed: file not found in S3');
+      }
+
+      return s3Key;
+    } catch (error: any) {
+      lastError = error;
+
+      if (!isRetryableError(error)) {
+        throw error;
+      }
+
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+
+      const delay = calculateRetryDelay(attempt);
+      console.warn(`[S3Uploader] Buffer upload attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
+
+  throw lastError || new Error('Buffer upload failed after retries');
+}
+
+/**
  * Get S3 URL for an uploaded file
- * 
+ *
  * @param s3Key - S3 key of the file
  * @returns Full S3 URL
  */
