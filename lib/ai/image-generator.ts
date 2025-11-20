@@ -95,13 +95,15 @@ function createReplicateClient(): Replicate {
  * @param seedImage Optional seed image URL for image-to-image generation
  * @param referenceImageUrls Optional array of reference image URLs for IP-Adapter (object consistency)
  * @param ipAdapterScale Optional IP-Adapter scale (0-1, default 0.7)
+ * @param randomSeed Optional random seed for reproducible results
  * @returns Prediction ID
  */
 export async function createImagePrediction(
   prompt: string,
   seedImage?: string,
   referenceImageUrls?: string[],
-  ipAdapterScale?: number
+  ipAdapterScale?: number,
+  randomSeed?: number
 ): Promise<string> {
   // Validate inputs
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -123,6 +125,9 @@ export async function createImagePrediction(
   console.log(`${logPrefix} Timestamp: ${timestamp}`);
   console.log(`${logPrefix} Model: ${REPLICATE_MODEL}`);
   console.log(`${logPrefix} Prompt: "${prompt}"`);
+  if (randomSeed !== undefined) {
+    console.log(`${logPrefix} Random seed: ${randomSeed}`);
+  }
 
   if (seedImage) {
     console.log(`${logPrefix} Seed image: ${seedImage}`);
@@ -155,6 +160,10 @@ export async function createImagePrediction(
       aspect_ratio: seedImage ? 'match_input_image' : '16:9',
       output_format: 'jpg', // Model default
     };
+    // Add seed if provided (nano-banana may support it)
+    if (randomSeed !== undefined) {
+      input.seed = randomSeed;
+    }
     console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage} + ${referenceImageUrls?.length || 0} reference images`);
   } else {
     // Standard parameters for other models
@@ -165,6 +174,11 @@ export async function createImagePrediction(
       output_format: 'png',
       output_quality: 90,
     };
+
+    // Add seed if provided
+    if (randomSeed !== undefined) {
+      input.seed = randomSeed;
+    }
 
     // Add seed image for non-nano-banana models
     if (seedImage) {
@@ -263,15 +277,17 @@ async function retryWithBackoff<T>(
  * @param seedImage Optional seed image URL
  * @param referenceImageUrls Optional array of reference image URLs for IP-Adapter
  * @param ipAdapterScale Optional IP-Adapter scale (0-1)
+ * @param randomSeed Optional random seed for reproducible results
  * @returns Prediction ID
  */
 export async function createImagePredictionWithRetry(
   prompt: string,
   seedImage?: string,
   referenceImageUrls?: string[],
-  ipAdapterScale?: number
+  ipAdapterScale?: number,
+  randomSeed?: number
 ): Promise<string> {
-  return retryWithBackoff(() => createImagePrediction(prompt, seedImage, referenceImageUrls, ipAdapterScale));
+  return retryWithBackoff(() => createImagePrediction(prompt, seedImage, referenceImageUrls, ipAdapterScale, randomSeed));
 }
 
 // ============================================================================
@@ -556,6 +572,7 @@ export async function downloadAndSaveImageWithRetry(
  * @param seedImage Optional seed image URL for image-to-image generation
  * @param referenceImageUrls Optional array of reference image URLs for IP-Adapter (object consistency)
  * @param ipAdapterScale Optional IP-Adapter scale (0-1, default 0.7)
+ * @param randomSeed Optional random seed for reproducible results
  * @returns GeneratedImage object
  */
 export async function generateImage(
@@ -564,7 +581,8 @@ export async function generateImage(
   sceneIndex: number,
   seedImage?: string,
   referenceImageUrls?: string[],
-  ipAdapterScale?: number
+  ipAdapterScale?: number,
+  randomSeed?: number
 ): Promise<GeneratedImage> {
   const logPrefix = '[ImageGenerator]';
   console.log(`${logPrefix} ========================================`);
@@ -578,11 +596,14 @@ export async function generateImage(
   if (referenceImageUrls && referenceImageUrls.length > 0) {
     console.log(`${logPrefix} Using ${referenceImageUrls.length} reference image(s) for object consistency`);
   }
+  if (randomSeed !== undefined) {
+    console.log(`${logPrefix} Using random seed: ${randomSeed}`);
+  }
   const flowStartTime = Date.now();
 
   try {
     // Step 1: Create prediction
-    const predictionId = await createImagePredictionWithRetry(prompt, seedImage, referenceImageUrls, ipAdapterScale);
+    const predictionId = await createImagePredictionWithRetry(prompt, seedImage, referenceImageUrls, ipAdapterScale, randomSeed);
     const step1Time = Date.now();
     console.log(`${logPrefix} Step 1/3 completed in ${step1Time - flowStartTime}ms: Prediction created (ID: ${predictionId})`);
 

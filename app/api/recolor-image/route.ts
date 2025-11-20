@@ -9,6 +9,7 @@ interface RecolorImageRequest {
   colorHex: string;
   projectId: string;
   sceneIndex?: number;
+  seed?: number;
 }
 
 interface RecolorImageResponse {
@@ -96,11 +97,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Create recoloring prompt
-    const prompt = `recolor this vehicle to ${body.colorHex}. keep everything the same, particularly the badging. Account for lighting.`;
+    const prompt = `Recolor this vehicle to ${body.colorHex} (use the square image as a color reference. do not use it for anything else besides a color reference). keep everything the same, particularly the badging. Account for lighting. Keep the background the same. Export in the same size as the input.`;
+
+    // Use provided seed or generate a random one between 0-50
+    const seed = body.seed !== undefined ? body.seed : Math.floor(Math.random() * 51);
 
     console.log(`[Recolor API] Starting recoloring process`);
     console.log(`[Recolor API] Original image: ${body.imageUrl}`);
     console.log(`[Recolor API] Target color: ${body.colorHex}`);
+    console.log(`[Recolor API] Seed: ${seed}${body.seed !== undefined ? ' (user-specified)' : ' (random)'}`);
     console.log(`[Recolor API] Prompt: "${prompt}"`);
 
     // Generate color reference image (200x200 png of the target color)
@@ -148,11 +153,13 @@ export async function POST(request: NextRequest) {
       body.sceneIndex || 0,
       body.imageUrl, // Use as seed image for image-to-image
       [colorRefUrl], // Pass color ref as reference image
-      undefined // No IP adapter scale override
+      undefined, // No IP adapter scale override
+      seed // Pass the random seed for reproducible results
     );
 
     const endTime = Date.now();
     console.log(`[Recolor API] Recoloring completed in ${(endTime - startTime) / 1000}s`);
+    console.log(`[Recolor API] Seed used: ${seed} (save this to reproduce results)`);
 
     // Generate a pre-signed URL for the image to ensure it's accessible immediately
     // This handles cases where the S3 bucket is private

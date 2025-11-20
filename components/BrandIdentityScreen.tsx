@@ -197,12 +197,16 @@ export default function BrandIdentityScreen() {
     console.log(`[BrandIdentityScreen] Adding ${images.length} recolored images to base car ${baseCarId}`);
 
     setCustomAssets(prevAssets => {
-      // 1. Check if we are targeting an existing custom asset
       const existingCustomAsset = prevAssets.find(asset => asset.id === baseCarId);
-
+      
+      // If recoloring within a custom asset, replace the selected images
       if (existingCustomAsset) {
-        console.log('[BrandIdentityScreen] Adding images to existing custom asset:', existingCustomAsset.name);
+        console.log('[BrandIdentityScreen] Replacing images in existing custom asset:', existingCustomAsset.name);
         
+        // Get the IDs of images that were selected for recoloring
+        const recoloredImageIds = Array.from(selectedAssetIds);
+        
+        // Create new images from recolored results
         const newImages = images.map(img => ({
           id: `recolored-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           url: img.url,
@@ -211,23 +215,29 @@ export default function BrandIdentityScreen() {
           alt: `${existingCustomAsset.name} recolored to ${img.colorHex}`,
         }));
         
+        // Replace old images with new ones
+        const updatedImages = existingCustomAsset.referenceImages.filter(
+          img => !recoloredImageIds.includes(img.id)
+        ).concat(newImages);
+        
         return prevAssets.map(asset =>
           asset.id === baseCarId
             ? {
                 ...asset,
-                referenceImages: [...asset.referenceImages, ...newImages],
+                referenceImages: updatedImages,
                 adjustments: [...asset.adjustments, `Recolored to ${colorHex}`],
               }
             : asset
         );
       }
-
-      // 2. Create a new custom asset for the batch
-      console.log('[BrandIdentityScreen] Creating new custom asset for batch');
-      const baseCar = carDatabase?.variants.find(car => car.id === baseCarId);
+      
+      // If recoloring a standard asset, create a new custom asset
+      const actualBaseCarId = baseCarId;
+      console.log('[BrandIdentityScreen] Creating new custom asset for recolored images');
+      const baseCar = carDatabase?.variants.find(car => car.id === actualBaseCarId);
       
       if (!baseCar) {
-        console.error('[BrandIdentityScreen] Base car not found:', baseCarId);
+        console.error('[BrandIdentityScreen] Base car not found:', actualBaseCarId);
         return prevAssets;
       }
 
@@ -245,7 +255,7 @@ export default function BrandIdentityScreen() {
         id: newCustomId,
         name: `${baseCar.displayName} (${colorHex})`,
         createdAt: new Date().toISOString(),
-        baseCarId,
+        baseCarId: actualBaseCarId,
         s3Key: `brand/${baseCar.brand.toLowerCase()}/${baseCar.model.toLowerCase()}/custom/${Date.now()}-${colorHex.replace('#', '')}/`,
         referenceImages: newImages,
         adjustments: [`Recolored to ${colorHex}`],
@@ -254,27 +264,23 @@ export default function BrandIdentityScreen() {
       return [...prevAssets, newCustomAsset];
     });
 
-    // Sync selectedCar update (simplified - just select the last one if we made a new one, or re-select if existing)
-    // Since we can't easily know the ID of the new asset created inside the setter without complex logic,
-    // we'll just rely on the user seeing it in the list, or try to find it.
-    // Actually, to make it smooth, we can find the asset that matches our criteria after a timeout.
+    // Handle selection after recoloring
     setTimeout(() => {
        setCustomAssets(currentAssets => {
-          // Try to find the asset we just touched
-          // Either it's the baseCarId (if it was already custom)
-          let targetAsset = currentAssets.find(a => a.id === baseCarId);
+          const existingCustomAsset = currentAssets.find(a => a.id === baseCarId);
           
-          // Or it's a new one with the matching name/color
-          if (!targetAsset) {
-             // Find the most recent one with this color/base
-             // This is heuristic but likely correct for immediate UI update
-             targetAsset = currentAssets
-                .filter(a => a.baseCarId === baseCarId && a.name.includes(colorHex))
-                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-          }
-          
-          if (targetAsset) {
-             setSelectedCar(targetAsset);
+          if (existingCustomAsset) {
+            // If we updated an existing custom asset, keep it selected
+            setSelectedCar(existingCustomAsset);
+          } else {
+            // If we created a new custom asset, select the most recent one
+            const targetAsset = currentAssets
+               .filter(a => a.baseCarId === baseCarId && a.name.includes(colorHex))
+               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+            
+            if (targetAsset) {
+               setSelectedCar(targetAsset);
+            }
           }
           return currentAssets;
        });
