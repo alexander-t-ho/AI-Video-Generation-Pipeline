@@ -157,12 +157,21 @@ async function uploadImageToS3(
   // Create S3 key: uploads/{projectId}/{filename}
   const s3Key = `uploads/${projectId}/${filename}`;
   
-  // Upload to S3
-  await uploadToS3(localPath, projectId, {
-    contentType: 'image/jpeg', // Will be determined from file
-    metadata: {
-      'upload-type': 'user-reference',
-    },
+  // Read file and upload to S3 using uploadBufferToS3 with the correct prefix
+  const fileBuffer = await fs.readFile(localPath);
+  
+  // Determine content type from filename
+  let contentType = 'image/jpeg';
+  if (filename.endsWith('.png')) {
+    contentType = 'image/png';
+  } else if (filename.endsWith('.webp')) {
+    contentType = 'image/webp';
+  }
+  
+  // Upload to S3 using uploadBufferToS3 with the correct uploads/ prefix
+  const { uploadBufferToS3 } = await import('./s3-uploader');
+  await uploadBufferToS3(fileBuffer, s3Key, contentType, {
+    'upload-type': 'user-reference',
   });
   
   return s3Key;
@@ -230,11 +239,17 @@ export async function saveUploadedImage(
   
   if (useS3) {
     try {
+      console.log(`[ImageStorage] Uploading image to S3: ${filename} (project: ${projectId})`);
       s3Key = await uploadImageToS3(localPath, projectId, filename);
       url = getS3Url(s3Key);
-    } catch (error) {
-      console.warn('[ImageStorage] S3 upload failed, using local storage:', error);
-      // Continue with local storage if S3 fails
+      console.log(`[ImageStorage] ✓ Image uploaded to S3: ${s3Key}`);
+      console.log(`[ImageStorage]   S3 URL: ${url}`);
+    } catch (error: any) {
+      console.error('[ImageStorage] ✗ S3 upload failed:', error.message || error);
+      console.error('[ImageStorage]   Error details:', error);
+      // If S3 is required (useS3: true), throw error instead of falling back
+      // This ensures we only return publicly accessible URLs when S3 is enabled
+      throw new Error(`S3 upload failed: ${error.message || 'Unknown error'}. Images must be uploaded to S3 for public access.`);
     }
   }
   

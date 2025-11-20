@@ -132,7 +132,8 @@ export async function createVideoPrediction(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number
+  duration?: number,
+  skipAutomotiveEnhancement?: boolean
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -152,16 +153,26 @@ export async function createVideoPrediction(
   console.log(`${logPrefix} Original Prompt: "${prompt}"`);
   
   // Enhance the prompt for video generation (especially for automotive content)
-  const { enhancedPrompt, negativePrompt } = enhanceVideoPrompt(prompt, {
-    ensureHeadlights: true,
-    ensureCorrectWheelRotation: true,
-    addMotionDetails: true,
-    useNegativePrompt: true,
-  });
+  // Skip automotive enhancement for stylized previews to avoid conflicts with style-specific instructions
+  let finalPrompt = prompt;
+  let negativePrompt: string | undefined;
   
-  console.log(`${logPrefix} Enhanced Prompt: "${enhancedPrompt}"`);
-  if (negativePrompt) {
-    console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
+  if (!skipAutomotiveEnhancement) {
+    const enhanced = enhanceVideoPrompt(prompt, {
+      ensureHeadlights: true,
+      ensureCorrectWheelRotation: true,
+      addMotionDetails: true,
+      useNegativePrompt: true,
+    });
+    finalPrompt = enhanced.enhancedPrompt;
+    negativePrompt = enhanced.negativePrompt;
+    console.log(`${logPrefix} Enhanced Prompt: "${finalPrompt}"`);
+    if (negativePrompt) {
+      console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
+    }
+  } else {
+    console.log(`${logPrefix} Skipping automotive enhancement (stylized preview mode)`);
+    console.log(`${logPrefix} Using original prompt: "${finalPrompt}"`);
   }
   
   console.log(`${logPrefix} Inputs:`);
@@ -208,7 +219,7 @@ export async function createVideoPrediction(
     } : {
       image: inputImageUrl,
     }),
-    prompt: enhancedPrompt.trim(),
+    prompt: finalPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // WAN models use 'duration' and 'resolution'
@@ -323,9 +334,10 @@ export async function createVideoPredictionWithRetry(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number
+  duration?: number,
+  skipAutomotiveEnhancement?: boolean
 ): Promise<string> {
-  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration));
+  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration, skipAutomotiveEnhancement));
 }
 
 // ============================================================================
@@ -513,7 +525,8 @@ export async function generateVideo(
   prompt: string,
   seedFrame: string | undefined,
   projectId: string,
-  sceneIndex: number
+  sceneIndex: number,
+  skipAutomotiveEnhancement?: boolean
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl) {
@@ -552,7 +565,7 @@ export async function generateVideo(
 
   try {
     // Step 1: Create prediction
-    const predictionId = await createVideoPredictionWithRetry(imageUrl, prompt, seedFrame);
+    const predictionId = await createVideoPredictionWithRetry(imageUrl, prompt, seedFrame, undefined, skipAutomotiveEnhancement);
 
     // Step 2: Poll for completion
     const videoUrl = await pollVideoStatus(predictionId);

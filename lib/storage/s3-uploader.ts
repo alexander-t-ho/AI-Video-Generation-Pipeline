@@ -55,7 +55,7 @@ function createS3Client(): S3Client {
  * Get S3 bucket name from environment
  */
 function getBucketName(): string {
-  const bucket = process.env.AWS_S3_BUCKET || 'ai-video-pipeline-outputs';
+  const bucket = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME || 'ai-video-pipeline-outputs';
   return bucket;
 }
 
