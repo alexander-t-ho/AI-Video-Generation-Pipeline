@@ -1,5 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 
 const prisma = new PrismaClient();
 
@@ -49,6 +54,23 @@ async function main() {
   });
 
   console.log('Created member user:', memberUser.email);
+
+  // Create a test admin user
+  const testAdminUser = await prisma.user.upsert({
+    where: { email: 'admin@test.com' },
+    update: {
+      password: hashedPassword,
+    },
+    create: {
+      email: 'admin@test.com',
+      name: 'Test Admin',
+      password: hashedPassword,
+      role: 'ADMIN',
+      companyId: demoCompany.id,
+    },
+  });
+
+  console.log('Created test admin user:', testAdminUser.email);
 
   // Create some company assets
   const colorScheme = await prisma.companyAsset.create({
@@ -156,6 +178,7 @@ async function main() {
   console.log('\nDemo credentials:');
   console.log('  Admin: admin@demo.com / password123');
   console.log('  Member: member@demo.com / password123');
+  console.log('  Test Admin: admin@test.com / password123');
 }
 
 main()

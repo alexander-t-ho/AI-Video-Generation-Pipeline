@@ -8,7 +8,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // ============================================================================
@@ -580,6 +580,41 @@ export class StorageService {
     }
 
     return { local, s3 };
+  }
+
+  /**
+   * List objects in S3 with a given prefix
+   */
+  async listObjects(prefix: string): Promise<string[]> {
+    if (!this.config.useS3 || !isS3Configured()) {
+      throw new Error('S3 is not configured');
+    }
+
+    const client = getS3Client();
+    const bucket = this.config.s3Bucket;
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      });
+
+      const response = await client.send(command);
+      continuationToken = response.NextContinuationToken;
+
+      if (response.Contents) {
+        for (const object of response.Contents) {
+          if (object.Key) {
+            keys.push(object.Key);
+          }
+        }
+      }
+    } while (continuationToken);
+
+    return keys;
   }
 
   /**

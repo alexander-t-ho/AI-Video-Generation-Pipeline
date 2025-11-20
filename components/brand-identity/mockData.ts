@@ -1,5 +1,10 @@
 import { CarDatabase, CarVariant, CarReferenceImage, CustomAsset } from './types';
 
+/**
+ * @deprecated This mock data is now used as fallback when S3-based car assets are unavailable.
+ * The application now dynamically loads car data from S3 via the car service.
+ * This file is kept for type references and fallback scenarios.
+ */
 export const mockCarDatabase: CarDatabase = {
   variants: [
     {

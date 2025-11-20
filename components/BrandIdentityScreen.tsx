@@ -3,18 +3,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { CarVariant, CustomAsset, CarReferenceImage } from './brand-identity/types';
+import { CarVariant, CustomAsset, CarReferenceImage, CarDatabase } from './brand-identity/types';
 import { mockCarDatabase } from './brand-identity/mockData';
 import CarSelector, { SuggestedCarInfo } from './brand-identity/CarSelector';
 import AssetViewer from './brand-identity/AssetViewer';
 import { useProjectStore } from '@/lib/state/project-store';
+import { fetchCarDatabase } from '@/lib/services/car-service';
 
 export default function BrandIdentityScreen() {
   const [selectedCar, setSelectedCar] = useState<CarVariant | CustomAsset | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [customAssets, setCustomAssets] = useState<CustomAsset[]>(mockCarDatabase.customAssets);
+  const [customAssets, setCustomAssets] = useState<CustomAsset[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [carDatabase, setCarDatabase] = useState<CarDatabase | null>(null);
+  const [isLoadingCars, setIsLoadingCars] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,7 +43,8 @@ export default function BrandIdentityScreen() {
 
   // Auto-select the best matching car based on AI suggestion
   useEffect(() => {
-    if (mockCarDatabase.variants.length === 0) return;
+    const variants = carDatabase?.variants || [];
+    if (variants.length === 0 || isLoadingCars) return;
     if (selectedCar) return; // Don't override if already selected
 
     let carToSelect: CarVariant | null = null;
@@ -51,7 +55,7 @@ export default function BrandIdentityScreen() {
       const suggestedModel = suggestedCar.model?.toLowerCase() || '';
 
       // Find exact match first
-      let bestMatch = mockCarDatabase.variants.find(car => {
+      let bestMatch = variants.find(car => {
         const brandMatch = suggestedBrand && car.brand.toLowerCase() === suggestedBrand;
         const modelMatch = suggestedModel && car.model.toLowerCase() === suggestedModel;
         return brandMatch && modelMatch;
@@ -59,7 +63,7 @@ export default function BrandIdentityScreen() {
 
       // If no exact match, try brand only
       if (!bestMatch && suggestedBrand) {
-        bestMatch = mockCarDatabase.variants.find(car =>
+        bestMatch = variants.find(car =>
           car.brand.toLowerCase() === suggestedBrand
         );
       }
@@ -71,7 +75,7 @@ export default function BrandIdentityScreen() {
 
     // Default to first car if no match found
     if (!carToSelect) {
-      carToSelect = mockCarDatabase.variants[0];
+      carToSelect = variants[0];
     }
 
     // Set the selected car and auto-select all its assets
@@ -79,6 +83,27 @@ export default function BrandIdentityScreen() {
     const allAssetIds = new Set(carToSelect.referenceImages.map(img => img.id));
     setSelectedAssetIds(allAssetIds);
   }, [suggestedCar]); // Run when suggestedCar changes
+
+  // Load car database from S3
+  useEffect(() => {
+    const loadCarDatabase = async () => {
+      try {
+        setIsLoadingCars(true);
+        const database = await fetchCarDatabase();
+        setCarDatabase(database);
+        setCustomAssets(database.customAssets);
+      } catch (error) {
+        console.error('Failed to load car database:', error);
+        // Fallback to mock data
+        setCarDatabase(mockCarDatabase);
+        setCustomAssets(mockCarDatabase.customAssets);
+      } finally {
+        setIsLoadingCars(false);
+      }
+    };
+
+    loadCarDatabase();
+  }, []);
 
   // Load uploaded images as custom assets
   useEffect(() => {
@@ -203,7 +228,7 @@ export default function BrandIdentityScreen() {
 
     console.log('[BrandIdentityScreen] Creating new custom asset from base car:', baseCarId);
     // Otherwise, create a new custom asset based on a standard car variant
-    const baseCar = mockCarDatabase.variants.find(car => car.id === baseCarId);
+    const baseCar = carDatabase?.variants.find(car => car.id === baseCarId);
     if (!baseCar) {
       console.error('[BrandIdentityScreen] Base car not found:', baseCarId);
       return;
@@ -233,7 +258,7 @@ export default function BrandIdentityScreen() {
   };
 
   const handleAddCustomAsset = (baseCarId: string, name: string) => {
-    const baseCar = mockCarDatabase.variants.find(car => car.id === baseCarId);
+    const baseCar = carDatabase?.variants.find(car => car.id === baseCarId);
     if (!baseCar) return;
 
     const newCustomAsset: CustomAsset = {
@@ -374,8 +399,8 @@ export default function BrandIdentityScreen() {
       const remainingCustomAssets = customAssets.filter(asset => asset.id !== assetId);
       if (remainingCustomAssets.length > 0) {
         setSelectedCar(remainingCustomAssets[0]);
-      } else if (mockCarDatabase.variants.length > 0) {
-        setSelectedCar(mockCarDatabase.variants[0]);
+      } else if (carDatabase?.variants && carDatabase.variants.length > 0) {
+        setSelectedCar(carDatabase.variants[0]);
       } else {
         setSelectedCar(null);
       }
@@ -449,7 +474,7 @@ export default function BrandIdentityScreen() {
           {/* Left Column - Car Selection */}
           <div className="lg:col-span-1 h-[400px] lg:h-auto overflow-auto">
             <CarSelector
-              cars={mockCarDatabase.variants}
+              cars={carDatabase?.variants || []}
               customAssets={customAssets}
               selectedCar={selectedCar}
               searchQuery={searchQuery}

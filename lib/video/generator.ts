@@ -100,8 +100,8 @@ function createReplicateClient(): Replicate {
  * @returns Valid duration for the model (rounded up)
  */
 function validateAndAdjustDuration(duration: number, model: string): number {
-  // Google Veo 3.1 Fast only accepts 4, 6, or 8 seconds
-  if (model.includes('veo-3.1-fast') || model.includes('google/veo-3.1-fast')) {
+  // Google Veo 3.1 (both fast and standard) only accepts 4, 6, or 8 seconds
+  if (model.includes('veo-3.1') || model.includes('veo') || model.includes('google/veo')) {
     const validDurations = [4, 6, 8];
     // Find the next valid duration that is >= requested duration (round UP)
     const adjusted = validDurations.find(d => d >= duration) || validDurations[validDurations.length - 1];
@@ -111,7 +111,6 @@ function validateAndAdjustDuration(duration: number, model: string): number {
     return adjusted;
   }
 
-  // Google Veo 3.1 (non-fast) may have different requirements
   // Add other model-specific validations here as needed
   
   return duration;

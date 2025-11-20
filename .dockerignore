@@ -35,6 +35,9 @@ Thumbs.db
 
 # Testing
 coverage
+test-results
+playwright-report
+tests
 
 # Build artifacts
 *.tsbuildinfo
@@ -43,6 +46,8 @@ build
 # Project-specific
 tmp
 public/uploads
+video testing
+scripts/*test*.ts
 
 # Misc
 *.md
@@ -50,3 +55,5 @@ public/uploads
 .vercel
 .pnp
 .pnp.js
+*.log
+*.zip

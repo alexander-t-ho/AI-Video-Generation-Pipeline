@@ -1,24 +1,40 @@
 FROM node:18-alpine
 
-# Install FFmpeg
-RUN apk add --no-cache ffmpeg
+# Install FFmpeg and bash
+RUN apk add --no-cache ffmpeg bash
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and Prisma schema first for better caching
 COPY package*.json ./
+COPY prisma ./prisma
 
 # Install dependencies
-RUN npm ci
+RUN npm ci && \
+    npm cache clean --force
 
 # Copy application code
 COPY . .
 
-# Build the app
+# Generate Prisma client and build
 RUN npm run build
+
+# Copy static assets to standalone directory
+# This is required for "output: standalone" to work correctly
+RUN cp -r public .next/standalone/ && \
+    cp -r .next/static .next/standalone/.next/
+
+# Prune dev dependencies to keep image size down
+RUN npm prune --production
 
 EXPOSE 3000
 
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
 
-CMD ["npm", "start"]
+# Copy and make start script executable
+COPY start.sh ./
+RUN chmod +x start.sh
+
+# Start the app with migration deployment
+CMD ["./start.sh"]
