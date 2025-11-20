@@ -11,6 +11,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { GeneratedImage } from '../types';
 import { IMAGE_CONFIG } from '@/lib/config/ai-models';
+import { getStorageService, type StoredFile } from '@/lib/storage/storage-service';
 
 // ============================================================================
 // Constants
@@ -150,11 +151,11 @@ export async function createImagePrediction(
     // Nano-banana only accepts these specific parameters
     input = {
       prompt: prompt.trim(),
-      image_input: seedImage ? [seedImage] : [],
+      image_input: seedImage ? [seedImage, ...(referenceImageUrls || [])] : [],
       aspect_ratio: seedImage ? 'match_input_image' : '16:9',
       output_format: 'jpg', // Model default
     };
-    console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage}`);
+    console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage} + ${referenceImageUrls?.length || 0} reference images`);
   } else {
     // Standard parameters for other models
     input = {
@@ -487,42 +488,42 @@ export async function downloadAndSaveImage(
     }
   }
 
-  // Save image to filesystem
+  // Use storage service to save and upload to S3
   try {
-    await fs.writeFile(filePath, imageBuffer!);
+    const storageService = getStorageService();
+    const storedFile = await storageService.storeFile(imageBuffer!, {
+      projectId,
+      category: 'generated-images',
+      mimeType: 'image/png',
+      customFilename: filename,
+    }, {
+      keepLocal: true, // Keep local for potential FFmpeg operations
+    });
+
     const logPrefix = '[ImageGenerator]';
-    console.log(`${logPrefix} Image saved successfully`);
-    console.log(`${logPrefix} File path: ${filePath}`);
-
-    // Verify file was written
-    const stats = await fs.stat(filePath);
-    if (stats.size === 0) {
-      throw new Error('Saved image file is empty');
-    }
-
-    console.log(`${logPrefix} File size: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)`);
+    console.log(`${logPrefix} Image saved and uploaded successfully`);
+    console.log(`${logPrefix} Local path: ${storedFile.localPath}`);
+    console.log(`${logPrefix} S3 Key: ${storedFile.s3Key}`);
+    console.log(`${logPrefix} File size: ${storedFile.size} bytes (${(storedFile.size / 1024).toFixed(2)} KB)`);
     console.log(`${logPrefix} Image ID: ${imageId}`);
     console.log(`${logPrefix} ========================================`);
+
+    // Create GeneratedImage object with S3 URL as primary
+    const generatedImage: GeneratedImage = {
+      id: imageId,
+      url: storedFile.url, // S3 URL for frontend access
+      localPath: storedFile.localPath, // Full absolute path for server-side use
+      s3Key: storedFile.s3Key, // S3 key for database storage
+      prompt: '', // Will be set by caller
+      replicateId: '', // Will be set by caller
+      createdAt: new Date().toISOString(),
+    };
+
+    return generatedImage;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    throw new Error(`Failed to save image to ${filePath}: ${errorMessage}`);
+    throw new Error(`Failed to save image: ${errorMessage}`);
   }
-
-  // Create GeneratedImage object
-  // Convert absolute path to API URL: /tmp/projects/{projectId}/images/{filename} -> /api/images/projects/{projectId}/images/{filename}
-  const relativePath = filePath.replace('/tmp/', '');
-  const apiUrl = `/api/images/${relativePath}`;
-
-  const generatedImage: GeneratedImage = {
-    id: imageId,
-    url: apiUrl, // API URL for frontend access
-    localPath: filePath, // Full absolute path for server-side use
-    prompt: '', // Will be set by caller
-    replicateId: '', // Will be set by caller
-    createdAt: new Date().toISOString(),
-  };
-
-  return generatedImage;
 }
 
 /**

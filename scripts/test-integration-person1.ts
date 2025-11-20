@@ -36,7 +36,7 @@ async function testPerson1Integration() {
     console.log('\n🎬 Step 2: Generating video from image...');
     const videoPrompt = 'A smooth, cinematic camera movement showcasing the product';
     
-    const videoPath = await generateVideo(
+    const videoResult = await generateVideo(
       testImageUrl,
       videoPrompt,
       undefined, // No seed frame for Scene 0
@@ -44,7 +44,9 @@ async function testPerson1Integration() {
       SCENE_INDEX
     );
 
+    const videoPath = videoResult.localPath;
     console.log(`   ✅ Video generated: ${videoPath}`);
+    console.log(`   ✅ S3 URL: ${videoResult.s3Url}`);
 
     // Step 3: Extract frames from video
     console.log('\n🖼️  Step 3: Extracting frames from video...');

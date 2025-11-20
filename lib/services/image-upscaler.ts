@@ -10,9 +10,20 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN!,
-});
+/**
+ * Creates and configures a Replicate client
+ */
+function createReplicateClient(): Replicate {
+  const apiToken = process.env.REPLICATE_API_TOKEN;
+
+  if (!apiToken) {
+    throw new Error('REPLICATE_API_TOKEN environment variable is not set');
+  }
+
+  return new Replicate({
+    auth: apiToken,
+  });
+}
 
 /**
  * Upscales a single image 4x using Replicate's google/upscaler
@@ -25,6 +36,8 @@ export async function upscaleImage(imageUrl: string, projectId: string): Promise
   console.log(`${logPrefix} Starting upscale for image: ${imageUrl}`);
 
   try {
+    const replicate = createReplicateClient();
+    
     // Run the upscaler model
     const output = (await replicate.run(
       "nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c7fcf05fcc3a73abf41610695738c1d7b",
@@ -145,6 +158,8 @@ export async function upscaleImageWithFaceEnhancement(
   console.log(`${logPrefix} Starting face-enhanced upscale for: ${imageUrl}`);
 
   try {
+    const replicate = createReplicateClient();
+    
     const output = (await replicate.run(
       "nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c7fcf05fcc3a73abf41610695738c1d7b",
       {

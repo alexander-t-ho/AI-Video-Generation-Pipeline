@@ -42,10 +42,10 @@ export default function WorkspaceHeader() {
           )}
         </div>
 
-        {/* Center Section - Scene3 Logo */}
+        {/* Center Section - Scen3 Logo */}
         <div className="flex-1 flex items-center justify-center">
           <h1 className="text-xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-            Scene3
+            Scen3
           </h1>
         </div>
 

@@ -13,6 +13,7 @@ import http from 'http';
 
 import { VIDEO_CONFIG } from '@/lib/config/ai-models';
 import { enhanceVideoPrompt } from '@/lib/utils/video-prompt-enhancer';
+import { getStorageService, type StoredFile } from '@/lib/storage/storage-service';
 
 // ============================================================================
 // Constants
@@ -99,8 +100,8 @@ function createReplicateClient(): Replicate {
  * @returns Valid duration for the model (rounded up)
  */
 function validateAndAdjustDuration(duration: number, model: string): number {
-  // Google Veo 3.1 Fast only accepts 4, 6, or 8 seconds
-  if (model.includes('veo-3.1-fast') || model.includes('google/veo-3.1-fast')) {
+  // Google Veo 3.1 (both fast and standard) only accepts 4, 6, or 8 seconds
+  if (model.includes('veo-3.1') || model.includes('veo') || model.includes('google/veo')) {
     const validDurations = [4, 6, 8];
     // Find the next valid duration that is >= requested duration (round UP)
     const adjusted = validDurations.find(d => d >= duration) || validDurations[validDurations.length - 1];
@@ -110,7 +111,6 @@ function validateAndAdjustDuration(duration: number, model: string): number {
     return adjusted;
   }
 
-  // Google Veo 3.1 (non-fast) may have different requirements
   // Add other model-specific validations here as needed
   
   return duration;
@@ -132,8 +132,7 @@ export async function createVideoPrediction(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number,
-  skipAutomotiveEnhancement?: boolean
+  duration?: number
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -153,26 +152,16 @@ export async function createVideoPrediction(
   console.log(`${logPrefix} Original Prompt: "${prompt}"`);
   
   // Enhance the prompt for video generation (especially for automotive content)
-  // Skip automotive enhancement for stylized previews to avoid conflicts with style-specific instructions
-  let finalPrompt = prompt;
-  let negativePrompt: string | undefined;
+  const { enhancedPrompt, negativePrompt } = enhanceVideoPrompt(prompt, {
+    ensureHeadlights: true,
+    ensureCorrectWheelRotation: true,
+    addMotionDetails: true,
+    useNegativePrompt: true,
+  });
   
-  if (!skipAutomotiveEnhancement) {
-    const enhanced = enhanceVideoPrompt(prompt, {
-      ensureHeadlights: true,
-      ensureCorrectWheelRotation: true,
-      addMotionDetails: true,
-      useNegativePrompt: true,
-    });
-    finalPrompt = enhanced.enhancedPrompt;
-    negativePrompt = enhanced.negativePrompt;
-    console.log(`${logPrefix} Enhanced Prompt: "${finalPrompt}"`);
-    if (negativePrompt) {
-      console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
-    }
-  } else {
-    console.log(`${logPrefix} Skipping automotive enhancement (stylized preview mode)`);
-    console.log(`${logPrefix} Using original prompt: "${finalPrompt}"`);
+  console.log(`${logPrefix} Enhanced Prompt: "${enhancedPrompt}"`);
+  if (negativePrompt) {
+    console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
   }
   
   console.log(`${logPrefix} Inputs:`);
@@ -219,7 +208,7 @@ export async function createVideoPrediction(
     } : {
       image: inputImageUrl,
     }),
-    prompt: finalPrompt.trim(),
+    prompt: enhancedPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // WAN models use 'duration' and 'resolution'
@@ -334,10 +323,9 @@ export async function createVideoPredictionWithRetry(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number,
-  skipAutomotiveEnhancement?: boolean
+  duration?: number
 ): Promise<string> {
-  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration, skipAutomotiveEnhancement));
+  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration));
 }
 
 // ============================================================================
@@ -510,14 +498,15 @@ async function downloadVideoWithRetry(
 
 /**
  * Generate a video from an image using Replicate Luma Ray
- * 
+ *
  * @param imageUrl - URL or path to the image to use as starting frame
  * @param prompt - Text description of desired motion/action
  * @param seedFrame - Optional seed frame URL (for Scene 1-4)
  * @param projectId - Project ID for organizing output files
  * @param sceneIndex - Scene index for organizing output files
- * @returns Local path to the generated video file
- * 
+ * @param sceneId - Optional scene ID for database tracking
+ * @returns Object with local path and S3 URL of the generated video
+ *
  * @throws Error if video generation fails, times out, or download fails
  */
 export async function generateVideo(
@@ -526,8 +515,8 @@ export async function generateVideo(
   seedFrame: string | undefined,
   projectId: string,
   sceneIndex: number,
-  skipAutomotiveEnhancement?: boolean
-): Promise<string> {
+  sceneId?: string
+): Promise<{ localPath: string; s3Url: string; s3Key: string; storedFile: StoredFile }> {
   // Validate inputs
   if (!imageUrl) {
     throw new Error('Image URL is required');
@@ -552,20 +541,20 @@ export async function generateVideo(
   const modelName = REPLICATE_MODEL.split('/').pop()?.split(':')[0] || 'unknown';
   const sanitizedModelName = modelName.replace(/[^a-zA-Z0-9.-]/g, '-');
 
-  // Create output directory in video testing folder
-  const projectRoot = process.cwd();
-  const outputDir = path.join(projectRoot, 'video testing');
+  // Create output directory in proper temp location (not cwd/video testing)
+  const outputDir = path.join('/tmp', 'projects', projectId, 'generated-videos');
   await fs.mkdir(outputDir, { recursive: true });
 
   // Create unique filename with timestamp and model name
   const timestamp = Date.now();
-  const outputPath = path.join(outputDir, `scene-${sceneIndex}-${sanitizedModelName}-${timestamp}.mp4`);
+  const filename = `scene-${sceneIndex}-${sanitizedModelName}-${timestamp}.mp4`;
+  const outputPath = path.join(outputDir, filename);
 
   console.log(`${logPrefix} Using model: ${REPLICATE_MODEL} (${sanitizedModelName})`);
 
   try {
     // Step 1: Create prediction
-    const predictionId = await createVideoPredictionWithRetry(imageUrl, prompt, seedFrame, undefined, skipAutomotiveEnhancement);
+    const predictionId = await createVideoPredictionWithRetry(imageUrl, prompt, seedFrame);
 
     // Step 2: Poll for completion
     const videoUrl = await pollVideoStatus(predictionId);
@@ -575,18 +564,42 @@ export async function generateVideo(
     await downloadVideoWithRetry(videoUrl, outputPath);
 
     // Verify file was created
+    let fileSize = 0;
     try {
       await fs.access(outputPath);
       const stats = await fs.stat(outputPath);
+      fileSize = stats.size;
       console.log(`${logPrefix} Video downloaded successfully`);
-      console.log(`${logPrefix} File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`${logPrefix} Output path: ${outputPath}`);
-      console.log(`${logPrefix} ========================================`);
+      console.log(`${logPrefix} File size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
     } catch {
       throw new Error('Video file was not created after download');
     }
 
-    return outputPath;
+    // Step 4: Upload to S3 using storage service
+    console.log(`${logPrefix} Uploading video to S3...`);
+    const storageService = getStorageService();
+    const storedFile = await storageService.storeFromLocalPath(outputPath, {
+      projectId,
+      sceneId,
+      category: 'generated-videos',
+      mimeType: 'video/mp4',
+      customFilename: filename,
+    }, {
+      keepLocal: true,  // Keep local for FFmpeg operations
+      deleteSource: false,
+    });
+
+    console.log(`${logPrefix} Video uploaded to S3`);
+    console.log(`${logPrefix} S3 Key: ${storedFile.s3Key}`);
+    console.log(`${logPrefix} Local path: ${storedFile.localPath}`);
+    console.log(`${logPrefix} ========================================`);
+
+    return {
+      localPath: storedFile.localPath,
+      s3Url: storedFile.url,
+      s3Key: storedFile.s3Key,
+      storedFile,
+    };
   } catch (error) {
     // Clean up partial file on error
     try {
@@ -600,12 +613,29 @@ export async function generateVideo(
   }
 }
 
+/**
+ * Legacy generateVideo function that returns just the local path
+ * For backward compatibility with existing code
+ * @deprecated Use generateVideo instead which returns full storage info
+ */
+export async function generateVideoLegacy(
+  imageUrl: string,
+  prompt: string,
+  seedFrame: string | undefined,
+  projectId: string,
+  sceneIndex: number
+): Promise<string> {
+  const result = await generateVideo(imageUrl, prompt, seedFrame, projectId, sceneIndex);
+  return result.localPath;
+}
+
 // ============================================================================
 // Export
 // ============================================================================
 
 export default {
   generateVideo,
+  generateVideoLegacy,
   createVideoPrediction,
   createVideoPredictionWithRetry,
   pollVideoStatus,

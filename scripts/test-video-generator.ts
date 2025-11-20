@@ -65,7 +65,7 @@ async function testVideoGeneration() {
     console.log(`   Project ID: ${projectId}\n`);
 
     const startTime = Date.now();
-    const videoPath = await generateVideo(
+    const result = await generateVideo(
       imageUrl,
       prompt,
       seedFrame,
@@ -75,12 +75,13 @@ async function testVideoGeneration() {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
     console.log(`\n✅ Video generation completed in ${duration}s!`);
-    console.log(`📁 Video path: ${videoPath}`);
+    console.log(`📁 Video path: ${result.localPath}`);
+    console.log(`☁️  S3 URL: ${result.s3Url}`);
 
     // Verify video file exists
     try {
-      await fs.access(videoPath);
-      const stats = await fs.stat(videoPath);
+      await fs.access(result.localPath);
+      const stats = await fs.stat(result.localPath);
       console.log(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
       console.log('\n✅ Video generation test passed!');
       process.exit(0);

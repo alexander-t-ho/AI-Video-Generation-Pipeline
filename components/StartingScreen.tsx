@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
-import { Settings, ArrowRight, Image, X, Sparkles, Video } from 'lucide-react';
+import { Settings, ArrowRight, Image, X, Sparkles, Video, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StartingScreen({
@@ -16,14 +16,16 @@ export default function StartingScreen({
   const [images, setImages] = useState<File[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState('');
+
   // Use ref to prevent race conditions from rapid clicks
   const isTransitioningRef = useRef(false);
 
   const router = useRouter();
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(file => 
+    const files = Array.from(e.target.files || []).filter(file =>
       file.type.startsWith('image/')
     );
     if (files.length > 0) {
@@ -48,7 +50,7 @@ export default function StartingScreen({
     e.stopPropagation();
     setIsDragging(false);
 
-    const files = Array.from(e.dataTransfer.files).filter(file => 
+    const files = Array.from(e.dataTransfer.files).filter(file =>
       file.type.startsWith('image/')
     );
 
@@ -61,34 +63,98 @@ export default function StartingScreen({
     setImages(prevImages => prevImages.filter((_, i) => i !== index));
   };
 
-  const handleInitialPrompt = () => {
+  const buildPrompt = (idea: string) => {
+    const lines: string[] = [];
+
+    lines.push(
+      idea.trim()
+        ? `Original idea: ${idea.trim()}`
+        : 'Original idea: The user wants a high-impact performance advertising spot. Infer a strong automotive or product concept from the answers below.'
+    );
+
+    lines.push(
+      'Ad context: Performance-focused commercial for a small brand, with a strong emphasis on products and automotive advertising.'
+    );
+
+    const styleLine = 'Leigh Powis–style commercial film, tight and action-driven, with bold, cinematic framing and punchy pacing.';
+    lines.push(
+      `Visual style: ${styleLine} (assume this is shot on Arri Alexa by default).`
+    );
+
+    if (idea.trim()) {
+      lines.push(`Story focus: ${idea.trim()}.`);
+    }
+
+    lines.push(
+      'Turn this into a 5-scene cinematic advertising storyboard. Each scene should be described as a single sentence using the structure: [SHOT TYPE] + [SUBJECT] + [ACTION] + [STYLE] + [CAMERA MOVEMENT] + [AUDIO CUES].'
+    );
+
+    return lines.join('\n');
+  };
+
+  const handleInitialPrompt = async () => {
     // Prevent multiple rapid clicks (race condition fix)
-    if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current) {
+    if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current || isGeneratingStoryboard) {
       console.warn('[StartingScreen] handleInitialPrompt called but already transitioning or invalid state');
       return;
     }
-    
+
     isTransitioningRef.current = true;
-    
-    // Trigger crumble animation
-    setIsTransitioning(true);
-    
-    // After smooth transition, navigate to your story page with prompt as query param
-    // The new flow: / -> /your-story -> /brand-identity -> /workspace
-    setTimeout(() => {
-      setIsTransitioning(false);
-      isTransitioningRef.current = false;
-      router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}`);
-    }, 600);
+    setIsGeneratingStoryboard(true);
+    setGenerationStatus('Extracting details...');
+
+    // Extract car model from prompt using AI
+    let carParams = '';
+    try {
+      const response = await fetch('/api/extract-car-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim() }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.carInfo) {
+          const { brand, model, year, confidence } = data.carInfo;
+          if (confidence !== 'none') {
+            const params = new URLSearchParams();
+            if (brand) params.set('carBrand', brand);
+            if (model) params.set('carModel', model);
+            if (year) params.set('carYear', year.toString());
+            params.set('carConfidence', confidence);
+            carParams = `&${params.toString()}`;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[StartingScreen] Failed to extract car model:', error);
+      // Continue without car info - not critical
+    }
+
+    // Navigate directly to style selection (storyboard will be generated after style is chosen)
+    setIsGeneratingStoryboard(false);
+    isTransitioningRef.current = false;
+    router.push(`/style?prompt=${encodeURIComponent(prompt.trim())}${carParams}`);
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen flex flex-col items-center p-6 cinematic-gradient relative overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Generating Storyboard Overlay */}
+      {isGeneratingStoryboard && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
+            <p className="text-2xl text-white font-semibold mb-2">Processing</p>
+            <p className="text-white/60">{generationStatus}</p>
+          </div>
+        </div>
+      )}
+
       {/* Drag overlay indicator */}
       {isDragging && (
         <div className="absolute inset-0 bg-white/10 backdrop-blur-sm z-50 flex items-center justify-center border-4 border-dashed border-white/40">
@@ -105,14 +171,14 @@ export default function StartingScreen({
           Scen3
         </h1>
       </div>
-      
+
       {/* Top Left Logo */}
       <div className="fixed top-6 left-6 z-40">
         <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
           Scen3
         </h1>
       </div>
-      
+
       {/* Top Right Buttons */}
       <div className="fixed top-6 right-6 z-40 flex items-center space-x-3">
         <Link
@@ -233,4 +299,3 @@ export default function StartingScreen({
     </div>
   );
 }
-

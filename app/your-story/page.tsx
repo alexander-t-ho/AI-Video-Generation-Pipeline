@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import SceneCard from '@/components/wizard/SceneCard';
-import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverEvent, PointerSensor, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragOverlay, MeasuringStrategy } from '@dnd-kit/core';
+import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverEvent, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragOverlay, MeasuringStrategy } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { Scene } from '@/lib/types';
 import { useProjectStore } from '@/lib/state/project-store';
 import { createProject } from '@/lib/api-client';
-import { Loader2, ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles } from 'lucide-react';
 
 // Wrapper component that uses useSearchParams
 function YourStoryContent() {
@@ -16,8 +16,13 @@ function YourStoryContent() {
   const searchParams = useSearchParams();
   const { project } = useProjectStore();
 
-  // Storyboard editor state
-  const [idea, setIdea] = useState('');
+  // Storyboard editor state - structured fields for WHO/WHAT/STORY/FEEL
+  const [storyFields, setStoryFields] = useState({
+    who: '',
+    what: '',
+    storyIdea: '',
+    feelDo: '',
+  });
   const [storyboardScenes, setStoryboardScenes] = useState<Scene[] | null>(null);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
@@ -26,7 +31,35 @@ function YourStoryContent() {
   const [overId, setOverId] = useState<string | null>(null);
   const [activeScene, setActiveScene] = useState<Scene | null>(null);
   const [regeneratingSceneId, setRegeneratingSceneId] = useState<string | null>(null);
-  const ideaTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Helper to convert structured fields to idea string
+  const getIdeaFromFields = () => {
+    const parts: string[] = [];
+    if (storyFields.who.trim()) parts.push(`**WHO**: ${storyFields.who.trim()}`);
+    if (storyFields.what.trim()) parts.push(`**WHAT**: ${storyFields.what.trim()}`);
+    if (storyFields.storyIdea.trim()) parts.push(`**STORY IDEA**: ${storyFields.storyIdea.trim()}`);
+    if (storyFields.feelDo.trim()) parts.push(`**FEEL/DO**: ${storyFields.feelDo.trim()}`);
+    return parts.join('\n');
+  };
+
+  // Helper to parse idea string into structured fields
+  const parseIdeaToFields = (idea: string) => {
+    // Use regex that captures content until the next header (with possible blank lines) or end of string
+    const whoMatch = idea.match(/\*\*WHO\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const whatMatch = idea.match(/\*\*WHAT\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const storyMatch = idea.match(/\*\*STORY IDEA\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const feelDoMatch = idea.match(/\*\*FEEL\/DO\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+
+    return {
+      who: whoMatch ? whoMatch[1].trim() : '',
+      what: whatMatch ? whatMatch[1].trim() : '',
+      storyIdea: storyMatch ? storyMatch[1].trim() : '',
+      feelDo: feelDoMatch ? feelDoMatch[1].trim() : '',
+    };
+  };
+
+  // Check if any field has content
+  const hasContent = storyFields.who.trim() || storyFields.what.trim() || storyFields.storyIdea.trim() || storyFields.feelDo.trim();
 
   // Configure sensors with activation constraints for better UX
   const sensors = useSensors(
@@ -56,60 +89,54 @@ function YourStoryContent() {
   // Get duration from project store or default to 15
   const duration = project?.targetDuration || 15;
 
-  // Auto-resize textarea to fit content (minimum 4 lines)
-  const adjustTextareaHeight = () => {
-    if (ideaTextareaRef.current) {
-      ideaTextareaRef.current.style.height = 'auto';
-      const scrollHeight = ideaTextareaRef.current.scrollHeight;
-      // Calculate minimum height for 4 lines (line-height ~1.5rem for text-sm, plus padding)
-      const minHeight = 4 * 1.5 * 16 + 16; // 4 lines * 1.5rem * 16px + padding (1rem = 16px)
-      ideaTextareaRef.current.style.height = `${Math.max(scrollHeight, minHeight)}px`;
-    }
-  };
-
-  // Auto-resize when idea changes (useLayoutEffect for synchronous DOM updates)
-  useLayoutEffect(() => {
-    adjustTextareaHeight();
-  }, [idea]);
-
-  // Load existing storyboard from project store on mount
+  // Load existing storyboard and idea from project store on mount
   useEffect(() => {
+    // First, check for generated idea in localStorage (from StartingScreen)
+    const generatedIdea = localStorage.getItem('generatedStoryIdea');
+    if (generatedIdea) {
+      const parsed = parseIdeaToFields(generatedIdea);
+      setStoryFields(parsed);
+      localStorage.removeItem('generatedStoryIdea'); // Clean up
+    } else if (project?.prompt) {
+      // Fallback: try to extract the original idea from the project prompt
+      // Use a regex that captures everything after "Original idea:" until "Ad context:"
+      const ideaMatch = project.prompt.match(/Original idea:\s*(.+?)(?=\nAd context:|$)/s);
+      if (ideaMatch) {
+        const parsed = parseIdeaToFields(ideaMatch[1].trim());
+        setStoryFields(parsed);
+      }
+    }
+
+    // Load storyboard from project store
     if (project?.storyboard && project.storyboard.length > 0) {
       setStoryboardScenes(project.storyboard);
-      // If there's a project prompt, try to extract the idea from it
-      if (project.prompt && !idea) {
-        // Try to extract the original idea from the prompt
-        const ideaMatch = project.prompt.match(/Original idea:\s*(.+?)(?:\n|$)/);
-        if (ideaMatch) {
-          setIdea(ideaMatch[1].trim());
-        }
-      }
     }
   }, []); // Only run on mount
 
-  // Auto-generate story idea on mount
+  // Fallback: Auto-generate story idea only if no storyboard exists (e.g., direct URL access)
   useEffect(() => {
     const initialPrompt = searchParams.get('prompt');
-    if (initialPrompt && !idea) {
+    // Only generate if we have a prompt, no content, and no storyboard from store
+    if (initialPrompt && !hasContent && !storyboardScenes && !project?.storyboard?.length) {
       generateStoryIdea(initialPrompt);
     }
   }, [searchParams]); // Only run when searchParams changes
 
-  // Auto-generate storyboard when story idea is ready
+  // Fallback: Auto-generate storyboard only if not pre-generated
   useEffect(() => {
     // Only auto-generate if:
-    // 1. We have an idea
-    // 2. We don't already have a storyboard
+    // 1. We have content
+    // 2. We don't already have a storyboard (neither local nor from store)
     // 3. We're not currently generating anything
-    if (idea && !storyboardScenes && !isGeneratingStoryboard && !isGeneratingIdea) {
+    if (hasContent && !storyboardScenes && !project?.storyboard?.length && !isGeneratingStoryboard && !isGeneratingIdea) {
       // Small delay to ensure state is settled
       const timer = setTimeout(() => {
         handleGenerateStoryboard();
       }, 500);
-      
+
       return () => clearTimeout(timer);
     }
-  }, [idea, storyboardScenes, isGeneratingStoryboard, isGeneratingIdea]);
+  }, [hasContent, storyboardScenes, isGeneratingStoryboard, isGeneratingIdea]);
 
   const generateStoryIdea = async (initialPrompt: string) => {
     setIsGeneratingIdea(true);
@@ -128,12 +155,18 @@ function YourStoryContent() {
 
       const data = await response.json();
       if (data.success && data.idea) {
-        setIdea(data.idea);
+        const parsed = parseIdeaToFields(data.idea);
+        setStoryFields(parsed);
       }
     } catch (error) {
       console.error('Failed to generate story idea:', error);
-      // Fallback: use the initial prompt as-is
-      setIdea(initialPrompt);
+      // Fallback: use the initial prompt as WHAT
+      setStoryFields({
+        who: '',
+        what: initialPrompt,
+        storyIdea: '',
+        feelDo: '',
+      });
     } finally {
       setIsGeneratingIdea(false);
     }
@@ -141,6 +174,9 @@ function YourStoryContent() {
 
   const buildPrompt = () => {
     const lines: string[] = [];
+    const idea = getIdeaFromFields();
+    const store = useProjectStore.getState();
+    const selectedStylePrompt = store.selectedStylePrompt;
 
     lines.push(
       idea.trim()
@@ -152,9 +188,12 @@ function YourStoryContent() {
       'Ad context: Performance-focused commercial for a small brand, with a strong emphasis on products and automotive advertising.'
     );
 
-    const styleLine = 'Leigh Powis–style commercial film, tight and action-driven, with bold, cinematic framing and punchy pacing.';
+    // Inject the selected style prompt if available, otherwise use default
+    const styleLine = selectedStylePrompt 
+      ? selectedStylePrompt 
+      : 'Leigh Powis–style commercial film, tight and action-driven, with bold, cinematic framing and punchy pacing.';
     lines.push(
-      `Visual style: ${styleLine}${true ? ' (assume this is shot on Arri Alexa by default).' : '.'}`
+      `Visual style: ${styleLine}${!selectedStylePrompt ? ' (assume this is shot on Arri Alexa by default).' : ''}`
     );
 
     if (idea.trim()) {
@@ -169,7 +208,7 @@ function YourStoryContent() {
   };
 
   const handleGenerateStoryboard = async () => {
-    if (isGeneratingStoryboard || !idea.trim()) return;
+    if (isGeneratingStoryboard || !hasContent) return;
 
     setIsGeneratingStoryboard(true);
     try {
@@ -251,7 +290,7 @@ function YourStoryContent() {
           currentDescription: scene.description,
           currentImagePrompt: scene.imagePrompt,
           context,
-          idea: idea.trim(),
+          idea: getIdeaFromFields().trim(),
         }),
       });
 
@@ -335,8 +374,20 @@ function YourStoryContent() {
   };
 
   const handleContinue = () => {
-    // Navigate to brand identity page
-    router.push('/brand-identity');
+    // Navigate to brand identity page, preserving car extraction params
+    const carBrand = searchParams.get('carBrand');
+    const carModel = searchParams.get('carModel');
+    const carYear = searchParams.get('carYear');
+    const carConfidence = searchParams.get('carConfidence');
+
+    const params = new URLSearchParams();
+    if (carBrand) params.set('carBrand', carBrand);
+    if (carModel) params.set('carModel', carModel);
+    if (carYear) params.set('carYear', carYear);
+    if (carConfidence) params.set('carConfidence', carConfidence);
+
+    const queryString = params.toString();
+    router.push(`/brand-identity${queryString ? `?${queryString}` : ''}`);
   };
 
   return (
@@ -345,13 +396,13 @@ function YourStoryContent() {
       {/* Top Left Logo */}
       <div className="fixed top-6 left-6 z-40">
         <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-          Scene3
+          Scen3
         </h1>
       </div>
 
       {/* Back Button */}
       <button
-        onClick={() => router.push('/')}
+        onClick={() => router.push('/style')}
         className="fixed top-6 right-6 z-40 px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
       >
         Back
@@ -360,7 +411,7 @@ function YourStoryContent() {
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 mt-20 mb-6">
         {/* Header */}
         <div className="text-center mb-6 sm:mb-8">
-          <h2 className="text-3xl sm:text-4xl font-light text-white/90 tracking-tight mb-2">
+          <h2 className="text-4xl sm:text-5xl font-light text-white/90 tracking-tight mb-2">
             Your Story
           </h2>
           <p className="text-sm sm:text-base text-white/60">
@@ -376,12 +427,11 @@ function YourStoryContent() {
                 What's the core idea?
               </h3>
               <p className="text-sm text-white/60">
-                Write it messy. Who is this for, what are you selling, and what should viewers feel or do after
-                watching?
+                Who is this for, what are you selling, and what should viewers feel or do after watching?
               </p>
             </div>
 
-            {/* Story Input */}
+            {/* Story Input - Structured Fields */}
             <div className="space-y-3">
               {/* Loading State for Idea Generation */}
               {isGeneratingIdea && (
@@ -391,25 +441,63 @@ function YourStoryContent() {
                 </div>
               )}
 
-              <textarea
-                ref={ideaTextareaRef}
-                value={idea}
-                onChange={(e) => {
-                  setIdea(e.target.value);
-                  adjustTextareaHeight();
-                }}
-                onInput={adjustTextareaHeight}
-                rows={4}
-                className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
-                placeholder="E.g., A high-energy launch film for a new electric sports car that feels cinematic and aspirational, ending on a bold brand line."
-                disabled={isGeneratingStoryboard || isGeneratingIdea}
-              />
+              {/* WHO Field */}
+              <div className="grid grid-cols-[80px_1fr] gap-1 items-center">
+                <label className="text-sm font-medium text-white/80">WHO</label>
+                <input
+                  type="text"
+                  value={storyFields.who}
+                  onChange={(e) => setStoryFields(prev => ({ ...prev, who: e.target.value }))}
+                  className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-1.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="e.g., Ambitious professionals aged 30-50 who crave success and freedom"
+                  disabled={isGeneratingStoryboard || isGeneratingIdea}
+                />
+              </div>
 
-              <div className="flex items-center gap-3">
+              {/* WHAT Field */}
+              <div className="grid grid-cols-[80px_1fr] gap-1 items-center">
+                <label className="text-sm font-medium text-white/80">WHAT</label>
+                <input
+                  type="text"
+                  value={storyFields.what}
+                  onChange={(e) => setStoryFields(prev => ({ ...prev, what: e.target.value }))}
+                  className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-1.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="e.g., The Porsche 911 isn't just a car; it's a symbol of achievement"
+                  disabled={isGeneratingStoryboard || isGeneratingIdea}
+                />
+              </div>
+
+              {/* STORY IDEA Field */}
+              <div className="grid grid-cols-[80px_1fr] gap-1 items-start">
+                <label className="text-sm font-medium text-white/80 pt-1.5">STORY</label>
+                <textarea
+                  value={storyFields.storyIdea}
+                  onChange={(e) => setStoryFields(prev => ({ ...prev, storyIdea: e.target.value }))}
+                  rows={3}
+                  className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-1.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="e.g., Open on a foggy morning, a solitary figure starts their Porsche. As they accelerate through winding roads..."
+                  disabled={isGeneratingStoryboard || isGeneratingIdea}
+                />
+              </div>
+
+              {/* FEEL/DO Field */}
+              <div className="grid grid-cols-[80px_1fr] gap-1 items-center">
+                <label className="text-sm font-medium text-white/80">FEEL/DO</label>
+                <input
+                  type="text"
+                  value={storyFields.feelDo}
+                  onChange={(e) => setStoryFields(prev => ({ ...prev, feelDo: e.target.value }))}
+                  className="w-full rounded-lg border border-white/20 bg-white/[0.02] px-3 py-1.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/[0.05] backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="e.g., Feel inspired to chase their dreams and take action"
+                  disabled={isGeneratingStoryboard || isGeneratingIdea}
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
                   onClick={handleGenerateStoryboard}
-                  disabled={isGeneratingStoryboard || !idea.trim()}
+                  disabled={isGeneratingStoryboard || !hasContent}
                   className="px-4 py-2 rounded-lg bg-white/20 text-white text-sm font-medium hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   {isGeneratingStoryboard ? (
@@ -540,7 +628,7 @@ export default function YourStoryPage() {
       <div className="min-h-screen flex flex-col cinematic-gradient relative overflow-hidden">
         <div className="fixed top-6 left-6 z-40">
           <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-            Scene3
+            Scen3
           </h1>
         </div>
         <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 mt-20 mb-6 flex items-center justify-center">

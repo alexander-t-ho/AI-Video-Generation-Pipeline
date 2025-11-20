@@ -7,7 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
-import { Scene, StoryboardResponse } from '../types';
+import { Scene, Subscene, StoryboardResponse } from '../types';
 
 // ============================================================================
 // Constants
@@ -38,26 +38,26 @@ export function setRuntimeTextModel(model: string) {
 const STORYBOARD_SYSTEM_PROMPT = `You are a professional video storyboard creator specializing in performance-focused advertising,
 with particular strength in product and automotive commercials.
 
-Given a short creative brief for a video advertisement, create exactly 5 scenes that tell a cinematic, conversion-minded story.
+Given a short creative brief for a video advertisement, create exactly 5 scenes. Each scene must have exactly 3 subscenes that break down the scene's action into a mini-narrative arc.
 
 For each scene:
-- Duration: 2–4 seconds
+- Total duration: 3 seconds (1 second per subscene)
 - Clear visual focus and logical progression from the previous scene
-- Keep the description SHORT and CONCISE - 3-6 words maximum per scene
+- Keep the scene description SHORT and CONCISE - 3-6 words maximum
 
-Each scene's description must be a SHORT phrase like:
+For each subscene within a scene:
+- Duration: 1 second
+- Should progress the scene's story (beginning, middle, end of the moment)
+- Keep the subscene description SHORT - 2-4 words
+- Provide detailed imagePrompt for visual generation
+
+Scene description examples:
 "driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
 
-Examples of good short descriptions:
-- "driver close-up" (not "Close-up of a driver's focused expression as they grip the steering wheel tightly")
-- "wide car approach" (not "Wide establishing shot of a sleek sports car approaching through urban streets")
-- "interior cockpit" (not "Interior shot of the car's cockpit with dashboard lights glowing")
-- "engine roar" (not "Extreme close-up of the engine bay with mechanical details and steam")
-- "hero product shot" (not "Dramatic hero shot of the product with perfect lighting and composition")
-
-The description should be a brief, memorable phrase that captures the essence of the shot.
-
-For the imagePrompt field, provide detailed visual guidance for image generation.
+Subscene description examples (for a "driver close-up" scene):
+- Subscene 0: "eyes focus"
+- Subscene 1: "hands grip wheel"
+- Subscene 2: "determined expression"
 
 Unless the brief clearly specifies otherwise, assume:
 - The spot is shot on Arri Alexa with a high-end commercial finish
@@ -69,14 +69,32 @@ Output strictly valid JSON in this format:
     {
       "order": 0,
       "description": "Short 3-6 word phrase describing the scene",
-      "imagePrompt": "Detailed prompt for image generation that matches the description, including shot type, subject, action, style, lighting, composition, camera movement, and any audio cues that can be implied visually.",
-      "duration": 3
+      "subscenes": [
+        {
+          "order": 0,
+          "description": "Short 2-4 word subscene description",
+          "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
+          "duration": 1
+        },
+        {
+          "order": 1,
+          "description": "Short 2-4 word subscene description",
+          "imagePrompt": "Detailed prompt for image generation...",
+          "duration": 1
+        },
+        {
+          "order": 2,
+          "description": "Short 2-4 word subscene description",
+          "imagePrompt": "Detailed prompt for image generation...",
+          "duration": 1
+        }
+      ]
     },
     ...
   ]
 }
 
-Keep image prompts specific, visual, and production-ready. The description field should be short and punchy, while imagePrompt contains all the detail.`;
+Keep image prompts specific, visual, and production-ready. Each subscene should feel like a natural progression within its parent scene.`;
 
 // ============================================================================
 // Types
@@ -115,12 +133,21 @@ interface OpenRouterResponse {
   };
 }
 
+interface RawSubscene {
+  order: number;
+  description: string;
+  imagePrompt: string;
+  duration: number;
+}
+
 interface RawStoryboardResponse {
   scenes: Array<{
     order: number;
     description: string;
-    imagePrompt: string;
-    duration: number;
+    subscenes: RawSubscene[];
+    // Legacy field for backward compatibility
+    imagePrompt?: string;
+    duration?: number;
   }>;
 }
 
@@ -356,12 +383,38 @@ function validateStoryboardResponse(
     if (typeof scene.description !== 'string' || scene.description.trim() === '') {
       throw new Error(`Scene ${index}: missing or invalid description field`);
     }
-    if (typeof scene.imagePrompt !== 'string' || scene.imagePrompt.trim() === '') {
-      throw new Error(`Scene ${index}: missing or invalid imagePrompt field`);
+
+    // Validate subscenes
+    if (!scene.subscenes || !Array.isArray(scene.subscenes) || scene.subscenes.length !== 3) {
+      throw new Error(`Scene ${index}: must have exactly 3 subscenes, got ${scene.subscenes?.length || 0}`);
     }
-    if (typeof scene.duration !== 'number' || scene.duration < 1 || scene.duration > 10) {
-      throw new Error(`Scene ${index}: missing or invalid duration field (must be 1-10 seconds)`);
-    }
+
+    // Validate each subscene
+    const validatedSubscenes = scene.subscenes.map((subscene, subIndex) => {
+      if (typeof subscene.order !== 'number') {
+        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid order field`);
+      }
+      if (typeof subscene.description !== 'string' || subscene.description.trim() === '') {
+        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid description field`);
+      }
+      if (typeof subscene.imagePrompt !== 'string' || subscene.imagePrompt.trim() === '') {
+        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid imagePrompt field`);
+      }
+      if (typeof subscene.duration !== 'number' || subscene.duration < 0.5 || subscene.duration > 5) {
+        throw new Error(`Scene ${index}, Subscene ${subIndex}: invalid duration (must be 0.5-5 seconds)`);
+      }
+
+      return {
+        id: uuidv4(),
+        order: subIndex,
+        description: subscene.description.trim(),
+        imagePrompt: subscene.imagePrompt.trim(),
+        suggestedDuration: subscene.duration,
+      };
+    });
+
+    // Calculate total scene duration from subscenes
+    const sceneDuration = validatedSubscenes.reduce((sum, sub) => sum + sub.suggestedDuration, 0);
 
     // Validate order matches index
     if (scene.order !== index) {
@@ -373,10 +426,12 @@ function validateStoryboardResponse(
     // Generate UUID for scene
     return {
       id: uuidv4(),
-      order: index, // Use index to ensure correct ordering
+      order: index,
       description: scene.description.trim(),
-      imagePrompt: scene.imagePrompt.trim(),
-      suggestedDuration: scene.duration,
+      subscenes: validatedSubscenes,
+      suggestedDuration: sceneDuration,
+      // Legacy field for backward compatibility - use first subscene's prompt
+      imagePrompt: validatedSubscenes[0].imagePrompt,
     };
   });
 

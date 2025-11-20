@@ -5,13 +5,11 @@
  * Uses a placeholder image and basic prompt for fast testing.
  */
 
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import dotenv from 'dotenv';
 import { generateVideo } from '../lib/video/generator';
 
 // Load environment variables from .env.local
-dotenv.config({ path: path.join(process.cwd(), '.env.local') });
-dotenv.config({ path: path.join(process.cwd(), '.env') });
+dotenv.config({ path: '.env.local' });
 
 async function main() {
   console.log('🚀 Quick Video Generation Test\n');
@@ -53,7 +51,7 @@ async function main() {
     console.log('');
 
     // Generate the video
-    const outputPath = await generateVideo(
+    const result = await generateVideo(
       testImageUrl,
       testPrompt,
       undefined, // no seed frame
@@ -61,11 +59,13 @@ async function main() {
       0 // scene index
     );
 
+    const outputPath = typeof result === 'string' ? result : result.localPath;
+
     console.log('\n✅ SUCCESS! Video generated successfully!');
     console.log(`📁 Saved to: ${outputPath}`);
 
     // Get file size
-    const fs = await import('fs/promises');
+    const fs = require('fs/promises');
     try {
       const stats = await fs.stat(outputPath);
       console.log(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
@@ -108,4 +108,3 @@ async function main() {
 }
 
 main().catch(console.error);
-

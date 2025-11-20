@@ -39,15 +39,17 @@ async function testVideoStitching() {
     console.log(`\n📹 Stitching ${videoPaths.length} videos...`);
     console.log(`📁 Project ID: ${projectId}\n`);
 
-    const outputPath = await stitchVideos(videoPaths, projectId);
+    const result = await stitchVideos(videoPaths, projectId);
 
     console.log(`✅ Successfully stitched videos!`);
-    console.log(`📁 Output: ${outputPath}`);
+    console.log(`📁 Local Output: ${result.localPath}`);
+    console.log(`☁️  S3 URL: ${result.s3Url}`);
+    console.log(`🔑 S3 Key: ${result.s3Key}`);
 
     // Verify output file exists
     try {
-      await fs.access(outputPath);
-      const stats = await fs.stat(outputPath);
+      await fs.access(result.localPath);
+      const stats = await fs.stat(result.localPath);
       console.log(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
       console.log('\n✅ Video stitching test passed!');
       process.exit(0);

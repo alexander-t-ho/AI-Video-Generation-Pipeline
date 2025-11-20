@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
+import { getStorageService } from '@/lib/storage/storage-service';
 import path from 'path';
 import fs from 'fs/promises';
 
 /**
  * POST /api/upload-image-s3
  * Uploads a local image file to S3 and returns the S3 URL
- * 
+ *
  * Request Body:
  * {
  *   imagePath: string;    // Required: Local file path to the image
  *   projectId: string;    // Required: Project ID
  * }
- * 
+ *
  * Response:
  * {
  *   success: boolean;
  *   data?: {
- *     s3Url: string;
- *     s3Key: string;
+ *     s3Url: string;           // Standard S3 URL (for storage reference)
+ *     s3Key: string;           // S3 object key
+ *     preSignedUrl: string;    // Pre-signed URL for external API access (expires in 2 hours)
  *   };
  *   error?: string;
  * }
@@ -66,11 +68,16 @@ export async function POST(request: NextRequest) {
       });
       const s3Url = getS3Url(s3Key);
 
+      // Generate pre-signed URL for external API access (2 hour expiry)
+      const storageService = getStorageService();
+      const preSignedUrl = await storageService.getPreSignedUrl(s3Key, 7200); // 2 hours
+
       return NextResponse.json({
         success: true,
         data: {
           s3Url,
           s3Key,
+          preSignedUrl, // Use this for Replicate and other external APIs
         },
       });
     } catch (s3Error: any) {
@@ -78,14 +85,15 @@ export async function POST(request: NextRequest) {
       if (s3Error.message?.includes('AWS credentials') || s3Error.message?.includes('credentials not found')) {
         const ngrokUrl = process.env.NGROK_URL || 'http://localhost:3000';
         const publicUrl = `${ngrokUrl}/api/serve-image?path=${encodeURIComponent(imagePath)}`;
-        
+
         console.warn('[API] S3 not configured, using public URL instead:', publicUrl);
-        
+
         return NextResponse.json({
           success: true,
           data: {
             s3Url: publicUrl,
             s3Key: null, // No S3 key when using public URL
+            preSignedUrl: publicUrl, // Use same URL when S3 not configured
           },
         });
       }

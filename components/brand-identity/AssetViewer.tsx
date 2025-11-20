@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera, Check, CheckSquare, Square } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage } from './types';
 import ColorPicker from './ColorPicker';
 import AngleSelectionModal from './AngleSelectionModal';
@@ -14,19 +14,29 @@ import type { AngleType } from '@/lib/types';
 interface AssetViewerProps {
   selectedCar: CarVariant | CustomAsset | null;
   onAddRecoloredImage?: (baseCarId: string, imageUrl: string, colorHex: string) => void;
+  onAddRecoloredImages?: (baseCarId: string, images: Array<{ url: string, colorHex: string }>) => void;
   onAddCustomAsset?: (baseCarId: string, name: string) => void;
   onUploadImages?: () => void;
   onRemoveImage?: (assetId: string, imageId: string) => void;
   isUploading?: boolean;
+  selectedAssetIds?: Set<string>;
+  onAssetToggle?: (assetId: string) => void;
+  onSelectAll?: () => void;
+  onDeselectAll?: () => void;
 }
 
 export default function AssetViewer({
   selectedCar,
   onAddRecoloredImage,
+  onAddRecoloredImages,
   onAddCustomAsset,
   onUploadImages,
   onRemoveImage,
-  isUploading = false
+  isUploading = false,
+  selectedAssetIds = new Set(),
+  onAssetToggle,
+  onSelectAll,
+  onDeselectAll
 }: AssetViewerProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [adjustmentText, setAdjustmentText] = useState('');
@@ -195,7 +205,7 @@ export default function AssetViewer({
   };
 
   const handleColorSelect = async (color: string) => {
-    if (!currentImage || !selectedCar) return;
+    if (!selectedCar) return;
 
     setSelectedColor(color);
     // Store selected color in project state
@@ -205,76 +215,112 @@ export default function AssetViewer({
     setRecolorError(null);
 
     try {
-      // Ensure we have a publicly accessible URL for the AI model
-      let imageUrl = currentImage.url;
+      // Determine which images to recolor
+      const imagesToRecolor: CarReferenceImage[] = [];
+      
+      if (selectedAssetIds.size > 0) {
+        // If specific assets are selected, use those (filtering out interior)
+        const selectedImages = images.filter(img => selectedAssetIds.has(img.id));
+        imagesToRecolor.push(...selectedImages.filter(img => img.type !== 'interior'));
+      } else if (currentImage) {
+        // If no assets selected, use current image (if not interior)
+        if (currentImage.type !== 'interior') {
+          imagesToRecolor.push(currentImage);
+        }
+      }
 
-      // Check if we have an s3Key in the image data (for custom assets)
-      if ((currentImage as any).s3Key) {
-        // Use the s3Key to construct the S3 URL
-        const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'ai-video-pipeline-outputs';
-        const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
-        imageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${(currentImage as any).s3Key}`;
-        console.log('Using S3 URL for recoloring:', imageUrl);
-      } else if (imageUrl.includes('/api/serve-image?path=')) {
-        // For serve-image URLs (local files), we need to upload to S3 first
-        console.log('Local serve-image URL detected, attempting to upload to S3 for recoloring:', imageUrl);
+      if (imagesToRecolor.length === 0) {
+        console.log('No eligible images to recolor (interior images skipped)');
+        setIsRecoloring(false);
+        return;
+      }
 
+      console.log(`[AssetViewer] Recoloring ${imagesToRecolor.length} images...`);
+
+      // Process images sequentially to avoid overwhelming the API/rate limits
+      // and to provide better progress updates
+      const recoloredResults: Array<{ url: string, colorHex: string }> = [];
+      
+      for (const image of imagesToRecolor) {
         try {
-          // Extract the actual file path from serve-image URLs
-          const urlParams = new URLSearchParams(imageUrl.split('?')[1]);
-          const filePath = urlParams.get('path') || imageUrl;
-
-          const uploadResponse = await fetch('/api/upload-image-s3', {
+          // Ensure we have a publicly accessible URL for the AI model
+          let imageUrl = image.url;
+          console.log(`[AssetViewer] Processing image ${image.id}:`, imageUrl);
+    
+          if (imageUrl.includes('/api/serve-image?path=')) {
+            // For serve-image URLs (local files), we need to upload to S3 first
+            console.log('Local serve-image URL detected, attempting to upload to S3 for recoloring:', imageUrl);
+    
+            try {
+              // Extract the actual file path from serve-image URLs
+              const urlParams = new URLSearchParams(imageUrl.split('?')[1]);
+              const filePath = urlParams.get('path') || imageUrl;
+    
+              const uploadResponse = await fetch('/api/upload-image-s3', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  imagePath: filePath,
+                  projectId: 'brand-identity-recolor-upload',
+                }),
+              });
+    
+              const uploadData = await uploadResponse.json();
+              if (uploadData.success && uploadData.data?.s3Url) {
+                imageUrl = uploadData.data.s3Url;
+                console.log('Successfully uploaded image to S3 for recoloring:', imageUrl);
+              } else {
+                throw new Error('Failed to upload image to S3');
+              }
+            } catch (uploadError) {
+              console.error('Failed to upload image to S3:', uploadError);
+              // Continue with the original URL - FLUX-dev might be able to handle it
+            }
+          }
+    
+          // Call the recolor API
+          const response = await fetch('/api/recolor-image', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
-              imagePath: filePath,
-              projectId: 'brand-identity-recolor-upload',
+              imageUrl: imageUrl,
+              colorHex: color,
+              projectId: 'brand-identity-recolor', // Use a fixed project ID for now
+              sceneIndex: 0,
             }),
           });
-
-          const uploadData = await uploadResponse.json();
-          if (uploadData.success && uploadData.data?.s3Url) {
-            imageUrl = uploadData.data.s3Url;
-            console.log('Successfully uploaded image to S3 for recoloring:', imageUrl);
-          } else {
-            throw new Error('Failed to upload image to S3');
+    
+          const data = await response.json();
+    
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to recolor image');
           }
-        } catch (uploadError) {
-          console.error('Failed to upload image to S3:', uploadError);
-          // Continue with the original URL - FLUX-dev might be able to handle it
+          
+          // Collect result
+          recoloredResults.push({ url: data.image.url, colorHex: color });
+          console.log(`[AssetViewer] Successfully recolored image ${image.id}`);
+          
+        } catch (singleImageError) {
+          console.error(`[AssetViewer] Failed to recolor image ${image.id}:`, singleImageError);
+          // Continue with other images even if one fails
         }
-      } else {
-        // For external URLs (like Unsplash), use them directly - FLUX-dev can handle them
-        console.log('Using external URL directly for recoloring:', imageUrl);
+      }
+      
+      // Add all successfully recolored images in one batch
+      if (recoloredResults.length > 0 && selectedCar) {
+         if (onAddRecoloredImages) {
+            onAddRecoloredImages(selectedCar.id, recoloredResults);
+         } else if (onAddRecoloredImage) {
+            // Fallback for single image or if batch prop not provided
+            recoloredResults.forEach(res => {
+               onAddRecoloredImage(selectedCar.id, res.url, res.colorHex);
+            });
+         }
       }
 
-      // Call the recolor API
-      const response = await fetch('/api/recolor-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageUrl: imageUrl,
-          colorHex: color,
-          projectId: 'brand-identity-recolor', // Use a fixed project ID for now
-          sceneIndex: 0,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to recolor image');
-      }
-
-      // Create a custom asset with the recolored image
-      if (onAddRecoloredImage && selectedCar) {
-        onAddRecoloredImage(selectedCar.id, data.image.url, color);
-      }
-
-      console.log('Recolored image generated and added to custom assets');
+      console.log('Batch recoloring completed');
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -372,100 +418,153 @@ export default function AssetViewer({
 
   return (
     <div className="h-full flex flex-col bg-white/5 border border-white/20 rounded-3xl backdrop-blur-sm overflow-hidden">
-      {/* Main Image Display */}
-      <div className="relative flex items-center justify-center p-4 sm:p-6 flex-1 min-h-[300px] max-h-[50vh] lg:max-h-none">
-        {/* Navigation Arrows */}
-        {images.length > 1 && (
-          <>
-            <button
-              onClick={handlePreviousImage}
-              className="absolute left-2 sm:left-4 z-10 p-2 sm:p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all backdrop-blur-sm"
-            >
-              <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <button
-              onClick={handleNextImage}
-              className="absolute right-2 sm:right-4 z-10 p-2 sm:p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all backdrop-blur-sm"
-            >
-              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-          </>
-        )}
+      <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
+        {/* Main Image Display */}
+        <div className="relative flex items-center justify-center p-2 sm:p-4 flex-1 overflow-hidden">
+          {/* Navigation Arrows */}
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={handlePreviousImage}
+                className="absolute left-2 sm:left-4 z-10 p-2 sm:p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all backdrop-blur-sm"
+              >
+                <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+              <button
+                onClick={handleNextImage}
+                className="absolute right-2 sm:right-4 z-10 p-2 sm:p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all backdrop-blur-sm"
+              >
+                <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+            </>
+          )}
 
-        {/* Main Image */}
-        <div className="relative w-full h-full max-w-full max-h-full">
-          {currentImage && (
-            <img
-              src={currentImage.url}
-              alt={currentImage.alt}
-              className="w-full h-full max-w-full max-h-full object-contain rounded-xl shadow-2xl"
-            />
+          {/* Main Image */}
+          <div className="relative w-full h-full max-w-full max-h-full flex items-center justify-center">
+            {currentImage && (
+              <img
+                src={currentImage.url}
+                alt={currentImage.alt}
+                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+              />
+            )}
+          </div>
+
+          {/* Image Counter */}
+          {images.length > 0 && (
+            <div className="absolute bottom-2 sm:bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm backdrop-blur-sm">
+              {currentImageIndex + 1} / {images.length}
+            </div>
           )}
         </div>
 
-        {/* Image Counter */}
-        {images.length > 0 && (
-          <div className="absolute bottom-2 sm:bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm backdrop-blur-sm">
-            {currentImageIndex + 1} / {images.length}
+        {/* Thumbnail Sidebar */}
+        {(images.length > 1 || (selectedCar && onUploadImages)) && (
+          <div className="w-[160px] border-l border-white/10 flex-shrink-0 flex flex-col bg-black/20">
+            {/* Sidebar Controls */}
+            <div className="p-2 border-b border-white/10 flex flex-col gap-2 flex-shrink-0">
+              {/* Upload Button */}
+              {selectedCar && onUploadImages && (
+                <button
+                  onClick={onUploadImages}
+                  disabled={isUploading}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-xs transition-all w-full"
+                  title="Upload images"
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>Upload</span>
+                </button>
+              )}
+
+              {/* Select All / Deselect All buttons */}
+              {images.length > 0 && onSelectAll && onDeselectAll && (
+                <>
+                  <button
+                    onClick={onSelectAll}
+                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-xs transition-all w-full"
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>All</span>
+                  </button>
+                  <button
+                    onClick={onDeselectAll}
+                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-xs transition-all w-full"
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                    <span>None</span>
+                  </button>
+                </>
+              )}
+              
+              {/* Count */}
+              {images.length > 0 && (
+                <div className="text-center">
+                  <span className="text-white/40 text-[10px]">
+                    {selectedAssetIds.size} / {images.length} selected
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+              {images.map((image, index) => (
+                <div key={image.id} className="relative group w-full aspect-square flex-shrink-0">
+                  <button
+                    onClick={() => handleThumbnailClick(index)}
+                    className={`w-full h-full rounded-lg overflow-hidden border-2 transition-all ${
+                      index === currentImageIndex
+                        ? 'border-white shadow-lg'
+                        : 'border-white/20 hover:border-white/40'
+                    }`}
+                  >
+                    <img
+                      src={image.url}
+                      alt={image.alt}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+
+                  {/* Selection checkbox - inside the thumbnail */}
+                  {onAssetToggle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAssetToggle(image.id);
+                      }}
+                      className={`absolute top-1 left-1 w-6 h-6 rounded flex items-center justify-center shadow-md border transition-all z-10 ${
+                        selectedAssetIds.has(image.id)
+                          ? 'bg-green-500 border-green-400 text-white'
+                          : 'bg-black/70 border-white/50 text-white/60 hover:border-white/80'
+                      }`}
+                      title={selectedAssetIds.has(image.id) ? 'Deselect asset' : 'Select asset'}
+                    >
+                      {selectedAssetIds.has(image.id) && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+
+                  {/* Remove button for custom assets */}
+                  {selectedCar && 'adjustments' in selectedCar && onRemoveImage && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveImage(selectedCar.id, image.id);
+                      }}
+                      className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white/20 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                      title="Remove image"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
-
-      {/* Thumbnail Strip */}
-      {(images.length > 1 || (selectedCar && onUploadImages)) && (
-        <div className="p-3 sm:p-4 border-t border-white/10 flex-shrink-0">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
-            {/* Upload button - always available when a car is selected */}
-            {selectedCar && onUploadImages && (
-              <button
-                onClick={onUploadImages}
-                disabled={isUploading}
-                className="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg border-2 border-dashed border-white/40 hover:border-white/60 transition-all flex items-center justify-center bg-white/5 hover:bg-white/10 disabled:opacity-50"
-                title="Upload images"
-              >
-                {isUploading ? (
-                  <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 text-white/60 animate-spin" />
-                ) : (
-                  <Upload className="w-5 h-5 sm:w-6 sm:h-6 text-white/60" />
-                )}
-              </button>
-            )}
-
-            {images.map((image, index) => (
-              <div key={image.id} className="relative flex-shrink-0 group">
-                <button
-                  onClick={() => handleThumbnailClick(index)}
-                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                    index === currentImageIndex
-                      ? 'border-white shadow-lg'
-                      : 'border-white/20 hover:border-white/40'
-                  }`}
-                >
-                  <img
-                    src={image.url}
-                    alt={image.alt}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-
-                {/* Remove button for custom assets */}
-                {selectedCar && 'adjustments' in selectedCar && onRemoveImage && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveImage(selectedCar.id, image.id);
-                    }}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white/20 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                    title="Remove image"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Adjustments Input */}
       <div className="p-4 sm:p-6 border-t border-white/10 flex-shrink-0 overflow-y-auto max-h-[40vh]">
@@ -554,6 +653,8 @@ export default function AssetViewer({
             )}
           </button>
 
+          {/* Commented out: Generate Turnaround button */}
+          {/*
           <button
             onClick={() => setIsAngleModalOpen(true)}
             disabled={isGeneratingAngles}
@@ -566,6 +667,7 @@ export default function AssetViewer({
               <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
             )}
           </button>
+          */}
           
           {/* Selected Color Display */}
           {selectedColor && (

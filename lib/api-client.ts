@@ -374,7 +374,7 @@ export async function pollImageStatus(
 }
 
 /**
- * Generate video for a scene
+ * Generate video for a scene or subscene
  */
 export async function generateVideo(
   imageUrl: string,
@@ -382,7 +382,8 @@ export async function generateVideo(
   projectId: string,
   sceneIndex: number,
   seedFrame?: string,
-  duration?: number // Optional: Scene-specific duration
+  duration?: number, // Optional: Scene-specific duration
+  subsceneIndex?: number // Optional: For subscene-based workflow
 ): Promise<{ predictionId: string; status: string }> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
@@ -398,6 +399,7 @@ export async function generateVideo(
         sceneIndex,
         seedFrame,
         duration, // Pass duration if provided
+        subsceneIndex, // Pass subscene index if provided
       }),
     });
 
@@ -680,11 +682,12 @@ export async function generatePreview(
 
 /**
  * Upload image to S3
+ * Returns both the standard S3 URL and a pre-signed URL for external API access
  */
 export async function uploadImageToS3(
   imagePath: string,
   projectId: string
-): Promise<{ s3Url: string; s3Key: string }> {
+): Promise<{ s3Url: string; s3Key: string; preSignedUrl: string }> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/upload-image-s3`, {
       method: 'POST',

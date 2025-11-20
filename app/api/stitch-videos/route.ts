@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stitchVideos } from '@/lib/video/stitcher';
-import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -78,33 +77,18 @@ export async function POST(request: NextRequest) {
       absoluteVideoPaths.push(absolutePath);
     }
 
-    // Stitch videos (stitcher creates its own output path)
-    const finalVideoPath = await stitchVideos(absoluteVideoPaths, projectId);
+    // Stitch videos (stitcher creates its own output path and uploads to S3)
+    const result = await stitchVideos(absoluteVideoPaths, projectId);
 
     // Use absolute path for response (client will handle serving it)
     const response: any = {
       success: true,
       data: {
-        finalVideoPath: finalVideoPath,
+        finalVideoPath: result.localPath,
+        s3Url: result.s3Url,
+        s3Key: result.s3Key,
       },
     };
-
-    // Upload to S3 if requested
-    if (shouldUploadToS3) {
-      try {
-        const s3Key = await uploadToS3(finalVideoPath, projectId, {
-          contentType: 'video/mp4',
-        });
-        const s3Url = getS3Url(s3Key);
-
-        response.data.s3Url = s3Url;
-        response.data.s3Key = s3Key;
-      } catch (s3Error: any) {
-        console.error('[API] S3 upload error:', s3Error);
-        // Don't fail the request if S3 upload fails, just log it
-        // The final video is still available locally
-      }
-    }
 
     return NextResponse.json(response);
   } catch (error: any) {

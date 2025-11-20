@@ -10,6 +10,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
+import { getStorageService, type StoredFile } from '@/lib/storage/storage-service';
 
 const execAsync = promisify(exec);
 
@@ -574,7 +575,7 @@ async function stitchVideosWithTransitions(
 export async function stitchVideos(
   videoPaths: string[],
   projectId: string
-): Promise<string> {
+): Promise<{ localPath: string; s3Url: string; s3Key: string; storedFile: StoredFile }> {
   // Validate input
   if (!videoPaths || videoPaths.length === 0) {
     throw new Error('At least one video file is required');
@@ -666,8 +667,28 @@ export async function stitchVideos(
       // Ignore cleanup errors
     }
 
+    // Upload to S3
+    console.log('[VideoStitcher] Uploading stitched video to S3...');
+    const storageService = getStorageService();
+    const storedFile = await storageService.storeFromLocalPath(outputPath, {
+      projectId,
+      category: 'final',
+      mimeType: 'video/mp4',
+      customFilename: 'final.mp4',
+    }, {
+      keepLocal: true, // Keep local for quick access
+      deleteSource: false,
+    });
+
     console.log('[VideoStitcher] Video stitching completed successfully');
-    return outputPath;
+    console.log(`[VideoStitcher] S3 Key: ${storedFile.s3Key}`);
+
+    return {
+      localPath: storedFile.localPath,
+      s3Url: storedFile.url,
+      s3Key: storedFile.s3Key,
+      storedFile,
+    };
   } catch (error: any) {
     // Clean up on error
     try {

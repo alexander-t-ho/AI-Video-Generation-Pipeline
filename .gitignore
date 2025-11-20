@@ -253,6 +253,7 @@ yarn-error.log*
 /docs/andy/
 /alexis-docs/
 /test videos/
+memory-bank/
 
 # AWS deployment artifacts
 .aws-sam/

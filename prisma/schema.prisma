@@ -47,6 +47,25 @@ enum SceneStatus {
   COMPLETED
 }
 
+enum FileCategory {
+  UPLOADS
+  GENERATED_IMAGES
+  GENERATED_VIDEOS
+  FRAMES
+  PROCESSED
+  TIMELINE_EDITS
+  PREVIEWS
+  FINAL
+}
+
+enum ProcessingType {
+  ORIGINAL
+  BG_REMOVED
+  EDGE_CLEANED
+  UPSCALED
+  RECOLORED
+}
+
 // ==================== CORE ENTITIES ====================
 
 model Company {
@@ -291,6 +310,61 @@ model UploadedImage {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+// ==================== FILE STORAGE ====================
+
+model FileStorage {
+  id           String        @id @default(uuid())
+  s3Key        String        @unique
+  localPath    String?       // Local file path (if still exists)
+  category     FileCategory
+  mimeType     String
+  size         Int           // File size in bytes
+  contentHash  String?       // MD5 hash for duplicate detection
+  isUploaded   Boolean       @default(false) // Whether uploaded to S3
+  isDeleted    Boolean       @default(false) // Soft delete flag
+  createdAt    DateTime      @default(now())
+  uploadedAt   DateTime?     // When uploaded to S3
+  deletedAt    DateTime?     // When deleted
+
+  // Relations
+  projectId    String
+  sceneId      String?
+
+  // Processed versions of this file
+  processedVersions ProcessedImageVersion[] @relation("OriginalFile")
+
+  @@index([projectId])
+  @@index([sceneId])
+  @@index([category])
+  @@index([contentHash])
+  @@index([isUploaded])
+}
+
+model ProcessedImageVersion {
+  id             String         @id @default(uuid())
+  s3Key          String         @unique
+  localPath      String?
+  processingType ProcessingType
+  iteration      Int            @default(1)
+  mimeType       String         @default("image/png")
+  size           Int
+  isUploaded     Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  uploadedAt     DateTime?
+
+  // Relations
+  originalFileId String
+  originalFile   FileStorage    @relation("OriginalFile", fields: [originalFileId], references: [id], onDelete: Cascade)
+  projectId      String
+  sceneId        String?
+
+  @@index([originalFileId])
+  @@index([projectId])
+  @@index([sceneId])
+  @@index([processingType])
+  @@index([iteration])
 }
 
 // ==================== NEXTAUTH REQUIRED TABLES ====================

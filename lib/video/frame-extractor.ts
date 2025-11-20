@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { SeedFrame } from '../types';
+import { getStorageService } from '@/lib/storage/storage-service';
 
 const execAsync = promisify(exec);
 
@@ -243,13 +244,49 @@ export async function extractFrames(
     throw new Error(`Expected ${FRAME_COUNT} frames, got ${framePaths.length}`);
   }
 
-  // Create SeedFrame objects
-  const seedFrames: SeedFrame[] = framePaths.map((framePath, index) => ({
-    id: uuidv4(),
-    url: framePath,
-    timestamp: FRAME_TIMESTAMPS[index],
-  }));
+  // Upload frames to S3 and create SeedFrame objects
+  const storageService = getStorageService();
+  const seedFrames: SeedFrame[] = [];
 
+  for (let index = 0; index < framePaths.length; index++) {
+    const framePath = framePaths[index];
+    const frameId = uuidv4();
+
+    try {
+      // Upload to S3
+      const storedFile = await storageService.storeFromLocalPath(framePath, {
+        projectId,
+        sceneId: `scene-${sceneIndex}`,
+        category: 'frames',
+        mimeType: 'image/png',
+        customFilename: `frame_${index + 1}.png`,
+      }, {
+        keepLocal: true, // Keep local for potential FFmpeg operations
+        deleteSource: false,
+      });
+
+      seedFrames.push({
+        id: frameId,
+        url: storedFile.url, // S3 URL
+        localPath: storedFile.localPath,
+        s3Key: storedFile.s3Key,
+        timestamp: FRAME_TIMESTAMPS[index],
+      });
+
+      console.log(`[FrameExtractor] Frame ${index + 1} uploaded to S3: ${storedFile.s3Key}`);
+    } catch (error) {
+      console.error(`[FrameExtractor] Failed to upload frame ${index + 1}:`, error);
+      // Fall back to local path
+      seedFrames.push({
+        id: frameId,
+        url: framePath,
+        localPath: framePath,
+        timestamp: FRAME_TIMESTAMPS[index],
+      });
+    }
+  }
+
+  console.log(`[FrameExtractor] Completed extracting and uploading ${seedFrames.length} frames`);
   return seedFrames;
 }
 

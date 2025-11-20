@@ -4,11 +4,19 @@ import { useMemo, useState } from 'react';
 import { Search, Car, Wrench, Plus, X } from 'lucide-react';
 import { CarVariant, CustomAsset } from './types';
 
+export interface SuggestedCarInfo {
+  brand?: string;
+  model?: string;
+  year?: number;
+  confidence: 'high' | 'medium' | 'low' | 'none';
+}
+
 interface CarSelectorProps {
   cars: CarVariant[];
   customAssets: CustomAsset[];
   selectedCar: CarVariant | CustomAsset | null;
   searchQuery: string;
+  suggestedCar?: SuggestedCarInfo;
   onSearchChange: (query: string) => void;
   onCarSelect: (car: CarVariant | CustomAsset) => void;
   onAddCustomAsset?: (baseCarId: string, name: string) => void;
@@ -20,6 +28,7 @@ export default function CarSelector({
   customAssets,
   selectedCar,
   searchQuery,
+  suggestedCar,
   onSearchChange,
   onCarSelect,
   onAddCustomAsset,
@@ -27,18 +36,79 @@ export default function CarSelector({
 }: CarSelectorProps) {
   const [isCustomAssetModalOpen, setIsCustomAssetModalOpen] = useState(false);
   const [customAssetName, setCustomAssetName] = useState('');
-  const filteredCars = useMemo(() => {
-    if (!searchQuery.trim()) return cars;
 
-    const query = searchQuery.toLowerCase();
-    return cars.filter(car =>
-      car.brand.toLowerCase().includes(query) ||
-      car.model.toLowerCase().includes(query) ||
-      car.trim.toLowerCase().includes(query) ||
-      car.displayName.toLowerCase().includes(query) ||
-      car.year.toString().includes(query)
-    );
-  }, [cars, searchQuery]);
+  // Sort and filter cars based on suggested car from AI extraction
+  const sortedAndFilteredCars = useMemo(() => {
+    let result = [...cars];
+
+    // First, sort by relevance to suggested car
+    if (suggestedCar && suggestedCar.confidence !== 'none') {
+      result.sort((a, b) => {
+        const scoreA = calculateRelevanceScore(a, suggestedCar);
+        const scoreB = calculateRelevanceScore(b, suggestedCar);
+
+        // Higher score = more relevant = should come first
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA;
+        }
+
+        // Fall back to alphabetical sort by displayName
+        return a.displayName.localeCompare(b.displayName);
+      });
+    } else {
+      // No suggestion - sort alphabetically
+      result.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    }
+
+    // Then apply search filter if present
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(car =>
+        car.brand.toLowerCase().includes(query) ||
+        car.model.toLowerCase().includes(query) ||
+        car.trim.toLowerCase().includes(query) ||
+        car.displayName.toLowerCase().includes(query) ||
+        car.year.toString().includes(query)
+      );
+    }
+
+    return result;
+  }, [cars, searchQuery, suggestedCar]);
+
+  // Calculate relevance score for sorting
+  function calculateRelevanceScore(car: CarVariant, suggested: SuggestedCarInfo): number {
+    let score = 0;
+
+    const carBrand = car.brand.toLowerCase();
+    const carModel = car.model.toLowerCase();
+    const suggestedBrand = suggested.brand?.toLowerCase() || '';
+    const suggestedModel = suggested.model?.toLowerCase() || '';
+
+    // Exact brand match
+    if (suggestedBrand && carBrand === suggestedBrand) {
+      score += 100;
+    } else if (suggestedBrand && carBrand.includes(suggestedBrand)) {
+      score += 50;
+    }
+
+    // Exact model match
+    if (suggestedModel && carModel === suggestedModel) {
+      score += 100;
+    } else if (suggestedModel && carModel.includes(suggestedModel)) {
+      score += 50;
+    } else if (suggestedModel && car.displayName.toLowerCase().includes(suggestedModel)) {
+      score += 30;
+    }
+
+    // Year match (bonus points)
+    if (suggested.year && car.year === suggested.year) {
+      score += 20;
+    } else if (suggested.year && Math.abs(car.year - suggested.year) <= 2) {
+      score += 10;
+    }
+
+    return score;
+  }
 
   const handleAddCustomAsset = () => {
     if (!selectedCar || !customAssetName.trim() || !onAddCustomAsset) return;
@@ -73,7 +143,7 @@ export default function CarSelector({
             Standard Assets
           </h3>
           <div className="space-y-2">
-            {filteredCars.map((car) => (
+            {sortedAndFilteredCars.map((car) => (
               <CarItem
                 key={car.id}
                 car={car}
@@ -81,7 +151,7 @@ export default function CarSelector({
                 onSelect={() => onCarSelect(car)}
               />
             ))}
-            {filteredCars.length === 0 && searchQuery && (
+            {sortedAndFilteredCars.length === 0 && searchQuery && (
               <div className="text-center py-8 text-white/40">
                 No cars found matching "{searchQuery}"
               </div>
