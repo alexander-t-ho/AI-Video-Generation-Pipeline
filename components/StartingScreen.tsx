@@ -4,7 +4,9 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
-import { Settings, ArrowRight, Image, X } from 'lucide-react';
+import { Settings, ArrowRight, Image, X, Loader2 } from 'lucide-react';
+import { useProjectStore } from '@/lib/state/project-store';
+import { createProject } from '@/lib/api-client';
 
 export default function StartingScreen({
   onCreateProject,
@@ -15,6 +17,8 @@ export default function StartingScreen({
   const [images, setImages] = useState<File[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState('');
 
   // Use ref to prevent race conditions from rapid clicks
   const isTransitioningRef = useRef(false);
@@ -60,17 +64,45 @@ export default function StartingScreen({
     setImages(prevImages => prevImages.filter((_, i) => i !== index));
   };
 
+  const buildPrompt = (idea: string) => {
+    const lines: string[] = [];
+
+    lines.push(
+      idea.trim()
+        ? `Original idea: ${idea.trim()}`
+        : 'Original idea: The user wants a high-impact performance advertising spot. Infer a strong automotive or product concept from the answers below.'
+    );
+
+    lines.push(
+      'Ad context: Performance-focused commercial for a small brand, with a strong emphasis on products and automotive advertising.'
+    );
+
+    const styleLine = 'Leigh Powis–style commercial film, tight and action-driven, with bold, cinematic framing and punchy pacing.';
+    lines.push(
+      `Visual style: ${styleLine} (assume this is shot on Arri Alexa by default).`
+    );
+
+    if (idea.trim()) {
+      lines.push(`Story focus: ${idea.trim()}.`);
+    }
+
+    lines.push(
+      'Turn this into a 5-scene cinematic advertising storyboard. Each scene should be described as a single sentence using the structure: [SHOT TYPE] + [SUBJECT] + [ACTION] + [STYLE] + [CAMERA MOVEMENT] + [AUDIO CUES].'
+    );
+
+    return lines.join('\n');
+  };
+
   const handleInitialPrompt = async () => {
     // Prevent multiple rapid clicks (race condition fix)
-    if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current) {
+    if (!prompt.trim() || externalLoading || isTransitioning || isTransitioningRef.current || isGeneratingStoryboard) {
       console.warn('[StartingScreen] handleInitialPrompt called but already transitioning or invalid state');
       return;
     }
 
     isTransitioningRef.current = true;
-
-    // Trigger crumble animation
-    setIsTransitioning(true);
+    setIsGeneratingStoryboard(true);
+    setGenerationStatus('Extracting details...');
 
     // Extract car model from prompt using AI
     let carParams = '';
@@ -100,22 +132,74 @@ export default function StartingScreen({
       // Continue without car info - not critical
     }
 
-    // After smooth transition, navigate to your story page with prompt as query param
-    // The new flow: / -> /your-story -> /brand-identity -> /workspace
-    setTimeout(() => {
-      setIsTransitioning(false);
-      isTransitioningRef.current = false;
-      router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}${carParams}`);
-    }, 600);
+    // Generate story idea
+    setGenerationStatus('Crafting your story idea...');
+    let storyIdea = prompt.trim();
+    try {
+      const ideaResponse = await fetch('/api/generate-story-idea', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialPrompt: prompt.trim() }),
+      });
+
+      if (ideaResponse.ok) {
+        const ideaData = await ideaResponse.json();
+        if (ideaData.success && ideaData.idea) {
+          storyIdea = ideaData.idea;
+        }
+      }
+    } catch (error) {
+      console.warn('[StartingScreen] Failed to generate story idea:', error);
+      // Continue with original prompt as idea
+    }
+
+    // Generate storyboard
+    setGenerationStatus('Generating storyboard...');
+    try {
+      const fullPrompt = buildPrompt(storyIdea);
+      const duration = 15; // Default duration
+
+      // Create project and generate storyboard
+      const result = await createProject(fullPrompt, duration);
+
+      if (result.storyboard.success && result.storyboard.scenes) {
+        // Store in project store
+        const store = useProjectStore.getState();
+        store.createProject(fullPrompt, duration);
+        store.setStoryboard(result.storyboard.scenes);
+
+        // Store the idea in localStorage for the Your Story page to pick up
+        localStorage.setItem('generatedStoryIdea', storyIdea);
+      }
+    } catch (error) {
+      console.error('[StartingScreen] Failed to generate storyboard:', error);
+      // Still navigate - the Your Story page can regenerate
+    }
+
+    // Navigate to your story page
+    setIsGeneratingStoryboard(false);
+    isTransitioningRef.current = false;
+    router.push(`/your-story?prompt=${encodeURIComponent(prompt.trim())}${carParams}`);
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen flex flex-col items-center p-6 cinematic-gradient relative overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Generating Storyboard Overlay */}
+      {isGeneratingStoryboard && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
+            <p className="text-2xl text-white font-semibold mb-2">Generating Storyboard</p>
+            <p className="text-white/60">{generationStatus}</p>
+          </div>
+        </div>
+      )}
+
       {/* Drag overlay indicator */}
       {isDragging && (
         <div className="absolute inset-0 bg-white/10 backdrop-blur-sm z-50 flex items-center justify-center border-4 border-dashed border-white/40">
