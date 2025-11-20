@@ -86,16 +86,19 @@ export async function POST(request: NextRequest) {
     // Build the prompt for the LLM
     const systemPrompt = `You are an expert advertising creative director and storytelling consultant. Your job is to refine raw ideas into compelling advertising narratives.
 
-Given a user's initial vision or prompt, create a concise, compelling story idea that answers:
-1. WHO is this for? (target audience)
-2. WHAT are you selling? (focus on the FEELING, emotion, or aspiration - not just the product)
-3. What should viewers FEEL or DO after watching?
+Given a user's initial vision or prompt, create a concise, compelling story idea with EXACTLY this format:
 
-Keep your response under 100 words. Write in a clear, punchy style. Focus on emotions and aspirations over technical details.`;
+**WHO**: [Target audience - who is this for? Be specific about demographics, psychographics, aspirations]
+**WHAT**: [What are you selling - focus on the FEELING, emotion, or aspiration, not just the product]
+**STORY IDEA**: [A brief narrative concept - describe the story arc in 2-3 sentences]
+**FEEL/DO**: [What should viewers feel or do after watching?]
+
+IMPORTANT: You MUST use this exact format with **WHO**, **WHAT**, **STORY IDEA**, and **FEEL/DO** headers.
+Keep each section concise (1-2 sentences max). Write in a clear, punchy style. Focus on emotions and aspirations over technical details.`;
 
     const userPrompt = `Initial vision: ${body.initialPrompt.trim()}
 
-Refine this into a compelling story idea for an advertisement.`;
+Refine this into a compelling story idea for an advertisement using the exact format specified.`;
 
     // Call OpenRouter API
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {

@@ -155,6 +155,11 @@ export default function StartingScreen({
 
     // Generate storyboard
     setGenerationStatus('Generating storyboard...');
+
+    // Store the idea in localStorage BEFORE storyboard generation
+    // This ensures it's available even if storyboard generation fails
+    localStorage.setItem('generatedStoryIdea', storyIdea);
+
     try {
       const fullPrompt = buildPrompt(storyIdea);
       const duration = 15; // Default duration
@@ -167,9 +172,6 @@ export default function StartingScreen({
         const store = useProjectStore.getState();
         store.createProject(fullPrompt, duration);
         store.setStoryboard(result.storyboard.scenes);
-
-        // Store the idea in localStorage for the Your Story page to pick up
-        localStorage.setItem('generatedStoryIdea', storyIdea);
       }
     } catch (error) {
       console.error('[StartingScreen] Failed to generate storyboard:', error);

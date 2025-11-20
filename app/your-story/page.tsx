@@ -44,10 +44,11 @@ function YourStoryContent() {
 
   // Helper to parse idea string into structured fields
   const parseIdeaToFields = (idea: string) => {
-    const whoMatch = idea.match(/\*\*WHO\*\*:\s*(.+?)(?=\n\*\*|\n*$)/s);
-    const whatMatch = idea.match(/\*\*WHAT\*\*:\s*(.+?)(?=\n\*\*|\n*$)/s);
-    const storyMatch = idea.match(/\*\*STORY IDEA\*\*:\s*(.+?)(?=\n\*\*|\n*$)/s);
-    const feelDoMatch = idea.match(/\*\*FEEL\/DO\*\*:\s*(.+?)(?=\n\*\*|\n*$)/s);
+    // Use regex that captures content until the next header (with possible blank lines) or end of string
+    const whoMatch = idea.match(/\*\*WHO\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const whatMatch = idea.match(/\*\*WHAT\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const storyMatch = idea.match(/\*\*STORY IDEA\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
+    const feelDoMatch = idea.match(/\*\*FEEL\/DO\*\*:\s*(.+?)(?=\n\s*\n\s*\*\*|\n\*\*|$)/s);
 
     return {
       who: whoMatch ? whoMatch[1].trim() : '',
@@ -98,7 +99,8 @@ function YourStoryContent() {
       localStorage.removeItem('generatedStoryIdea'); // Clean up
     } else if (project?.prompt) {
       // Fallback: try to extract the original idea from the project prompt
-      const ideaMatch = project.prompt.match(/Original idea:\s*(.+?)(?:\n|$)/s);
+      // Use a regex that captures everything after "Original idea:" until "Ad context:"
+      const ideaMatch = project.prompt.match(/Original idea:\s*(.+?)(?=\nAd context:|$)/s);
       if (ideaMatch) {
         const parsed = parseIdeaToFields(ideaMatch[1].trim());
         setStoryFields(parsed);
