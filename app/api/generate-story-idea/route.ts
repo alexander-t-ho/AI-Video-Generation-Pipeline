@@ -104,7 +104,7 @@ Refine this into a compelling story idea for an advertisement.`;
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Scene3 - AI Video Generation',
+        'X-Title': 'Scen3 - AI Video Generation',
       },
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',

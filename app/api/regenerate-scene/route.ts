@@ -54,7 +54,7 @@ Generate a new version of this scene that fits the storyboard. Keep the descript
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Scene3 - AI Video Generation',
+        'X-Title': 'Scen3 - AI Video Generation',
       },
       body: JSON.stringify({
         model: OPENROUTER_MODEL,

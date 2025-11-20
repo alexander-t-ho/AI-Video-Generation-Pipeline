@@ -412,7 +412,7 @@ export default function BrandIdentityScreen() {
       {/* Top Left Logo */}
       <div className="fixed top-6 left-6 z-40">
         <h1 className="text-2xl font-light text-white tracking-tighter select-none whitespace-nowrap leading-none">
-          Scene3
+          Scen3
         </h1>
       </div>
 
