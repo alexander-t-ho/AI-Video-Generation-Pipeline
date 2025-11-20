@@ -374,7 +374,7 @@ export async function pollImageStatus(
 }
 
 /**
- * Generate video for a scene
+ * Generate video for a scene or subscene
  */
 export async function generateVideo(
   imageUrl: string,
@@ -382,7 +382,8 @@ export async function generateVideo(
   projectId: string,
   sceneIndex: number,
   seedFrame?: string,
-  duration?: number // Optional: Scene-specific duration
+  duration?: number, // Optional: Scene-specific duration
+  subsceneIndex?: number // Optional: For subscene-based workflow
 ): Promise<{ predictionId: string; status: string }> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
@@ -398,6 +399,7 @@ export async function generateVideo(
         sceneIndex,
         seedFrame,
         duration, // Pass duration if provided
+        subsceneIndex, // Pass subscene index if provided
       }),
     });
 

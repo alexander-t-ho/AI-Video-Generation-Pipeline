@@ -51,9 +51,9 @@ interface GeneratingImage {
 }
 
 export default function EditorView() {
-  const { 
-    project, 
-    currentSceneIndex, 
+  const {
+    project,
+    currentSceneIndex,
     scenes,
     setSceneStatus,
     addGeneratedImage,
@@ -65,8 +65,13 @@ export default function EditorView() {
     selectSeedFrame,
     updateScenePrompt,
     updateSceneSettings,
+    // Subscene actions
+    setSubsceneStatus,
+    addSubsceneGeneratedImage,
+    selectSubsceneImage,
+    setSubsceneVideoPath,
   } = useProjectStore();
-  
+
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
@@ -86,6 +91,8 @@ export default function EditorView() {
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [enlargedSeedFrameUrl, setEnlargedSeedFrameUrl] = useState<string | null>(null);
+  // Subscene selection state
+  const [currentSubsceneIndex, setCurrentSubsceneIndex] = useState(0);
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -106,18 +113,32 @@ export default function EditorView() {
 
   // Get actual scene state
   const sceneState = scenes[currentSceneIndex];
-  const sceneImages = sceneState?.generatedImages || [];
+
+  // Check if scene has subscenes
+  const hasSubscenes = currentScene.subscenes && currentScene.subscenes.length > 0;
+  const currentSubscene = hasSubscenes ? currentScene.subscenes[currentSubsceneIndex] : null;
+  const subsceneState = hasSubscenes ? sceneState?.subscenesWithState?.[currentSubsceneIndex] : null;
+
+  // Use subscene state if available, otherwise fall back to scene state (for legacy support)
+  const activeState = hasSubscenes && subsceneState ? subsceneState : sceneState;
+  const activePrompt = hasSubscenes && currentSubscene ? currentSubscene.imagePrompt : currentScene.imagePrompt;
+  const activeDescription = hasSubscenes && currentSubscene ? currentSubscene.description : currentScene.description;
+  const activeDuration = hasSubscenes && currentSubscene ? currentSubscene.suggestedDuration : currentScene.suggestedDuration;
+  const activeNegativePrompt = hasSubscenes && currentSubscene ? currentSubscene.negativePrompt : currentScene.negativePrompt;
+
+  const sceneImages = activeState?.generatedImages || [];
   const sceneHasImage = sceneImages.length > 0;
-  const selectedImage = sceneImages.find((img: GeneratedImage) => img.id === (selectedImageId || sceneState?.selectedImageId));
+  const selectedImage = sceneImages.find((img: GeneratedImage) => img.id === (selectedImageId || activeState?.selectedImageId));
   // Get selected video (prefer selectedVideoId, fallback to videoLocalPath for backward compatibility)
-  const selectedVideo = sceneState?.generatedVideos?.find((v: GeneratedVideo) => v.id === sceneState.selectedVideoId) 
-    || (sceneState?.videoLocalPath ? {
+  // Use activeState for subscene support
+  const selectedVideo = activeState?.generatedVideos?.find((v: GeneratedVideo) => v.id === activeState.selectedVideoId)
+    || (activeState?.videoLocalPath ? {
       id: 'legacy',
-      url: sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
-        ? sceneState.videoLocalPath
-        : `/api/serve-video?path=${encodeURIComponent(sceneState.videoLocalPath)}`,
-      localPath: sceneState.videoLocalPath,
-      actualDuration: sceneState.actualDuration,
+      url: activeState.videoLocalPath.startsWith('http://') || activeState.videoLocalPath.startsWith('https://')
+        ? activeState.videoLocalPath
+        : `/api/serve-video?path=${encodeURIComponent(activeState.videoLocalPath)}`,
+      localPath: activeState.videoLocalPath,
+      actualDuration: activeState.actualDuration,
       timestamp: new Date().toISOString(),
     } : undefined);
   
@@ -131,23 +152,30 @@ export default function EditorView() {
   const sceneHasVideo = !!selectedVideo && !!videoUrl;
   const seedFrames = sceneState?.seedFrames || [];
 
-  // Update selected image ID when scene state changes
+  // Update selected image ID when scene/subscene state changes
   useEffect(() => {
-    if (sceneState?.selectedImageId) {
-      setSelectedImageId(sceneState.selectedImageId);
+    if (activeState?.selectedImageId) {
+      setSelectedImageId(activeState.selectedImageId);
     }
-  }, [sceneState?.selectedImageId]);
+  }, [activeState?.selectedImageId]);
 
-  // Initialize edited fields when scene changes or editing starts
+  // Reset subscene index when scene changes
+  useEffect(() => {
+    setCurrentSubsceneIndex(0);
+  }, [currentSceneIndex]);
+
+  // Initialize edited fields when scene/subscene changes or editing starts
   useEffect(() => {
     if (currentScene) {
-      setEditedPrompt(currentScene.imagePrompt);
-      setEditedNegativePrompt(currentScene.negativePrompt || '');
-      setEditedDuration(currentScene.customDuration || '');
+      // Use active prompt for subscene support
+      setEditedPrompt(activePrompt);
+      setEditedNegativePrompt(activeNegativePrompt || '');
+      // For subscenes, use the subscene duration; for legacy, use scene custom duration
+      setEditedDuration(hasSubscenes ? '' : (currentScene.customDuration || ''));
       // Default to false (opt-in for longer scenes), or use saved value
       setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
       // Initialize custom images - support both single string (legacy) and array
-      const imageInputs = currentScene.customImageInput 
+      const imageInputs = currentScene.customImageInput
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
         : [];
       setCustomImageFiles([]);
@@ -169,7 +197,7 @@ export default function EditorView() {
         return { url: previewUrl, source: 'media' as const };
       }));
     }
-  }, [currentScene?.imagePrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex]);
+  }, [activePrompt, activeNegativePrompt, hasSubscenes, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex, currentSubsceneIndex]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -178,15 +206,23 @@ export default function EditorView() {
     setGeneratingImages([]);
     setSelectedImageId(null);
 
-    // Initialize 5 generating image slots
-    const initialGenerating: GeneratingImage[] = Array(5).fill(null).map(() => ({
+    // Generate 3 images for subscenes, 5 for legacy scenes
+    const imageCount = hasSubscenes ? 3 : 5;
+
+    // Initialize generating image slots
+    const initialGenerating: GeneratingImage[] = Array(imageCount).fill(null).map(() => ({
       predictionId: '',
       status: 'starting',
     }));
     setGeneratingImages(initialGenerating);
 
     try {
-      setSceneStatus(currentSceneIndex, 'generating_image');
+      // Update status for subscene or scene
+      if (hasSubscenes) {
+        setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'generating_image');
+      } else {
+        setSceneStatus(currentSceneIndex, 'generating_image');
+      }
 
       // Get reference images from project (uploaded images for object consistency)
       let referenceImageUrls = project.referenceImageUrls || [];
@@ -263,8 +299,8 @@ export default function EditorView() {
         console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
       }
 
-      // Generate 5 images in parallel
-      const imagePromises = Array(5).fill(null).map(async (_, index) => {
+      // Generate images in parallel (3 for subscenes, 5 for legacy)
+      const imagePromises = Array(imageCount).fill(null).map(async (_, index) => {
         try {
           // Create prediction
           // Strategy: Use seed frame as seed image for image-to-image generation
@@ -276,13 +312,14 @@ export default function EditorView() {
           const promptAdjustmentMode = runtimeConfig.promptAdjustmentMode || 'scene-specific';
 
           const response = await generateImage({
-            prompt: currentScene.imagePrompt,
+            prompt: activePrompt, // Use active prompt (subscene or scene)
             projectId: project.id,
             sceneIndex: currentSceneIndex,
+            subsceneIndex: hasSubscenes ? currentSubsceneIndex : undefined, // Pass subscene index if applicable
             seedImage: seedImageUrl, // Custom image input, seed frame from previous scene, or reference image for Scene 0
             referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
             seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
-            negativePrompt: currentScene.negativePrompt, // Optional negative prompt
+            negativePrompt: activeNegativePrompt, // Use active negative prompt
             promptAdjustmentMode, // Prompt adjustment mode from runtime config
           });
 
@@ -323,13 +360,21 @@ export default function EditorView() {
           );
 
           if (statusResponse.status === 'succeeded' && statusResponse.image) {
-            // Add image to store
-            addGeneratedImage(currentSceneIndex, statusResponse.image);
+            // Add image to store (subscene or scene)
+            if (hasSubscenes) {
+              addSubsceneGeneratedImage(currentSceneIndex, currentSubsceneIndex, statusResponse.image);
+            } else {
+              addGeneratedImage(currentSceneIndex, statusResponse.image);
+            }
 
             // Auto-select first image when it's generated
             if (index === 0 && !selectedImageId) {
               setSelectedImageId(statusResponse.image.id);
-              selectImage(currentSceneIndex, statusResponse.image.id);
+              if (hasSubscenes) {
+                selectSubsceneImage(currentSceneIndex, currentSubsceneIndex, statusResponse.image.id);
+              } else {
+                selectImage(currentSceneIndex, statusResponse.image.id);
+              }
             }
 
             // Update generating state
@@ -362,24 +407,32 @@ export default function EditorView() {
 
       const results = await Promise.all(imagePromises);
       const successCount = results.filter(r => r.success).length;
-      
+
       if (successCount > 0) {
         // At least one image succeeded
-        setSceneStatus(currentSceneIndex, 'image_ready');
+        if (hasSubscenes) {
+          setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'image_ready');
+        } else {
+          setSceneStatus(currentSceneIndex, 'image_ready');
+        }
       } else {
         // All images failed - show error and reset status
         const errorMessages = results
           .filter(r => !r.success && r.error)
           .map(r => r.error)
           .filter((msg, idx, arr) => arr.indexOf(msg) === idx); // Unique errors
-        
-        const errorMessage = errorMessages.length > 0 
+
+        const errorMessage = errorMessages.length > 0
           ? `All image generations failed. ${errorMessages[0]}`
           : 'All image generations failed. Please try again.';
-        
+
         console.error('[EditorView] All image generations failed:', errorMessages);
         alert(errorMessage);
-        setSceneStatus(currentSceneIndex, 'pending');
+        if (hasSubscenes) {
+          setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'pending');
+        } else {
+          setSceneStatus(currentSceneIndex, 'pending');
+        }
       }
     } catch (error) {
       console.error('Error generating images:', error);
@@ -390,7 +443,11 @@ export default function EditorView() {
 
   const handleSelectImage = (imageId: string) => {
     setSelectedImageId(imageId);
-    selectImage(currentSceneIndex, imageId);
+    if (hasSubscenes) {
+      selectSubsceneImage(currentSceneIndex, currentSubsceneIndex, imageId);
+    } else {
+      selectImage(currentSceneIndex, imageId);
+    }
   };
 
   const handleRegenerateVideo = async () => {
@@ -408,7 +465,12 @@ export default function EditorView() {
 
     setIsGeneratingVideo(true);
     try {
-      setSceneStatus(currentSceneIndex, 'generating_video');
+      // Update status for subscene or scene
+      if (hasSubscenes) {
+        setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'generating_video');
+      } else {
+        setSceneStatus(currentSceneIndex, 'generating_video');
+      }
 
       // For Scene 0: Use generated scene image (with vehicle in context) instead of character reference
       // This prevents the fade from character image to scene - video starts directly in the scene
@@ -491,16 +553,18 @@ export default function EditorView() {
       }
 
       // Get scene duration (customDuration takes precedence over suggestedDuration)
-      const sceneDuration = currentScene.customDuration || currentScene.suggestedDuration;
+      // For subscenes, use activeDuration
+      const sceneDuration = hasSubscenes ? activeDuration : (currentScene.customDuration || currentScene.suggestedDuration);
 
       // Generate video
       const videoResponse = await generateVideo(
         imageUrlForReplicate, // Use pre-signed URL for Replicate access
-        currentScene.imagePrompt,
+        activePrompt, // Use active prompt (subscene or scene)
         project.id,
         currentSceneIndex,
         seedFrameUrl, // Pass seed frame for scenes 1-4
-        sceneDuration // Pass scene-specific duration (will be rounded up to model-acceptable values)
+        sceneDuration, // Pass scene-specific duration (will be rounded up to model-acceptable values)
+        hasSubscenes ? currentSubsceneIndex : undefined // Pass subscene index if applicable
       );
 
       // Poll for video completion (pass projectId and sceneIndex to trigger download)
@@ -514,9 +578,14 @@ export default function EditorView() {
       });
 
       if (videoStatus.status === 'succeeded' && videoStatus.videoPath) {
-        // Set the video path for the current scene
-        setVideoPath(currentSceneIndex, videoStatus.videoPath);
-        setSceneStatus(currentSceneIndex, 'video_ready');
+        // Set the video path for the current scene/subscene
+        if (hasSubscenes) {
+          setSubsceneVideoPath(currentSceneIndex, currentSubsceneIndex, videoStatus.videoPath);
+          setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'video_ready');
+        } else {
+          setVideoPath(currentSceneIndex, videoStatus.videoPath);
+          setSceneStatus(currentSceneIndex, 'video_ready');
+        }
 
         // Show warning if download failed but using Replicate URL
         if (videoStatus.error) {
@@ -650,18 +719,47 @@ export default function EditorView() {
   const handleApproveAndContinue = async () => {
     if (!project?.id || !selectedVideo) return;
 
-    // Mark current scene as completed
-    setSceneStatus(currentSceneIndex, 'completed');
+    if (hasSubscenes) {
+      // Mark current subscene as completed
+      setSubsceneStatus(currentSceneIndex, currentSubsceneIndex, 'completed');
 
-    // If this is the last scene (Scene 4), navigate to timeline view
-    if (currentSceneIndex >= 4) {
-      setViewMode('timeline');
-      return;
+      // Check if there are more subscenes in this scene
+      const totalSubscenes = currentScene.subscenes?.length || 0;
+      if (currentSubsceneIndex < totalSubscenes - 1) {
+        // Move to next subscene
+        setCurrentSubsceneIndex(currentSubsceneIndex + 1);
+        return;
+      }
+
+      // All subscenes in this scene are done
+      // Mark the scene as completed
+      setSceneStatus(currentSceneIndex, 'completed');
+
+      // If this is the last scene (Scene 4), navigate to timeline view
+      if (currentSceneIndex >= 4) {
+        setViewMode('timeline');
+        return;
+      }
+
+      // Move to next scene (first subscene)
+      const nextSceneIndex = currentSceneIndex + 1;
+      setCurrentSceneIndex(nextSceneIndex);
+      setCurrentSubsceneIndex(0);
+    } else {
+      // Legacy flow - no subscenes
+      // Mark current scene as completed
+      setSceneStatus(currentSceneIndex, 'completed');
+
+      // If this is the last scene (Scene 4), navigate to timeline view
+      if (currentSceneIndex >= 4) {
+        setViewMode('timeline');
+        return;
+      }
+
+      // Move to next scene (seed frames already extracted after video generation)
+      const nextSceneIndex = currentSceneIndex + 1;
+      setCurrentSceneIndex(nextSceneIndex);
     }
-
-    // Move to next scene (seed frames already extracted after video generation)
-    const nextSceneIndex = currentSceneIndex + 1;
-    setCurrentSceneIndex(nextSceneIndex);
   };
 
   const handleSelectSeedFrame = (frameIndex: number) => {
@@ -1122,13 +1220,54 @@ export default function EditorView() {
             <h3 className="text-lg font-semibold text-white">
               Scene {currentSceneIndex + 1}: {currentScene.description.charAt(0).toUpperCase() + currentScene.description.slice(1)}
             </h3>
+
+            {/* Subscene Selector Tabs */}
+            {hasSubscenes && currentScene.subscenes && (
+              <div className="mt-3 flex gap-2">
+                {currentScene.subscenes.map((subscene, subIndex) => {
+                  const subState = sceneState?.subscenesWithState?.[subIndex];
+                  const isActive = subIndex === currentSubsceneIndex;
+                  const hasImage = subState?.generatedImages && subState.generatedImages.length > 0;
+                  const hasVideo = subState?.videoLocalPath;
+                  const isComplete = subState?.status === 'completed';
+
+                  return (
+                    <button
+                      key={subscene.id}
+                      onClick={() => setCurrentSubsceneIndex(subIndex)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors border ${
+                        isActive
+                          ? 'bg-white/20 border-white/40 text-white'
+                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
+                      }`}
+                    >
+                      <span className="font-medium">Clip {subIndex + 1}</span>
+                      {isComplete ? (
+                        <CheckCircle2 className="w-3 h-3 text-green-400" />
+                      ) : hasVideo ? (
+                        <Video className="w-3 h-3 text-blue-400" />
+                      ) : hasImage ? (
+                        <ImageIcon className="w-3 h-3 text-yellow-400" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Subscene Description */}
+            {hasSubscenes && currentSubscene && (
+              <p className="mt-2 text-sm text-white/60">
+                {currentSubscene.description}
+              </p>
+            )}
             <div className="mt-2">
               <div className="flex items-start gap-2">
                 <div className="flex items-start gap-2 flex-1 min-w-0">
                   {isPromptExpanded ? (
                     <>
                       <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
+                        {hasSubscenes ? activeDuration : (currentScene.customDuration || currentScene.suggestedDuration)}s •
                       </span>
                       <div className="flex-1 flex flex-col gap-3">
                       {/* Prompt (Required) */}
@@ -1312,10 +1451,10 @@ export default function EditorView() {
                   ) : (
                     <>
                       <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
+                        {hasSubscenes ? activeDuration : (currentScene.customDuration || currentScene.suggestedDuration)}s •
                       </span>
                       <p className="text-sm text-white/60 flex-1">
-                        {currentScene.imagePrompt}
+                        {activePrompt}
                       </p>
                     </>
                   )}
@@ -1502,16 +1641,37 @@ export default function EditorView() {
                   <Loader2 className="w-5 h-5 animate-spin" />
                   Extracting seed frames...
                 </>
-              ) : currentSceneIndex >= 4 ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5" />
-                  Approve & View Final Video
-                </>
+              ) : hasSubscenes ? (
+                // Subscene workflow
+                currentSubsceneIndex < (currentScene.subscenes?.length || 0) - 1 ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & Continue to Clip {currentSubsceneIndex + 2}
+                  </>
+                ) : currentSceneIndex >= 4 ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & View Final Video
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & Continue to Scene {currentSceneIndex + 2}
+                  </>
+                )
               ) : (
-                <>
-              <CheckCircle2 className="w-5 h-5" />
-              Approve & Continue to Next Scene
-                </>
+                // Legacy workflow
+                currentSceneIndex >= 4 ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & View Final Video
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & Continue to Next Scene
+                  </>
+                )
               )}
             </button>
           </div>

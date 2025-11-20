@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, SubsceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -81,6 +81,14 @@ interface ProjectStore {
   setSeedFrames: (sceneIndex: number, frames: SeedFrame[]) => void;
   selectSeedFrame: (sceneIndex: number, frameIndex: number) => void;
   setFinalVideo: (url: string, s3Key?: string) => void;
+
+  // Subscene generation actions
+  setSubsceneStatus: (sceneIndex: number, subsceneIndex: number, status: SubsceneWithState['status']) => void;
+  addSubsceneGeneratedImage: (sceneIndex: number, subsceneIndex: number, image: GeneratedImage) => void;
+  selectSubsceneImage: (sceneIndex: number, subsceneIndex: number, imageId: string) => void;
+  setSubsceneVideoPath: (sceneIndex: number, subsceneIndex: number, videoPath: string, actualDuration?: number) => void;
+  addSubsceneGeneratedVideo: (sceneIndex: number, subsceneIndex: number, video: GeneratedVideo) => void;
+  selectSubsceneVideo: (sceneIndex: number, subsceneIndex: number, videoId: string) => void;
   
   // Generation action helpers (Phase 5.1.1)
   generateImageForScene: (sceneIndex: number, prompt?: string, seedFrame?: string) => Promise<void>;
@@ -196,12 +204,22 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set((state) => {
       if (!state.project) return state;
 
-      // Convert scenes to SceneWithState
-      const scenesWithState: SceneWithState[] = scenes.map((scene) => ({
-        ...scene,
-        generatedImages: [],
-        status: 'pending',
-      }));
+      // Convert scenes to SceneWithState with subscenes
+      const scenesWithState: SceneWithState[] = scenes.map((scene) => {
+        // Initialize subscenes with state if they exist
+        const subscenesWithState: SubsceneWithState[] | undefined = scene.subscenes?.map((subscene) => ({
+          ...subscene,
+          generatedImages: [],
+          status: 'pending',
+        }));
+
+        return {
+          ...scene,
+          generatedImages: [],
+          status: 'pending',
+          subscenesWithState,
+        };
+      });
 
       return {
         project: {
@@ -500,7 +518,104 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
-  
+
+  // Subscene generation actions
+  setSubsceneStatus: (sceneIndex: number, subsceneIndex: number, status: SubsceneWithState['status']) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex ? { ...sub, status } : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
+  addSubsceneGeneratedImage: (sceneIndex: number, subsceneIndex: number, image: GeneratedImage) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex
+              ? { ...sub, generatedImages: [...sub.generatedImages, image], status: 'image_ready' }
+              : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
+  selectSubsceneImage: (sceneIndex: number, subsceneIndex: number, imageId: string) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex ? { ...sub, selectedImageId: imageId } : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
+  setSubsceneVideoPath: (sceneIndex: number, subsceneIndex: number, videoPath: string, actualDuration?: number) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex
+              ? { ...sub, videoLocalPath: videoPath, actualDuration, status: 'video_ready' }
+              : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
+  addSubsceneGeneratedVideo: (sceneIndex: number, subsceneIndex: number, video: GeneratedVideo) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex
+              ? { ...sub, generatedVideos: [...(sub.generatedVideos || []), video] }
+              : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
+  selectSubsceneVideo: (sceneIndex: number, subsceneIndex: number, videoId: string) => {
+    set((state) => {
+      const updatedScenes = [...state.scenes];
+      if (updatedScenes[sceneIndex]?.subscenesWithState?.[subsceneIndex]) {
+        updatedScenes[sceneIndex] = {
+          ...updatedScenes[sceneIndex],
+          subscenesWithState: updatedScenes[sceneIndex].subscenesWithState!.map((sub, i) =>
+            i === subsceneIndex ? { ...sub, selectedVideoId: videoId } : sub
+          ),
+        };
+      }
+      return { scenes: updatedScenes };
+    });
+  },
+
   selectMediaItem: (itemId: string) => {
     set((state) => {
       const selectedItems = state.mediaDrawer.selectedItems.includes(itemId)
@@ -910,50 +1025,103 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   initializeTimelineClips: () => {
     set((state) => {
       if (!state.project) return state;
-      
+
       const clips: TimelineClip[] = [];
       let currentTime = 0;
-      
-      state.scenes.forEach((scene, index) => {
-        // Get the selected video or first available video
-        let video: GeneratedVideo | undefined;
-        if (scene.selectedVideoId && scene.generatedVideos) {
-          video = scene.generatedVideos.find(v => v.id === scene.selectedVideoId);
-        }
-        
-        // Fallback to videoLocalPath for backward compatibility
-        if (!video && scene.videoLocalPath) {
-          video = {
-            id: uuidv4(),
-            url: scene.videoLocalPath.startsWith('http') 
-              ? scene.videoLocalPath 
-              : `/api/serve-video?path=${encodeURIComponent(scene.videoLocalPath)}`,
-            localPath: scene.videoLocalPath,
-            actualDuration: scene.actualDuration,
-            timestamp: new Date().toISOString(),
-          };
-        }
-        
-        if (video && video.localPath) {
-          const duration = video.actualDuration || scene.suggestedDuration || 3;
-          clips.push({
-            id: uuidv4(),
-            sceneIndex: index,
-            sceneId: scene.id,
-            title: scene.description,
-            videoId: video.id,
-            videoLocalPath: video.localPath,
-            startTime: currentTime,
-            duration,
-            trimStart: 0,
-            trimEnd: duration,
-            sourceDuration: duration,
-            endTime: currentTime + duration,
+
+      state.scenes.forEach((scene, sceneIndex) => {
+        // Check if scene has subscenes with state
+        if (scene.subscenesWithState && scene.subscenesWithState.length > 0) {
+          // New subscene-based flow: one clip per subscene
+          scene.subscenesWithState.forEach((subscene, subsceneIndex) => {
+            // Get the selected video for this subscene
+            let video: GeneratedVideo | undefined;
+            if (subscene.selectedVideoId && subscene.generatedVideos) {
+              video = subscene.generatedVideos.find(v => v.id === subscene.selectedVideoId);
+            }
+
+            // Fallback to videoLocalPath for backward compatibility
+            if (!video && subscene.videoLocalPath) {
+              video = {
+                id: uuidv4(),
+                url: subscene.videoLocalPath.startsWith('http')
+                  ? subscene.videoLocalPath
+                  : `/api/serve-video?path=${encodeURIComponent(subscene.videoLocalPath)}`,
+                localPath: subscene.videoLocalPath,
+                actualDuration: subscene.actualDuration,
+                timestamp: new Date().toISOString(),
+              };
+            }
+
+            if (video && video.localPath) {
+              const duration = video.actualDuration || subscene.suggestedDuration || 1;
+              clips.push({
+                id: uuidv4(),
+                sceneIndex,
+                sceneId: scene.id,
+                title: `${scene.description} - ${subscene.description}`,
+                videoId: video.id,
+                videoLocalPath: video.localPath,
+                startTime: currentTime,
+                duration,
+                trimStart: 0,
+                trimEnd: duration,
+                sourceDuration: duration,
+                endTime: currentTime + duration,
+              });
+              currentTime += duration;
+            }
           });
-          currentTime += duration;
+        } else {
+          // Legacy flow: split single video into 3 clips
+          const CLIPS_PER_SCENE = 3;
+
+          let video: GeneratedVideo | undefined;
+          if (scene.selectedVideoId && scene.generatedVideos) {
+            video = scene.generatedVideos.find(v => v.id === scene.selectedVideoId);
+          }
+
+          if (!video && scene.videoLocalPath) {
+            video = {
+              id: uuidv4(),
+              url: scene.videoLocalPath.startsWith('http')
+                ? scene.videoLocalPath
+                : `/api/serve-video?path=${encodeURIComponent(scene.videoLocalPath)}`,
+              localPath: scene.videoLocalPath,
+              actualDuration: scene.actualDuration,
+              timestamp: new Date().toISOString(),
+            };
+          }
+
+          if (video && video.localPath) {
+            const totalDuration = video.actualDuration || scene.suggestedDuration || 3;
+            const clipDuration = totalDuration / CLIPS_PER_SCENE;
+
+            for (let clipIndex = 0; clipIndex < CLIPS_PER_SCENE; clipIndex++) {
+              const trimStart = clipIndex * clipDuration;
+              const trimEnd = (clipIndex + 1) * clipDuration;
+
+              clips.push({
+                id: uuidv4(),
+                sceneIndex,
+                sceneId: scene.id,
+                title: `${scene.description} (${clipIndex + 1}/${CLIPS_PER_SCENE})`,
+                videoId: video.id,
+                videoLocalPath: video.localPath,
+                startTime: currentTime,
+                duration: clipDuration,
+                trimStart,
+                trimEnd,
+                sourceDuration: totalDuration,
+                endTime: currentTime + clipDuration,
+                isSplit: clipIndex > 0,
+              });
+              currentTime += clipDuration;
+            }
+          }
         }
       });
-      
+
       return {
         timelineClips: clips,
         timelineHistory: [clips],

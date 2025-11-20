@@ -48,9 +48,38 @@ export default function StoryboardView() {
     }
   };
 
-  // Calculate progress
+  // Calculate progress - account for subscenes if present
+  const hasSubscenes = project.storyboard.some(scene => scene.subscenes && scene.subscenes.length > 0);
+
+  let completedCount = 0;
+  let totalCount = 0;
+
+  if (hasSubscenes) {
+    // Count subscenes
+    project.storyboard.forEach((scene, sceneIndex) => {
+      const sceneState = scenes[sceneIndex];
+      if (scene.subscenes && scene.subscenes.length > 0) {
+        totalCount += scene.subscenes.length;
+        // Count completed subscenes
+        if (sceneState?.subscenesWithState) {
+          completedCount += sceneState.subscenesWithState.filter(sub => sub.status === 'completed').length;
+        }
+      } else {
+        // Legacy scene without subscenes
+        totalCount += 1;
+        if (sceneState?.status === 'completed') {
+          completedCount += 1;
+        }
+      }
+    });
+  } else {
+    // Legacy: count scenes
+    completedCount = scenes.filter(s => s.status === 'completed').length;
+    totalCount = project.storyboard.length;
+  }
+
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const completedScenes = scenes.filter(s => s.status === 'completed').length;
-  const progressPercent = Math.round((completedScenes / project.storyboard.length) * 100);
 
   return (
     <div className="h-full flex flex-col p-4">
@@ -61,7 +90,7 @@ export default function StoryboardView() {
             Storyboard
           </h3>
           <p className="text-base text-white/60">
-            {project.storyboard.length} scenes • {completedScenes} completed
+            {project.storyboard.length} scenes{hasSubscenes ? ` • ${totalCount} clips` : ''} • {hasSubscenes ? completedCount : completedScenes} completed
           </p>
         </div>
         <button
@@ -98,7 +127,7 @@ export default function StoryboardView() {
       <div className="mt-4 pt-4 border-t border-white/20">
         <div className="flex items-center justify-between text-base mb-2">
           <span className="text-white/80">
-            Progress: {completedScenes} / {project.storyboard.length} scenes
+            Progress: {completedCount} / {totalCount} {hasSubscenes ? 'clips' : 'scenes'}
           </span>
           <span className="text-white/60">
             {progressPercent}% complete

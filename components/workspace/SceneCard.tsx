@@ -1,7 +1,7 @@
 'use client';
 
 import { Scene } from '@/lib/types';
-import { CheckCircle2, Clock, Loader2, AlertCircle, Image as ImageIcon, Video } from 'lucide-react';
+import { CheckCircle2, Clock, Loader2, AlertCircle, Image as ImageIcon, Video, ChevronDown, ChevronRight } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus } from '@/lib/api-client';
 import { ImageGenerationRequest } from '@/lib/types';
@@ -39,6 +39,7 @@ export default function SceneCard({
   const [isGenerating, setIsGenerating] = useState(false);
   const sceneError = sceneErrors[sceneIndex];
   const [isVisible, setIsVisible] = useState(sceneIndex < 3); // First 3 cards visible by default
+  const [isSubscenesExpanded, setIsSubscenesExpanded] = useState(true); // Default expanded
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Intersection observer for lazy loading thumbnail
@@ -348,39 +349,31 @@ export default function SceneCard({
     switch (status) {
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full animate-success border border-white/20">
-            <CheckCircle2 className="w-4 h-4" />
-            Completed
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
+            <CheckCircle2 className="w-3 h-3" />
           </span>
         );
       case 'video_ready':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
-            <CheckCircle2 className="w-4 h-4" />
-            Video Ready
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
+            <Video className="w-3 h-3" />
           </span>
         );
       case 'image_ready':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
-            <CheckCircle2 className="w-4 h-4" />
-            Image Ready
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-white/10 text-white/90 rounded-full border border-white/20">
+            <ImageIcon className="w-3 h-3" />
           </span>
         );
       case 'generating_video':
       case 'generating_image':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/10 text-white/80 rounded-full border border-white/20">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Generating...
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-white/10 text-white/80 rounded-full border border-white/20">
+            <Loader2 className="w-3 h-3 animate-spin" />
           </span>
         );
       default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium bg-white/5 text-white/60 rounded-full border border-white/20">
-            Pending
-          </span>
-        );
+        return null; // No badge for pending state to save space
     }
   };
 
@@ -388,68 +381,134 @@ export default function SceneCard({
     <div
       ref={cardRef}
       onClick={handleClick}
-      className={`relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 group animate-fade-in ${
+      className={`relative p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 group animate-fade-in ${
         isSelected
           ? 'border-white/40 bg-white/10 shadow-md ring-2 ring-white/20'
           : 'border-white/20 bg-white/5 hover:border-white/30 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]'
       }`}
     >
-      {/* Scene Number Badge */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 text-base font-semibold text-white/90 border border-white/20">
-            {sceneIndex + 1}
-          </span>
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-white/60" />
-            <span className="text-sm text-white/60">
-              {scene.suggestedDuration}s
-            </span>
-          </div>
-        </div>
+      {/* Compact Header: Number, Title, Duration, Status */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20 flex-shrink-0">
+          {sceneIndex + 1}
+        </span>
+        <h3 className="text-sm font-medium text-white flex-1 truncate">
+          {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
+        </h3>
+        <span className="text-xs text-white/50 flex-shrink-0">
+          {scene.suggestedDuration}s
+        </span>
         {getStatusBadge()}
       </div>
 
-      {/* Description */}
-      <h3 className="text-base font-medium text-white mb-2 line-clamp-2">
-        {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
-      </h3>
+      {/* Collapsible Subscenes Display */}
+      {scene.subscenes && scene.subscenes.length > 0 ? (
+        <div>
+          {/* Collapse Toggle */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSubscenesExpanded(!isSubscenesExpanded);
+            }}
+            className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white/80 transition-colors mb-1"
+          >
+            {isSubscenesExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" />
+            )}
+            <span>Sub-scenes</span>
+            {/* Show quick status summary when collapsed */}
+            {!isSubscenesExpanded && (
+              <span className="ml-1 flex items-center gap-1">
+                {scene.subscenes.map((_, subIndex) => {
+                  const subsceneState = scenes[sceneIndex]?.subscenesWithState?.[subIndex];
+                  const hasImage = subsceneState?.generatedImages && subsceneState.generatedImages.length > 0;
+                  const hasVideo = subsceneState?.videoLocalPath;
+                  return (
+                    <span
+                      key={subIndex}
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        hasVideo ? 'bg-blue-400' : hasImage ? 'bg-green-400' : 'bg-white/20'
+                      }`}
+                    />
+                  );
+                })}
+              </span>
+            )}
+          </button>
 
-      {/* Image Prompt Preview */}
-      <p className="text-sm text-white/60 line-clamp-3">
-        {scene.imagePrompt}
-      </p>
+          {/* Expanded Subscenes */}
+          {isSubscenesExpanded && (
+            <div className="space-y-1.5 mt-1">
+              {scene.subscenes.map((subscene, subIndex) => {
+                const subsceneState = scenes[sceneIndex]?.subscenesWithState?.[subIndex];
+                const hasImage = subsceneState?.generatedImages && subsceneState.generatedImages.length > 0;
+                const hasVideo = subsceneState?.videoLocalPath;
 
-      {/* Error Display with Retry */}
-      {sceneError && (
-        <div className="mt-3 p-2 bg-white/5 border border-white/20 rounded-md">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-white/80 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm text-white/80">{sceneError.message}</p>
-              {sceneError.retryable && (
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try {
-                      await retrySceneGeneration(sceneIndex);
-                    } catch (err) {
-                      // Error already handled by store
-                    }
-                  }}
-                  disabled={isGenerating}
-                  className="mt-1 text-sm text-white/60 hover:text-white/80 underline disabled:opacity-50"
-                >
-                  Retry
-                </button>
-              )}
+                return (
+                  <div
+                    key={subscene.id}
+                    className="flex items-center gap-1.5 py-1 px-2 bg-white/5 rounded border border-white/10"
+                  >
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/10 text-[10px] font-medium text-white/70">
+                      {subIndex + 1}
+                    </span>
+                    <p className="text-xs text-white/70 flex-1 truncate">
+                      {subscene.description.charAt(0).toUpperCase() + subscene.description.slice(1)}
+                    </p>
+                    <div className="flex items-center gap-0.5">
+                      {hasImage && (
+                        <ImageIcon className="w-3 h-3 text-green-400" />
+                      )}
+                      {hasVideo && (
+                        <Video className="w-3 h-3 text-blue-400" />
+                      )}
+                      {!hasImage && !hasVideo && (
+                        <Clock className="w-3 h-3 text-white/30" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+          )}
+        </div>
+      ) : (
+        /* Legacy: Image Prompt Preview for scenes without subscenes */
+        <p className="text-xs text-white/50 line-clamp-2">
+          {scene.imagePrompt}
+        </p>
+      )}
+
+      {/* Error Display with Retry (compact) */}
+      {sceneError && (
+        <div className="mt-2 p-1.5 bg-white/5 border border-white/20 rounded">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-white/80 flex-shrink-0" />
+            <p className="text-xs text-white/70 flex-1 truncate">{sceneError.message}</p>
+            {sceneError.retryable && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await retrySceneGeneration(sceneIndex);
+                  } catch (err) {
+                    // Error already handled by store
+                  }
+                }}
+                disabled={isGenerating}
+                className="text-[10px] text-white/60 hover:text-white/80 underline disabled:opacity-50"
+              >
+                Retry
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 clearSceneError(sceneIndex);
               }}
-              className="text-white/60 hover:text-white/80"
+              className="text-white/50 hover:text-white/80 text-sm"
             >
               ×
             </button>
@@ -457,41 +516,57 @@ export default function SceneCard({
         </div>
       )}
 
-      {/* Quick Action Buttons */}
-      <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-        {status === 'pending' && !sceneError && (
-          <button
-            onClick={handleGenerateImage}
-            disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
-          >
-            {isGenerating ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <ImageIcon className="w-4 h-4" />
-            )}
-            Generate Image
-          </button>
-        )}
-        {status === 'image_ready' && !sceneError && (
+      {/* Quick Action Buttons - Only show video generation when image is ready */}
+      {status === 'image_ready' && !sceneError && (
+        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={handleGenerateVideo}
             disabled={isGenerating}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-white/20 text-white rounded-md hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-white/20 text-white rounded hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
           >
             {isGenerating ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
-              <Video className="w-4 h-4" />
+              <Video className="w-3 h-3" />
             )}
             Generate Video
           </button>
-        )}
-      </div>
+        </div>
+      )}
       
-      {/* Thumbnail Preview (Phase 9.1.1) */}
-      {scenes[sceneIndex]?.generatedImages?.[0] && (
-        <div className="mt-3 rounded-md overflow-hidden border border-white/20">
+      {/* Thumbnail Preview - Subscene images or legacy single image (smaller) */}
+      {scenes[sceneIndex]?.subscenesWithState && scenes[sceneIndex].subscenesWithState!.some(sub => sub.generatedImages.length > 0) ? (
+        <div className="mt-2 grid grid-cols-3 gap-0.5 rounded overflow-hidden border border-white/20">
+          {scenes[sceneIndex].subscenesWithState!.map((subscene, subIndex) => {
+            const selectedImage = subscene.selectedImageId
+              ? subscene.generatedImages.find(img => img.id === subscene.selectedImageId)
+              : subscene.generatedImages[0];
+
+            return (
+              <div key={subIndex} className="aspect-video bg-white/5">
+                {isVisible && selectedImage ? (
+                  <img
+                    src={selectedImage.localPath
+                      ? `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}`
+                      : selectedImage.url.startsWith('/api')
+                        ? selectedImage.url
+                        : `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath || selectedImage.url)}`
+                    }
+                    alt={`Subscene ${subIndex + 1} preview`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="text-[10px] text-white/30">{subIndex + 1}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : scenes[sceneIndex]?.generatedImages?.[0] && (
+        <div className="mt-2 rounded overflow-hidden border border-white/20">
           {isVisible ? (
             <img
               src={scenes[sceneIndex].generatedImages[0].localPath
@@ -506,7 +581,7 @@ export default function SceneCard({
             />
           ) : (
             <div className="w-full aspect-video bg-white/5 flex items-center justify-center">
-              <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
             </div>
           )}
         </div>
