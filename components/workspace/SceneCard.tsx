@@ -1,7 +1,7 @@
 'use client';
 
 import { Scene } from '@/lib/types';
-import { CheckCircle2, Clock, Loader2, AlertCircle, Image as ImageIcon, Video, ChevronDown, ChevronRight } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, Video } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus } from '@/lib/api-client';
 import { ImageGenerationRequest } from '@/lib/types';
@@ -39,7 +39,6 @@ export default function SceneCard({
   const [isGenerating, setIsGenerating] = useState(false);
   const sceneError = sceneErrors[sceneIndex];
   const [isVisible, setIsVisible] = useState(sceneIndex < 3); // First 3 cards visible by default
-  const [isSubscenesExpanded, setIsSubscenesExpanded] = useState(true); // Default expanded
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Intersection observer for lazy loading thumbnail
@@ -310,7 +309,8 @@ export default function SceneCard({
         scene.imagePrompt,
         project.id,
         sceneIndex,
-        seedFrameUrl
+        seedFrameUrl,
+        scene.suggestedDuration // Pass scene duration to video generation
       );
 
       if (!response.predictionId) {
@@ -401,85 +401,10 @@ export default function SceneCard({
         {getStatusBadge()}
       </div>
 
-      {/* Collapsible Subscenes Display */}
-      {scene.subscenes && scene.subscenes.length > 0 ? (
-        <div>
-          {/* Collapse Toggle */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsSubscenesExpanded(!isSubscenesExpanded);
-            }}
-            className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white/80 transition-colors mb-1"
-          >
-            {isSubscenesExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5" />
-            )}
-            <span>Sub-scenes</span>
-            {/* Show quick status summary when collapsed */}
-            {!isSubscenesExpanded && (
-              <span className="ml-1 flex items-center gap-1">
-                {scene.subscenes.map((_, subIndex) => {
-                  const subsceneState = scenes[sceneIndex]?.subscenesWithState?.[subIndex];
-                  const hasImage = subsceneState?.generatedImages && subsceneState.generatedImages.length > 0;
-                  const hasVideo = subsceneState?.videoLocalPath;
-                  return (
-                    <span
-                      key={subIndex}
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        hasVideo ? 'bg-blue-400' : hasImage ? 'bg-green-400' : 'bg-white/20'
-                      }`}
-                    />
-                  );
-                })}
-              </span>
-            )}
-          </button>
-
-          {/* Expanded Subscenes */}
-          {isSubscenesExpanded && (
-            <div className="space-y-1.5 mt-1">
-              {scene.subscenes.map((subscene, subIndex) => {
-                const subsceneState = scenes[sceneIndex]?.subscenesWithState?.[subIndex];
-                const hasImage = subsceneState?.generatedImages && subsceneState.generatedImages.length > 0;
-                const hasVideo = subsceneState?.videoLocalPath;
-
-                return (
-                  <div
-                    key={subscene.id}
-                    className="flex items-center gap-1.5 py-1 px-2 bg-white/5 rounded border border-white/10"
-                  >
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/10 text-[10px] font-medium text-white/70">
-                      {subIndex + 1}
-                    </span>
-                    <p className="text-xs text-white/70 flex-1 truncate">
-                      {subscene.description.charAt(0).toUpperCase() + subscene.description.slice(1)}
-                    </p>
-                    <div className="flex items-center gap-0.5">
-                      {hasImage && (
-                        <ImageIcon className="w-3 h-3 text-green-400" />
-                      )}
-                      {hasVideo && (
-                        <Video className="w-3 h-3 text-blue-400" />
-                      )}
-                      {!hasImage && !hasVideo && (
-                        <Clock className="w-3 h-3 text-white/30" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Legacy: Image Prompt Preview for scenes without subscenes */
-        <p className="text-xs text-white/50 line-clamp-2">
-          {scene.imagePrompt}
-        </p>
-      )}
+      {/* Image Prompt Preview */}
+      <p className="text-xs text-white/50 line-clamp-2">
+        {scene.imagePrompt}
+      </p>
 
       {/* Error Display with Retry (compact) */}
       {sceneError && (
@@ -534,38 +459,8 @@ export default function SceneCard({
         </div>
       )}
       
-      {/* Thumbnail Preview - Subscene images or legacy single image (smaller) */}
-      {scenes[sceneIndex]?.subscenesWithState && scenes[sceneIndex].subscenesWithState!.some(sub => sub.generatedImages.length > 0) ? (
-        <div className="mt-2 grid grid-cols-3 gap-0.5 rounded overflow-hidden border border-white/20">
-          {scenes[sceneIndex].subscenesWithState!.map((subscene, subIndex) => {
-            const selectedImage = subscene.selectedImageId
-              ? subscene.generatedImages.find(img => img.id === subscene.selectedImageId)
-              : subscene.generatedImages[0];
-
-            return (
-              <div key={subIndex} className="aspect-video bg-white/5">
-                {isVisible && selectedImage ? (
-                  <img
-                    src={selectedImage.localPath
-                      ? `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}`
-                      : selectedImage.url.startsWith('/api')
-                        ? selectedImage.url
-                        : `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath || selectedImage.url)}`
-                    }
-                    alt={`Subscene ${subIndex + 1} preview`}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <span className="text-[10px] text-white/30">{subIndex + 1}</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : scenes[sceneIndex]?.generatedImages?.[0] && (
+      {/* Thumbnail Preview */}
+      {scenes[sceneIndex]?.generatedImages?.[0] && (
         <div className="mt-2 rounded overflow-hidden border border-white/20">
           {isVisible ? (
             <img

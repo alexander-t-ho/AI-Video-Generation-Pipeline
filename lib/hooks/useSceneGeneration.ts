@@ -275,8 +275,8 @@ export function useSceneGeneration(
         throw new Error('No video available for frame extraction');
       }
 
-      // Skip frame extraction for Scene 4 (last scene)
-      if (sceneIndex >= 4) {
+      // Skip frame extraction for last scene
+      if (sceneIndex >= 2) {
         updateStep('completed', sceneIndex);
         setSceneStatus(sceneIndex, 'completed');
         return;
@@ -504,13 +504,13 @@ export function useSceneGeneration(
     if (!autoStartNextScene || isPaused || isProcessing) return;
 
     const sceneIndex = processingSceneIndex ?? currentSceneIndex;
-    if (sceneIndex >= 4) return; // Last scene
+    if (sceneIndex >= 2) return; // Last scene
 
     const sceneState = scenes[sceneIndex];
     if (
       currentStep === 'frames_ready' &&
       sceneState?.selectedSeedFrameIndex !== undefined &&
-      sceneIndex < 4
+      sceneIndex < 2
     ) {
       // Auto-start next scene
       const nextSceneIndex = sceneIndex + 1;

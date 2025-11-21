@@ -118,18 +118,19 @@ export async function POST(request: NextRequest) {
       referenceImageCount: referenceImageUrls.length,
     });
 
-    // Check for API key
-    if (!process.env.OPENROUTER_API_KEY) {
-      console.error('[Storyboard API] OPENROUTER_API_KEY not configured');
+    // Check for API key (either OpenAI or OpenRouter)
+    if (!process.env.OPENAI_API_KEY && !process.env.OPENROUTER_API_KEY) {
+      console.error('[Storyboard API] No API key configured (need OPENAI_API_KEY or OPENROUTER_API_KEY)');
       return NextResponse.json(
         {
           success: false,
-          error: 'OpenRouter API key not configured',
+          error: 'No API key configured',
           code: 'GENERATION_FAILED',
         } as StoryboardResponse,
         { status: 500 }
       );
     }
+    console.log('[Storyboard API] Using', process.env.OPENAI_API_KEY ? 'OpenAI' : 'OpenRouter');
 
     // Generate storyboard
     const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls);

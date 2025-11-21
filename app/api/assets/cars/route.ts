@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/auth-utils';
 import prisma from '@/lib/db/prisma';
+
+// Force dynamic rendering for routes that use headers/cookies
+export const dynamic = 'force-dynamic';
 import { CarDatabase, CarVariant, CarReferenceImage } from '@/components/brand-identity/types';
 import { CarMediaType } from '@prisma/client';
 import { getStorageService } from '@/lib/storage/storage-service';

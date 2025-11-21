@@ -12,22 +12,12 @@
 // Storyboard Types
 // ============================================================================
 
-export interface Subscene {
-  id: string;                // UUID v4
-  order: number;             // 0-2 (3 subscenes per scene)
-  description: string;       // Brief description of this subscene
-  imagePrompt: string;       // Detailed visual prompt for image generation
-  suggestedDuration: number; // Duration in seconds for this subscene
-  negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
-}
-
 export interface Scene {
   id: string;                // UUID v4
   order: number;             // 0-4
-  description: string;       // Narrative description of the overall scene
-  subscenes?: Subscene[];    // Optional: 3 subscenes per scene (for new workflow)
-  suggestedDuration: number; // Total duration for the scene (sum of subscene durations)
-  imagePrompt: string;       // Main prompt for image generation (required for backward compatibility)
+  description: string;       // Narrative description of the scene
+  suggestedDuration: number; // Duration in seconds
+  imagePrompt: string;       // Detailed visual prompt for image generation
   negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
   customDuration?: number;   // Optional: Custom duration in seconds (overrides suggestedDuration)
   customImageInput?: string | string[]; // Optional: Custom image input URL(s) for image-to-image generation (up to 3 images)
@@ -66,7 +56,6 @@ export interface ImageGenerationRequest {
   prompt: string;
   projectId: string;
   sceneIndex: number;
-  subsceneIndex?: number;    // Optional: Subscene index (0-2) for subscene-based generation
   seedImage?: string;        // Optional seed image URL for image-to-image
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for style/context
   seedFrame?: string;        // Optional: Seed frame URL for IP-Adapter (for visual continuity in scenes 1-4)
@@ -121,28 +110,8 @@ export interface ProjectState {
   currentReferenceImageUrl?: string; // URL of currently displayed reference image in AssetViewer
 }
 
-// Extended Subscene type for project state (includes generation state)
-export interface SubsceneWithState extends Subscene {
-  // Image generation state - 3 images generated for user to pick from
-  generatedImages: GeneratedImage[];
-  selectedImageId?: string;
-
-  // Video generation state
-  generatedVideos?: GeneratedVideo[];
-  selectedVideoId?: string;
-  videoLocalPath?: string;
-  videoS3Key?: string;
-  actualDuration?: number;
-
-  status: 'pending' | 'generating_image' | 'image_ready' | 'generating_video' | 'video_ready' | 'completed';
-}
-
 // Extended Scene type for project state (includes generation state)
 export interface SceneWithState extends Scene {
-  // Subscenes with their generation state
-  subscenesWithState?: SubsceneWithState[];
-
-  // Legacy fields for backward compatibility (single image/video per scene)
   // Image generation state
   generatedImages: GeneratedImage[];
   selectedImageId?: string;
