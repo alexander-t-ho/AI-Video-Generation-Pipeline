@@ -232,20 +232,24 @@ export default function MediaDrawer() {
     return allFrames;
   }, [scenes]);
 
-  // Uploaded media with all processed versions
-  const uploadedMedia = useMemo(() => {
+  // Brand assets (uploaded/selected reference images)
+  const brandAssets = useMemo(() => {
     const allMedia: MediaItem[] = [];
 
     if (project?.uploadedImages) {
       project.uploadedImages.forEach((uploadedImage, imgIndex) => {
-        // Add original image - always serve through API using localPath
+        // Add original image
+        // For S3 URLs, use them directly; for local paths, serve through API
         let imageUrl: string;
-        if (uploadedImage.localPath) {
+        if (uploadedImage.url.startsWith('http://') || uploadedImage.url.startsWith('https://')) {
+          // S3 or external URL - use directly
+          imageUrl = uploadedImage.url;
+        } else if (uploadedImage.localPath) {
           imageUrl = `/api/serve-image?path=${encodeURIComponent(uploadedImage.localPath)}`;
         } else if (uploadedImage.url.startsWith('/api')) {
           imageUrl = uploadedImage.url;
         } else {
-          imageUrl = `/api/serve-image?path=${encodeURIComponent(uploadedImage.localPath || uploadedImage.url)}`;
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(uploadedImage.url)}`;
         }
 
         allMedia.push({
@@ -253,9 +257,7 @@ export default function MediaDrawer() {
           type: 'image' as const,
           url: imageUrl,
           metadata: {
-            label: 'Original',
             originalName: uploadedImage.originalName,
-            isOriginal: true,
             imageIndex: imgIndex,
             fullUrl: imageUrl,
           },
@@ -743,13 +745,13 @@ export default function MediaDrawer() {
           'No seed frames extracted yet'
         )}
 
-        {/* Uploaded Media */}
+        {/* Brand Assets */}
         {renderSection(
-          'Uploaded Media',
+          'Brand Assets',
           'uploaded',
-          uploadedMedia,
+          brandAssets,
           <ImageIcon className="w-4 h-4" />,
-          'No media uploaded'
+          'No brand assets selected'
         )}
 
         {/* Final Output */}

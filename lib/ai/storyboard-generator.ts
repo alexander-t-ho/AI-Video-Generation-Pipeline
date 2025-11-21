@@ -7,15 +7,20 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
-import { Scene, Subscene, StoryboardResponse } from '../types';
+import { Scene, StoryboardResponse } from '../types';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
+// Support both OpenAI direct and OpenRouter
+const USE_OPENAI_DIRECT = !!process.env.OPENAI_API_KEY;
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const API_URL = USE_OPENAI_DIRECT ? OPENAI_API_URL : OPENROUTER_API_URL;
 // Try gpt-4o-mini first as fallback if gpt-4o is not available
 let OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 
@@ -38,26 +43,16 @@ export function setRuntimeTextModel(model: string) {
 const STORYBOARD_SYSTEM_PROMPT = `You are a professional video storyboard creator specializing in performance-focused advertising,
 with particular strength in product and automotive commercials.
 
-Given a short creative brief for a video advertisement, create exactly 5 scenes. Each scene must have exactly 3 subscenes that break down the scene's action into a mini-narrative arc.
+Given a short creative brief for a video advertisement, create exactly 3 scenes.
 
 For each scene:
-- Total duration: 3 seconds (1 second per subscene)
+- Duration: 10 seconds
 - Clear visual focus and logical progression from the previous scene
 - Keep the scene description SHORT and CONCISE - 3-6 words maximum
-
-For each subscene within a scene:
-- Duration: 1 second
-- Should progress the scene's story (beginning, middle, end of the moment)
-- Keep the subscene description SHORT - 2-4 words
-- Provide detailed imagePrompt for visual generation
+- Provide a detailed imagePrompt for visual generation
 
 Scene description examples:
-"driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
-
-Subscene description examples (for a "driver close-up" scene):
-- Subscene 0: "eyes focus"
-- Subscene 1: "hands grip wheel"
-- Subscene 2: "determined expression"
+"driver close-up", "wide car approach", "interior cockpit"
 
 Unless the brief clearly specifies otherwise, assume:
 - The spot is shot on Arri Alexa with a high-end commercial finish
@@ -69,32 +64,14 @@ Output strictly valid JSON in this format:
     {
       "order": 0,
       "description": "Short 3-6 word phrase describing the scene",
-      "subscenes": [
-        {
-          "order": 0,
-          "description": "Short 2-4 word subscene description",
-          "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
-          "duration": 1
-        },
-        {
-          "order": 1,
-          "description": "Short 2-4 word subscene description",
-          "imagePrompt": "Detailed prompt for image generation...",
-          "duration": 1
-        },
-        {
-          "order": 2,
-          "description": "Short 2-4 word subscene description",
-          "imagePrompt": "Detailed prompt for image generation...",
-          "duration": 1
-        }
-      ]
+      "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
+      "duration": 10
     },
     ...
   ]
 }
 
-Keep image prompts specific, visual, and production-ready. Each subscene should feel like a natural progression within its parent scene.`;
+Keep image prompts specific, visual, and production-ready.`;
 
 // ============================================================================
 // Types
@@ -133,21 +110,12 @@ interface OpenRouterResponse {
   };
 }
 
-interface RawSubscene {
-  order: number;
-  description: string;
-  imagePrompt: string;
-  duration: number;
-}
-
 interface RawStoryboardResponse {
   scenes: Array<{
     order: number;
     description: string;
-    subscenes: RawSubscene[];
-    // Legacy field for backward compatibility
-    imagePrompt?: string;
-    duration?: number;
+    imagePrompt: string;
+    duration: number;
   }>;
 }
 
@@ -167,16 +135,15 @@ async function callOpenRouterAPI(
   targetDuration: number = 15,
   referenceImageUrls?: string[]
 ): Promise<OpenRouterResponse> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = USE_OPENAI_DIRECT ? process.env.OPENAI_API_KEY : process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY environment variable is not set');
+    throw new Error(USE_OPENAI_DIRECT
+      ? 'OPENAI_API_KEY environment variable is not set'
+      : 'OPENROUTER_API_KEY environment variable is not set');
   }
 
-  // Validate API key format
-  if (!apiKey.startsWith('sk-or-v1-') && !apiKey.startsWith('sk-')) {
-    console.warn('[OpenRouter] API key format may be invalid. Expected format: sk-or-v1-... or sk-...');
-  }
+  console.log(`[Storyboard] Using ${USE_OPENAI_DIRECT ? 'OpenAI Direct' : 'OpenRouter'} API`);
 
   const userPrompt = `You are creating a performance-focused advertising storyboard (with strong support for product and automotive spots) for a ${targetDuration}-second video ad.
 
@@ -252,8 +219,9 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
     }
   }
 
+  const modelToUse = USE_OPENAI_DIRECT ? OPENAI_MODEL : OPENROUTER_MODEL;
   const requestBody: OpenRouterRequest = {
-    model: OPENROUTER_MODEL,
+    model: modelToUse,
     messages: [
       {
         role: 'system',
@@ -272,23 +240,29 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
   };
 
   // Log request details for debugging (without sensitive data)
-  console.log('[OpenRouter] Making request:', {
-    url: OPENROUTER_API_URL,
-    model: OPENROUTER_MODEL,
+  console.log('[Storyboard] Making request:', {
+    url: API_URL,
+    model: modelToUse,
+    provider: USE_OPENAI_DIRECT ? 'OpenAI' : 'OpenRouter',
     hasApiKey: !!apiKey,
     apiKeyPrefix: apiKey.substring(0, 10) + '...',
     messageCount: requestBody.messages.length,
     hasResponseFormat: !!requestBody.response_format,
   });
 
-  const response = await fetch(OPENROUTER_API_URL, {
+  // Build headers - OpenRouter needs extra headers, OpenAI just needs auth
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (!USE_OPENAI_DIRECT) {
+    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    headers['X-Title'] = 'AI Video Generation Pipeline';
+  }
+
+  const response = await fetch(API_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      'X-Title': 'AI Video Generation Pipeline',
-    },
+    headers,
     body: JSON.stringify(requestBody),
   });
 
@@ -367,12 +341,14 @@ function validateStoryboardResponse(
     throw new Error('Invalid response: missing or invalid scenes array');
   }
 
-  // Check for exactly 5 scenes
-  if (rawResponse.scenes.length !== 5) {
+  // Take first 3 scenes (LLM might return more)
+  if (rawResponse.scenes.length < 3) {
     throw new Error(
-      `Invalid response: expected exactly 5 scenes, got ${rawResponse.scenes.length}`
+      `Invalid response: expected at least 3 scenes, got ${rawResponse.scenes.length}`
     );
   }
+  // Truncate to 3 scenes if more were returned
+  rawResponse.scenes = rawResponse.scenes.slice(0, 3);
 
   // Validate each scene
   const validatedScenes: Scene[] = rawResponse.scenes.map((scene, index) => {
@@ -383,38 +359,12 @@ function validateStoryboardResponse(
     if (typeof scene.description !== 'string' || scene.description.trim() === '') {
       throw new Error(`Scene ${index}: missing or invalid description field`);
     }
-
-    // Validate subscenes
-    if (!scene.subscenes || !Array.isArray(scene.subscenes) || scene.subscenes.length !== 3) {
-      throw new Error(`Scene ${index}: must have exactly 3 subscenes, got ${scene.subscenes?.length || 0}`);
+    if (typeof scene.imagePrompt !== 'string' || scene.imagePrompt.trim() === '') {
+      throw new Error(`Scene ${index}: missing or invalid imagePrompt field`);
     }
-
-    // Validate each subscene
-    const validatedSubscenes = scene.subscenes.map((subscene, subIndex) => {
-      if (typeof subscene.order !== 'number') {
-        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid order field`);
-      }
-      if (typeof subscene.description !== 'string' || subscene.description.trim() === '') {
-        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid description field`);
-      }
-      if (typeof subscene.imagePrompt !== 'string' || subscene.imagePrompt.trim() === '') {
-        throw new Error(`Scene ${index}, Subscene ${subIndex}: missing or invalid imagePrompt field`);
-      }
-      if (typeof subscene.duration !== 'number' || subscene.duration < 0.5 || subscene.duration > 5) {
-        throw new Error(`Scene ${index}, Subscene ${subIndex}: invalid duration (must be 0.5-5 seconds)`);
-      }
-
-      return {
-        id: uuidv4(),
-        order: subIndex,
-        description: subscene.description.trim(),
-        imagePrompt: subscene.imagePrompt.trim(),
-        suggestedDuration: subscene.duration,
-      };
-    });
-
-    // Calculate total scene duration from subscenes
-    const sceneDuration = validatedSubscenes.reduce((sum, sub) => sum + sub.suggestedDuration, 0);
+    if (typeof scene.duration !== 'number' || scene.duration < 1 || scene.duration > 10) {
+      throw new Error(`Scene ${index}: invalid duration (must be 1-10 seconds)`);
+    }
 
     // Validate order matches index
     if (scene.order !== index) {
@@ -428,25 +378,17 @@ function validateStoryboardResponse(
       id: uuidv4(),
       order: index,
       description: scene.description.trim(),
-      subscenes: validatedSubscenes,
-      suggestedDuration: sceneDuration,
-      // Legacy field for backward compatibility - use first subscene's prompt
-      imagePrompt: validatedSubscenes[0].imagePrompt,
+      imagePrompt: scene.imagePrompt.trim(),
+      suggestedDuration: scene.duration,
     };
   });
 
-  // Validate total duration (±2 seconds tolerance)
+  // Log total duration (don't enforce strict validation since LLM output varies)
   const totalDuration = validatedScenes.reduce(
     (sum, scene) => sum + scene.suggestedDuration,
     0
   );
-  const durationDiff = Math.abs(totalDuration - targetDuration);
-
-  if (durationDiff > 2) {
-    throw new Error(
-      `Total duration (${totalDuration}s) doesn't match target duration (${targetDuration}s). Difference: ${durationDiff}s (max tolerance: 2s)`
-    );
-  }
+  console.log(`[Storyboard] Generated ${validatedScenes.length} scenes, total duration: ${totalDuration}s (target: ${targetDuration}s)`);
 
   return validatedScenes;
 }

@@ -18,6 +18,7 @@ export default function BrandIdentityScreen() {
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [carDatabase, setCarDatabase] = useState<CarDatabase | null>(null);
   const [isLoadingCars, setIsLoadingCars] = useState(true);
+  const [isWaitingForProject, setIsWaitingForProject] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -186,8 +187,56 @@ export default function BrandIdentityScreen() {
   };
 
   const handleContinue = () => {
-    // Go directly to the main workspace
-    router.push('/workspace');
+    // Build list of selected images to save
+    const selectedImages = selectedCar && selectedAssetIds.size > 0
+      ? selectedCar.referenceImages
+          .filter(img => selectedAssetIds.has(img.id))
+          .map(img => ({
+            id: img.id,
+            url: img.url,
+            localPath: img.url, // Use URL as path for S3 images
+            originalName: img.filename || ('brand' in selectedCar ? `${selectedCar.brand}-${selectedCar.model}` : selectedCar.name),
+            size: 0,
+            mimeType: 'image/png',
+            createdAt: new Date().toISOString(),
+          }))
+      : [];
+
+    // Helper to save assets and navigate (only call after project exists)
+    const saveAssetsAndNavigate = () => {
+      if (selectedImages.length > 0) {
+        const { setUploadedImages } = useProjectStore.getState();
+        setUploadedImages(selectedImages);
+        console.log('[BrandIdentity] Saved', selectedImages.length, 'selected images to project store');
+      }
+      router.push('/workspace');
+    };
+
+    // Check if project has storyboard before navigating
+    const { project } = useProjectStore.getState();
+    if (project?.storyboard && project.storyboard.length > 0) {
+      // Go to workspace - storyboard is ready
+      saveAssetsAndNavigate();
+    } else {
+      // Storyboard not ready yet (still generating) - show loading
+      console.log('[BrandIdentity] Storyboard not ready yet, waiting...');
+      setIsWaitingForProject(true);
+      // Poll for storyboard to be ready
+      const checkProject = setInterval(() => {
+        const { project: currentProject } = useProjectStore.getState();
+        if (currentProject?.storyboard && currentProject.storyboard.length > 0) {
+          clearInterval(checkProject);
+          setIsWaitingForProject(false);
+          saveAssetsAndNavigate();
+        }
+      }, 500);
+      // Timeout after 5 minutes - just log, no popup
+      setTimeout(() => {
+        clearInterval(checkProject);
+        setIsWaitingForProject(false);
+        console.log('[BrandIdentity] Still waiting for storyboard after 5 minutes');
+      }, 300000);
+    }
   };
 
   const handleAddRecoloredImages = (baseCarId: string, images: Array<{ url: string, colorHex: string }>) => {
@@ -486,9 +535,17 @@ export default function BrandIdentityScreen() {
         </button>
         <button
           onClick={handleContinue}
-          className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+          disabled={isWaitingForProject}
+          className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-wait flex items-center gap-2"
         >
-          Continue
+          {isWaitingForProject ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Preparing...</span>
+            </>
+          ) : (
+            'Continue'
+          )}
         </button>
       </div>
 

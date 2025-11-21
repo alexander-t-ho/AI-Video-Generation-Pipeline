@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
+import { generateStoryboard } from '@/lib/api-client';
 
 interface StyleOption {
   id: 'whimsical' | 'luxury' | 'offroad';
@@ -36,18 +37,63 @@ const STYLE_OPTIONS: StyleOption[] = [
 export default function StyleSelection() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { selectedStyle, setSelectedStyle } = useProjectStore();
+  const { selectedStyle, setSelectedStyle, setStoryboard, createProject } = useProjectStore();
   const [localSelectedStyle, setLocalSelectedStyle] = useState<string | null>(selectedStyle);
   const [loadingVideos, setLoadingVideos] = useState<Record<string, boolean>>({
     whimsical: true,
     luxury: true,
     offroad: true,
   });
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const storyboardGenerationRef = useRef<Promise<void> | null>(null);
 
   const handleStyleSelect = (style: StyleOption) => {
     setLocalSelectedStyle(style.id);
     setSelectedStyle(style.id, style.prompt);
+
+    // Start background storyboard generation immediately when style is selected
+    const prompt = searchParams.get('prompt');
+    console.log('[StyleSelection] handleStyleSelect called', { styleId: style.id, prompt: prompt?.substring(0, 50), hasPrompt: !!prompt });
+    if (prompt && !storyboardGenerationRef.current) {
+      storyboardGenerationRef.current = generateStoryboardInBackground(prompt, style.prompt);
+    } else {
+      console.log('[StyleSelection] Skipping generation:', { noPrompt: !prompt, alreadyGenerating: !!storyboardGenerationRef.current });
+    }
+  };
+
+  const generateStoryboardInBackground = async (initialPrompt: string, stylePrompt: string) => {
+    try {
+      setIsGeneratingStoryboard(true);
+      console.log('[StyleSelection] Starting background storyboard generation...');
+
+      // Build the full prompt
+      const fullPrompt = `${initialPrompt}\n\nVisual style: ${stylePrompt}`;
+      console.log('[StyleSelection] Full prompt length:', fullPrompt.length);
+
+      // Initialize project first
+      createProject(initialPrompt, 30); // 3 scenes x 10 seconds
+
+      // Generate storyboard in background
+      console.log('[StyleSelection] Calling generateStoryboard API...');
+      const response = await generateStoryboard(fullPrompt, 30);
+      console.log('[StyleSelection] API response received:', { success: response.success, sceneCount: response.scenes?.length });
+
+      if (response.success && response.scenes) {
+        setStoryboard(response.scenes);
+        console.log('[StyleSelection] Storyboard generated in background:', response.scenes.length, 'scenes');
+      } else {
+        console.error('[StyleSelection] Storyboard generation failed:', response.error || 'No error message');
+        // Reset ref so user can retry
+        storyboardGenerationRef.current = null;
+      }
+    } catch (error) {
+      console.error('[StyleSelection] Background storyboard generation failed:', error);
+      // Reset ref so user can retry
+      storyboardGenerationRef.current = null;
+    } finally {
+      setIsGeneratingStoryboard(false);
+    }
   };
 
   const handleContinue = () => {
@@ -59,6 +105,14 @@ export default function StyleSelection() {
       const carYear = searchParams.get('carYear');
       const carConfidence = searchParams.get('carConfidence');
 
+      // If storyboard generation hasn't started yet, start it now
+      if (prompt && !storyboardGenerationRef.current) {
+        const selectedStyleOption = STYLE_OPTIONS.find(s => s.id === localSelectedStyle);
+        if (selectedStyleOption) {
+          storyboardGenerationRef.current = generateStoryboardInBackground(prompt, selectedStyleOption.prompt);
+        }
+      }
+
       // Build query string
       const params = new URLSearchParams();
       if (prompt) params.set('prompt', prompt);
@@ -68,7 +122,8 @@ export default function StyleSelection() {
       if (carConfidence) params.set('carConfidence', carConfidence);
 
       const queryString = params.toString();
-      router.push(`/your-story${queryString ? `?${queryString}` : ''}`);
+      // Skip /your-story page - go directly to brand-identity
+      router.push(`/brand-identity${queryString ? `?${queryString}` : ''}`);
     }
   };
 

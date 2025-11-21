@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Scene } from '@/lib/types';
-import { Save, X, Edit, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
+import { Save, X, Edit, Sparkles } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -27,11 +27,8 @@ export default function SceneCard({
 }: SceneCardProps) {
   const [editDescription, setEditDescription] = useState(scene.description);
   const [editImagePrompt, setEditImagePrompt] = useState(scene.imagePrompt || '');
-  const [isSubscenesExpanded, setIsSubscenesExpanded] = useState(false);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const imagePromptRef = useRef<HTMLTextAreaElement>(null);
-
-  const hasSubscenes = scene.subscenes && scene.subscenes.length > 0;
 
   const {
     attributes,
@@ -252,44 +249,6 @@ export default function SceneCard({
       {isEditing && (
         <div className="mt-2 text-sm text-white/40 text-right">
           Ctrl+Enter to save • Esc to cancel
-        </div>
-      )}
-
-      {/* Collapsible Subscenes */}
-      {hasSubscenes && !isEditing && (
-        <div className="mt-3 pt-3 border-t border-white/10 flex items-start gap-4">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsSubscenesExpanded(!isSubscenesExpanded);
-            }}
-            className="flex items-center gap-2 text-xs text-white/50 hover:text-white/70 transition-colors flex-shrink-0"
-          >
-            {isSubscenesExpanded ? (
-              <ChevronDown className="w-3 h-3" />
-            ) : (
-              <ChevronRight className="w-3 h-3" />
-            )}
-            <span>Sub-scenes</span>
-          </button>
-
-          {isSubscenesExpanded && (
-            <div className="flex-1 flex gap-2">
-              {scene.subscenes!.map((subscene, subIndex) => (
-                <div
-                  key={subscene.id}
-                  className="flex-1 flex items-start gap-2 p-2 rounded bg-white/5 border border-white/10"
-                >
-                  <span className="flex-shrink-0 w-4 h-4 rounded-full bg-white/10 text-[10px] font-medium text-white/60 flex items-center justify-center">
-                    {subIndex + 1}
-                  </span>
-                  <p className="text-xs text-white/70 leading-relaxed line-clamp-3">
-                    {subscene.imagePrompt}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
