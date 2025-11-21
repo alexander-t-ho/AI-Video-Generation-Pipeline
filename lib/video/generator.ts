@@ -132,7 +132,8 @@ export async function createVideoPrediction(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number
+  duration?: number,
+  referenceImages?: string[]
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -171,6 +172,13 @@ export async function createVideoPrediction(
     console.log(`${logPrefix}   - Mode: image-to-video with seed frame`);
   } else {
     console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
+  }
+  if (referenceImages && referenceImages.length > 0) {
+    console.log(`${logPrefix}   - Reference Images: ${referenceImages.length}`);
+    referenceImages.forEach((url, idx) => {
+      const urlPreview = url.length > 80 ? url.substring(0, 80) + '...' : url;
+      console.log(`${logPrefix}     [${idx + 1}] ${urlPreview}`);
+    });
   }
   // Use provided duration or fall back to default, then validate and adjust
   const requestedDuration = duration || VIDEO_DURATION;
@@ -211,6 +219,8 @@ export async function createVideoPrediction(
     prompt: enhancedPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
+    // Add reference images for Google Veo / Gen-4 Image if provided
+    ...(referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
     // WAN models use 'duration' and 'resolution'
     // Gen-4 models may use different parameters - adjust if needed
     ...(isGen4 ? {
@@ -323,9 +333,10 @@ export async function createVideoPredictionWithRetry(
   imageUrl: string,
   prompt: string,
   seedFrame?: string,
-  duration?: number
+  duration?: number,
+  referenceImages?: string[]
 ): Promise<string> {
-  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration));
+  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration, referenceImages));
 }
 
 // ============================================================================

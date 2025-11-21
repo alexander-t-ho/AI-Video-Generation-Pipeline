@@ -730,8 +730,8 @@ export default function EditorView() {
 
     // Check if adding these files would exceed the limit
     const currentCount = customImagePreviews.length;
-    if (currentCount + files.length > 3) {
-      alert(`You can only add up to 3 images. Currently have ${currentCount}, trying to add ${files.length}.`);
+    if (currentCount + files.length > 2) {
+      alert(`You can only add up to 2 images. Currently have ${currentCount}, trying to add ${files.length}.`);
       return;
     }
 
@@ -889,8 +889,8 @@ export default function EditorView() {
 
     // Check if adding these files would exceed the limit
     const currentCount = customImagePreviews.length;
-    if (currentCount + files.length > 3) {
-      alert(`You can only add up to 3 images. Currently have ${currentCount}, trying to add ${files.length}.`);
+    if (currentCount + files.length > 2) {
+      alert(`You can only add up to 2 images. Currently have ${currentCount}, trying to add ${files.length}.`);
       return;
     }
 
@@ -1256,7 +1256,7 @@ export default function EditorView() {
                       {/* Image Input (Optional) */}
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">
-                          Image Input <span className="text-white/60 text-xs">(optional, up to 3 images)</span>
+                          Image Input <span className="text-white/60 text-xs">(optional, up to 2 images)</span>
                         </label>
                         <div className="space-y-2">
                           {/* Display uploaded images */}
@@ -1285,8 +1285,8 @@ export default function EditorView() {
                             </div>
                           )}
 
-                          {/* Upload area - show if less than 3 images */}
-                          {customImagePreviews.length < 3 && (
+                          {/* Upload area - show if less than 2 images */}
+                          {customImagePreviews.length < 2 && (
                             <label
                               onDragOver={handleFileDragOver}
                               onDragLeave={handleFileDragLeave}
@@ -1299,9 +1299,9 @@ export default function EditorView() {
                             >
                               <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-white/80' : 'text-white/40'}`} />
                               <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-white/80 font-medium' : 'text-white/60'}`}>
-                                {isOverDropZone 
-                                  ? 'Drop images here' 
-                                  : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
+                                {isOverDropZone
+                                  ? 'Drop images here'
+                                  : `Click to upload or drag images here (${customImagePreviews.length}/2)`}
                               </span>
                               <input
                                 ref={fileInputRef}

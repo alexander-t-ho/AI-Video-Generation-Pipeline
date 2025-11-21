@@ -106,6 +106,9 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         ? sceneState.seedFrames?.[sceneState.selectedSeedFrameIndex]
         : null;
 
+      // Get reference images dragged into the storyboard prompt
+      const referenceImages = project.referenceImageUrls || [];
+
       const fields: PayloadField[] = [
         {
           key: 'image',
@@ -137,9 +140,27 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
           label: 'Seed Frame',
           value: seedFrame?.url || 'None',
           type: 'url',
-          description: 'First frame for continuity',
+          description: 'First frame for continuity (Scene 1-4 only)',
           imageUrl: seedFrame?.url ? seedFrame.url : undefined,
         },
+        // Add individual reference image fields (dragged into storyboard)
+        ...referenceImages.map((imgUrl, idx) => ({
+          key: `referenceImage${idx + 1}`,
+          label: `Reference Image ${idx + 1}`,
+          value: imgUrl,
+          type: 'url' as const,
+          description: 'Additional image for video consistency (Google Veo)',
+          imageUrl: imgUrl,
+        })),
+        // Add the combined array for API
+        ...(referenceImages.length > 0 ? [{
+          key: 'reference_images',
+          label: 'Reference Images (Array)',
+          value: `${referenceImages.length} image(s)`,
+          type: 'array' as const,
+          description: 'Reference images sent to API for Google Veo',
+          imageUrls: referenceImages,
+        }] : []),
       ];
 
       return {
@@ -155,9 +176,26 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
   const handleCopy = () => {
     if (!previewData) return;
     const payload = previewData.fields.reduce((acc, field) => {
-      // For reference images, use the actual imageUrls array, not the display string
-      if (field.key === 'referenceImages' && field.imageUrls) {
-        acc[field.key] = field.imageUrls;
+      // Skip fields with "None" values (optional fields not set)
+      if (field.value === 'None' || field.value === 'NOT SELECTED') {
+        return acc;
+      }
+
+      // Skip individual reference image fields (only include the combined array)
+      if (field.key.startsWith('referenceImage') && field.key !== 'reference_images') {
+        return acc;
+      }
+
+      // Skip seedFrame field (it's optional and only used internally)
+      if (field.key === 'seedFrame') {
+        return acc;
+      }
+
+      // For reference images array, use the actual imageUrls array, not the display string
+      if ((field.key === 'reference_images' || field.key === 'referenceImageUrls') && field.imageUrls) {
+        if (field.imageUrls.length > 0) {
+          acc[field.key] = field.imageUrls;
+        }
       } else {
         acc[field.key] = field.value;
       }
