@@ -51,42 +51,31 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
           description: 'Text description of the image to generate',
         },
         {
-          key: 'negativePrompt',
-          label: 'Negative Prompt',
-          value: scene.negativePrompt || '',
-          type: 'string',
-          description: 'Things to avoid in the image',
-        },
-        {
           key: 'seedImage',
-          label: 'Seed Image (I2I)',
+          label: 'Seed Image',
           value: selectedImage?.url || 'None',
           type: 'url',
-          description: 'Reference image for image-to-image generation',
+          description: 'Image for image-to-image generation',
           imageUrl: selectedImage?.localPath ? `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}` : undefined,
         },
-        {
-          key: 'referenceImages',
-          label: 'Reference Images',
-          value: referenceImages.length > 0 ? `${referenceImages.length} image(s)` : 'None',
-          type: 'array',
-          description: 'Images for consistency/IP-Adapter',
-          imageUrls: referenceImages.length > 0 ? referenceImages : [],
-        },
-        {
-          key: 'customDuration',
-          label: 'Custom Duration',
-          value: scene.customDuration || 'Default',
-          type: 'string',
-          description: 'Override duration in seconds',
-        },
-        {
-          key: 'useSeedFrame',
-          label: 'Use Seed Frame',
-          value: scene.useSeedFrame ? 'Yes' : 'No',
-          type: 'boolean',
-          description: 'Use seed frame from previous scene',
-        },
+        // Add individual reference image fields
+        ...referenceImages.map((imgUrl, idx) => ({
+          key: `referenceImage${idx + 1}`,
+          label: `Reference Image ${idx + 1}`,
+          value: imgUrl,
+          type: 'url' as const,
+          description: 'Reference image for consistency/IP-Adapter',
+          imageUrl: imgUrl,
+        })),
+        // Add the combined array for API
+        ...(referenceImages.length > 0 ? [{
+          key: 'referenceImageUrls',
+          label: 'Reference Images (Array)',
+          value: `${referenceImages.length} image(s)`,
+          type: 'array' as const,
+          description: 'Reference images sent to API via IP-Adapter',
+          imageUrls: referenceImages,
+        }] : []),
       ];
 
       return {
