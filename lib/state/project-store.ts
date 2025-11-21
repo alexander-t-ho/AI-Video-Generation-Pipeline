@@ -56,7 +56,15 @@ interface ProjectStore {
   sceneErrors: Record<number, { message: string; timestamp: string; retryable: boolean }>;
   
   // Actions
-  createProject: (prompt: string, targetDuration?: number) => void;
+  createProject: (name: string, prompt: string, targetDuration?: number, characterDescription?: string) => Promise<void>;
+  saveProjectToBackend: (name: string, prompt: string, targetDuration?: number, characterDescription?: string) => Promise<string>;
+  updateProjectMetadata: (updates: {
+    name?: string;
+    characterDescription?: string;
+    status?: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';
+    finalVideoUrl?: string;
+    finalVideoS3Key?: string;
+  }) => Promise<void>;
   setStoryboard: (scenes: Scene[]) => void;
   updateScene: (sceneId: string, updates: Partial<Scene>) => void;
   reorderScenes: (scenes: Scene[]) => void;
@@ -175,18 +183,20 @@ const initialState = {
 
 export const useProjectStore = create<ProjectStore>((set) => ({
   ...initialState,
-  
-  createProject: (prompt: string, targetDuration = 15) => {
+
+  createProject: async (name: string, prompt: string, targetDuration = 15, characterDescription?: string) => {
     const project: ProjectState = {
       id: uuidv4(),
+      name,
       prompt,
       targetDuration,
+      characterDescription,
       status: 'storyboard',
       createdAt: new Date().toISOString(),
       storyboard: [],
       currentSceneIndex: 0,
     };
-    
+
     set({
       project,
       chatMessages: [
@@ -200,7 +210,57 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       ],
     });
   },
-  
+
+  saveProjectToBackend: async (name: string, prompt: string, targetDuration = 15, characterDescription?: string) => {
+    try {
+      const { saveProject } = await import('@/lib/api-client');
+      const backendProject = await saveProject(name, prompt, targetDuration, characterDescription);
+
+      // Update local project with backend ID
+      set((state) => ({
+        project: state.project ? { ...state.project, id: backendProject.id } : null,
+      }));
+
+      return backendProject.id;
+    } catch (error) {
+      console.error('Failed to save project to backend:', error);
+      throw error;
+    }
+  },
+
+  updateProjectMetadata: async (updates: {
+    name?: string;
+    characterDescription?: string;
+    status?: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';
+    finalVideoUrl?: string;
+    finalVideoS3Key?: string;
+  }) => {
+    const state = useProjectStore.getState();
+    if (!state.project) return;
+
+    try {
+      const { updateProject } = await import('@/lib/api-client');
+      await updateProject(state.project.id, updates);
+
+      // Update local state - only update fields that were provided
+      set((state) => {
+        if (!state.project) return state;
+        const updatedProject = { ...state.project };
+        if (updates.name !== undefined) updatedProject.name = updates.name;
+        if (updates.characterDescription !== undefined) updatedProject.characterDescription = updates.characterDescription;
+        if (updates.status !== undefined) updatedProject.status = updates.status;
+        if (updates.finalVideoUrl !== undefined) updatedProject.finalVideoUrl = updates.finalVideoUrl;
+        if (updates.finalVideoS3Key !== undefined) updatedProject.finalVideoS3Key = updates.finalVideoS3Key;
+        return { project: updatedProject };
+      });
+
+      console.log('[Store] Project metadata saved to backend');
+    } catch (error) {
+      console.error('[Store] Failed to update project metadata:', error);
+      throw error;
+    }
+  },
+
   setStoryboard: (scenes: Scene[]) => {
     set((state) => {
       if (!state.project) return state;
@@ -569,17 +629,39 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   },
   
   loadProject: async (projectId: string) => {
-    // Check if project is already in store and matches
-    const currentProject = useProjectStore.getState().project;
-    if (currentProject && currentProject.id === projectId) {
-      // Project already loaded
-      return;
+    try {
+      const { loadProject: loadProjectAPI } = await import('@/lib/api-client');
+      const backendProject = await loadProjectAPI(projectId);
+
+      // Convert backend project data to local state
+      const scenesWithState: SceneWithState[] = (backendProject.scenes || []).map((scene: any) => ({
+        ...scene,
+        generatedImages: scene.generatedImages || [],
+        generatedVideos: scene.generatedVideos || [],
+        seedFrames: scene.seedFrames || [],
+        status: 'image_ready' as const,
+      }));
+
+      set({
+        project: {
+          id: backendProject.id,
+          name: backendProject.name,
+          prompt: backendProject.prompt,
+          targetDuration: backendProject.targetDuration,
+          characterDescription: backendProject.characterDescription,
+          status: backendProject.status || 'storyboard',
+          createdAt: backendProject.createdAt,
+          storyboard: backendProject.scenes || [],
+          currentSceneIndex: 0,
+          finalVideoUrl: backendProject.finalVideoUrl,
+          finalVideoS3Key: backendProject.finalVideoS3Key,
+        },
+        scenes: scenesWithState,
+      });
+    } catch (error) {
+      console.error('Failed to load project:', error);
+      throw error;
     }
-    
-    // TODO: Implement project loading from API/storage
-    // For now, projects are only in-memory, so if not in store, it doesn't exist
-    // Throw error to trigger redirect to home
-    throw new Error('Project not found. Projects are currently only available in the current session.');
   },
   
   setViewMode: (mode: ViewMode) => {
@@ -733,8 +815,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   stitchAllVideos: async () => {
     const state = useProjectStore.getState();
     if (!state.project) throw new Error('No project found');
-    
-    const { stitchVideos } = await import('@/lib/api-client');
+
+    const { stitchVideos, updateProject } = await import('@/lib/api-client');
     const videoPaths = state.scenes
       .map(s => {
         // Use selected video if available, otherwise fallback to videoLocalPath for backward compatibility
@@ -745,15 +827,30 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         return s.videoLocalPath;
       })
       .filter((path): path is string => !!path);
-    
+
     if (videoPaths.length === 0) throw new Error('No videos available');
-    
+
     const response = await stitchVideos(videoPaths, state.project.id);
     if (response.finalVideoPath) {
       const finalVideoUrl = response.finalVideoPath.startsWith('http')
         ? response.finalVideoPath
         : `/api/serve-video?path=${encodeURIComponent(response.finalVideoPath)}`;
+
+      // Update local state
       useProjectStore.getState().setFinalVideo(finalVideoUrl, response.s3Url);
+
+      // Auto-save final video to backend
+      try {
+        await updateProject(state.project.id, {
+          status: 'COMPLETED',
+          finalVideoUrl,
+          finalVideoS3Key: response.s3Url,
+        });
+        console.log('[Store] Final video URL saved to backend');
+      } catch (error) {
+        console.error('[Store] Failed to save final video URL to backend:', error);
+        // Don't throw - video is created locally even if backend save fails
+      }
     } else {
       throw new Error('Failed to stitch videos');
     }

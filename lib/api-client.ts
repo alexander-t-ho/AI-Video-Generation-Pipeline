@@ -434,7 +434,7 @@ export async function pollVideoStatus(
     projectId?: string;
     sceneIndex?: number;
   } = {}
-): Promise<{ status: string; videoPath?: string; error?: string }> {
+): Promise<{ status: string; videoPath?: string; actualDuration?: number; error?: string }> {
   const { interval = 5000, timeout = 600000, onProgress, projectId, sceneIndex } = options; // 10 min default timeout
   const startTime = Date.now();
 
@@ -482,10 +482,12 @@ export async function pollVideoStatus(
           // Use local path if available, otherwise use Replicate URL as fallback
           const videoPath = status.data?.video?.localPath;
           const replicateUrl = status.data?.output;
-          
+          const videoDuration = status.data?.video?.duration;
+
           resolve({
             status: 'succeeded',
             videoPath: videoPath || replicateUrl, // Fallback to Replicate URL if local download failed
+            actualDuration: videoDuration,
             error: videoPath ? undefined : status.data?.error, // Include error if no local path
           });
           return;
@@ -707,6 +709,129 @@ export async function uploadImageToS3(
 
     const data = await response.json();
     return data.data;
+  });
+}
+
+/**
+ * Fetch user's projects
+ */
+export async function fetchProjects(scope: 'mine' | 'company' = 'mine'): Promise<any[]> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects?scope=${scope}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.projects || [];
+  });
+}
+
+/**
+ * Create a new project and save it to backend
+ */
+export async function saveProject(
+  name: string,
+  prompt: string,
+  targetDuration: number,
+  characterDescription?: string
+): Promise<any> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name,
+        prompt,
+        targetDuration,
+        characterDescription,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to create project' }));
+      throw new Error(error.error || 'Failed to create project');
+    }
+
+    const data = await response.json();
+    return data.project;
+  });
+}
+
+/**
+ * Update an existing project
+ */
+export async function updateProject(
+  projectId: string,
+  updates: {
+    name?: string;
+    status?: string;
+    characterDescription?: string;
+    finalVideoUrl?: string;
+    finalVideoS3Key?: string;
+  }
+): Promise<any> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to update project' }));
+      throw new Error(error.error || 'Failed to update project');
+    }
+
+    const data = await response.json();
+    return data.project;
+  });
+}
+
+/**
+ * Fetch a specific project with all its data
+ */
+export async function loadProject(projectId: string): Promise<any> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to load project' }));
+      throw new Error(error.error || 'Project not found');
+    }
+
+    const data = await response.json();
+    return data.project;
+  });
+}
+
+/**
+ * Delete a project
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to delete project' }));
+      throw new Error(error.error || 'Failed to delete project');
+    }
   });
 }
 

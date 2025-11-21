@@ -2,13 +2,17 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import Link from 'next/link';
-import { Home, Settings } from 'lucide-react';
+import { Home, Settings, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import DevPanel from './DevPanel';
+import SystemPromptsPanel from './SystemPromptsPanel';
+import UserMenu from '@/components/UserMenu';
+import ProjectSelector from './ProjectSelector';
 
 export default function WorkspaceHeader() {
   const { project } = useProjectStore();
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
+  const [isSystemPromptsOpen, setIsSystemPromptsOpen] = useState(false);
 
   return (
     <>
@@ -23,13 +27,19 @@ export default function WorkspaceHeader() {
           >
             <Home className="w-5 h-5 text-white/60 hover:text-white" />
           </Link>
-          
+
           {/* Divider */}
           <div className="h-6 w-px bg-white/20" />
-          
+
+          {/* Project Selector */}
+          <ProjectSelector />
+
+          {/* Divider */}
+          <div className="h-6 w-px bg-white/20" />
+
           {/* Project Info */}
           {project && (
-            <div>
+            <div className="hidden md:block">
               <h1 className="text-base font-semibold text-white line-clamp-1">
                 {project.prompt.length > 50
                   ? `${project.prompt.substring(0, 50)}...`
@@ -51,6 +61,19 @@ export default function WorkspaceHeader() {
 
         {/* Right Section */}
         <div className="flex items-center gap-2 flex-1 justify-end">
+          {/* User Menu */}
+          <UserMenu />
+
+          {/* System Prompts Button */}
+          <button
+            onClick={() => setIsSystemPromptsOpen(!isSystemPromptsOpen)}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors flex items-center justify-center"
+            title="View System Prompts"
+            aria-label="View system prompts"
+          >
+            <MessageSquare className="w-5 h-5 text-white/60 hover:text-white" />
+          </button>
+
           {/* Settings Button */}
           <button
             onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
@@ -65,6 +88,9 @@ export default function WorkspaceHeader() {
       
       {/* Dev Panel */}
       <DevPanel isOpen={isDevPanelOpen} onClose={() => setIsDevPanelOpen(false)} />
+
+      {/* System Prompts Panel */}
+      <SystemPromptsPanel isOpen={isSystemPromptsOpen} onClose={() => setIsSystemPromptsOpen(false)} />
     </>
   );
 }

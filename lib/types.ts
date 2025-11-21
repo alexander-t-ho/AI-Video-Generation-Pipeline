@@ -88,6 +88,7 @@ export interface ImageStatusResponse {
 
 export interface ProjectState {
   id: string;
+  name?: string;
   prompt: string;
   targetDuration: number; // 15, 30, or 60 seconds
   status: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';

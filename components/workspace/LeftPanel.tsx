@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AgentChat from './AgentChat';
 import ChatInput from './ChatInput';
+import APIPreviewPanel from './APIPreviewPanel';
 import { useProjectStore } from '@/lib/state/project-store';
 import { useGenerationStatus } from '@/lib/hooks/useGenerationStatus';
 import { ChevronLeft } from 'lucide-react';
@@ -58,6 +59,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     setViewMode,
   } = useProjectStore();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAPIPreviewExpanded, setIsAPIPreviewExpanded] = useState(false);
 
   // Enable real-time status updates
   // Disabled for now since the endpoint doesn't exist - will enable when API is ready
@@ -708,40 +710,63 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   return (
     <div className="flex flex-col h-full w-full bg-black">
       {/* Panel Header */}
-      <div className="h-10 px-3 border-b border-white/20 bg-black backdrop-blur-sm flex items-center justify-between">
+      <div className="h-10 px-3 border-b border-white/20 bg-black backdrop-blur-sm flex items-center justify-between flex-shrink-0">
         <h2 className="text-xs font-medium text-white/80 uppercase tracking-wide">
           Agent
         </h2>
-        {onCollapse && (
+        <div className="flex items-center gap-1">
           <button
-            onClick={onCollapse}
+            onClick={() => setIsAPIPreviewExpanded(!isAPIPreviewExpanded)}
             className="p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0"
-            aria-label="Collapse panel"
+            title={isAPIPreviewExpanded ? "Show chat" : "Show API preview"}
+            aria-label="Toggle API preview"
           >
-            <ChevronLeft className="w-4 h-4 text-white/60 hover:text-white" />
+            <span className="text-xs text-white/60 hover:text-white">
+              {isAPIPreviewExpanded ? "💬" : "⚙️"}
+            </span>
           </button>
-        )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              className="p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0"
+              aria-label="Collapse panel"
+            >
+              <ChevronLeft className="w-4 h-4 text-white/60 hover:text-white" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Chat Container - Cursor style: clean padding */}
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-y-auto px-3"
-        style={{ scrollBehavior: 'smooth' }}
-      >
-        <AgentChat />
-      </div>
+      {/* Content Area - Toggle between chat and API preview */}
+      {isAPIPreviewExpanded ? (
+        /* API Preview - Full Height */
+        <div className="flex-1 overflow-hidden min-h-0">
+          <APIPreviewPanel />
+        </div>
+      ) : (
+        /* Chat Mode */
+        <>
+          {/* Chat Container - Cursor style: clean padding */}
+          <div
+            ref={containerRef}
+            className="flex-1 overflow-y-auto px-3 min-h-0"
+            style={{ scrollBehavior: 'smooth' }}
+          >
+            <AgentChat />
+          </div>
 
-      {/* Chat Input */}
-      <div className="flex-shrink-0">
-        <ChatInput
-          onSubmit={handleSendMessage}
-          placeholder={isProcessing ? "Processing..." : "Type a message or drag images here..."}
-          maxFiles={5}
-          maxSizeMB={10}
-          disabled={isProcessing}
-        />
-      </div>
+          {/* Chat Input */}
+          <div className="flex-shrink-0">
+            <ChatInput
+              onSubmit={handleSendMessage}
+              placeholder={isProcessing ? "Processing..." : "Type a message or drag images here..."}
+              maxFiles={5}
+              maxSizeMB={10}
+              disabled={isProcessing}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

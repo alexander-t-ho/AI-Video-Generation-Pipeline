@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import https from 'https';
 import http from 'http';
+import { getVideoDuration } from '@/lib/video/editor';
 
 /**
  * GET /api/generate-video/[predictionId]
@@ -21,6 +22,7 @@ import http from 'http';
  *     output?: string;  // Video URL from Replicate (when succeeded)
  *     video?: {
  *       localPath: string;
+ *       duration?: number;  // Video duration in seconds (when succeeded)
  *     };
  *   };
  *   error?: string;
@@ -167,6 +169,16 @@ export async function GET(
         // Return absolute path for consistency with other file paths in the system
         const absolutePath = outputPath;
 
+        // Extract video duration
+        let duration: number | undefined;
+        try {
+          duration = await getVideoDuration(absolutePath);
+          console.log(`[API] Video duration: ${duration}s`);
+        } catch (durationError) {
+          console.warn(`[API] Failed to extract video duration:`, durationError);
+          // Continue without duration - it's not critical
+        }
+
         return NextResponse.json({
           success: true,
           data: {
@@ -174,6 +186,7 @@ export async function GET(
             output: videoUrl,
             video: {
               localPath: absolutePath,
+              duration,
             },
           },
         });

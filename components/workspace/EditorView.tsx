@@ -528,8 +528,8 @@ export default function EditorView() {
       });
 
       if (videoStatus.status === 'succeeded' && videoStatus.videoPath) {
-        // Set the video path for the current scene
-        setVideoPath(currentSceneIndex, videoStatus.videoPath);
+        // Set the video path for the current scene with actual duration
+        setVideoPath(currentSceneIndex, videoStatus.videoPath, videoStatus.actualDuration);
         setSceneStatus(currentSceneIndex, 'video_ready');
 
         // Show warning if download failed but using Replicate URL
