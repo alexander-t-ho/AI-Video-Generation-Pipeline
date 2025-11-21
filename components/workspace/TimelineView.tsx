@@ -25,7 +25,6 @@ export default function TimelineView() {
 
   const [isStitching, setIsStitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = normal, >1 = zoomed in, <1 = zoomed out
   const [currentTimelineTime, setCurrentTimelineTime] = useState(0); // Overall timeline playback time
   const [isPlaying, setIsPlaying] = useState(false);
@@ -37,6 +36,7 @@ export default function TimelineView() {
   const timelineTrackRef = useRef<HTMLDivElement>(null);
   const preservedTimeRef = useRef<number | null>(null); // Track position to preserve after preview regeneration
   const isRestoringPositionRef = useRef(false); // Prevent seeking event from overriding restored position
+  const previousVideoCountRef = useRef<number>(0); // Track previous video count to detect changes
 
   // Get selected clip for crop dialog
   const selectedClip = selectedClipId ? timelineClips.find(c => c.id === selectedClipId) : null;
@@ -53,24 +53,61 @@ export default function TimelineView() {
 
   // Initialize timeline clips when scenes change
   useEffect(() => {
-    if (project && scenes.length > 0 && !isInitialized) {
-      const hasVideos = scenes.some(s => {
-        if (s.selectedVideoId && s.generatedVideos) {
-          return s.generatedVideos.some(v => v.id === s.selectedVideoId);
+    if (project && scenes.length > 0) {
+      // Count total videos available (for change detection)
+      const videoCount = scenes.reduce((count, s) => {
+        // Check subscenes first (new flow)
+        if (s.subscenesWithState && s.subscenesWithState.length > 0) {
+          return count + s.subscenesWithState.filter(subscene => {
+            if (subscene.selectedVideoId && subscene.generatedVideos) {
+              return subscene.generatedVideos.some(v => v.id === subscene.selectedVideoId);
+            }
+            return !!subscene.videoLocalPath;
+          }).length;
         }
-        return !!s.videoLocalPath;
-      });
+        // Legacy flow: check scene-level videos
+        if (s.selectedVideoId && s.generatedVideos) {
+          return count + (s.generatedVideos.some(v => v.id === s.selectedVideoId) ? 1 : 0);
+        }
+        return count + (s.videoLocalPath ? 1 : 0);
+      }, 0);
 
-      if (hasVideos) {
+      const hasVideos = videoCount > 0;
+      const videoCountChanged = videoCount !== previousVideoCountRef.current;
+
+      // Re-initialize when video count changes
+      if (hasVideos && videoCountChanged) {
         initializeTimelineClips();
-        setIsInitialized(true);
+        previousVideoCountRef.current = videoCount;
       }
     }
-  }, [project, scenes, isInitialized, initializeTimelineClips]);
+  }, [project, scenes, initializeTimelineClips]);
+
+  // Track previous clip count to detect when new clips are added
+  const previousClipCountRef = useRef<number>(0);
+  const previewGenerationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Generate preview video when clips are ready or edited
   useEffect(() => {
-    if (!project || timelineClips.length === 0) return;
+    if (!project || timelineClips.length === 0) {
+      // Clear preview if no clips
+      if (previewVideoUrl) {
+        setPreviewVideoUrl(null);
+      }
+      return;
+    }
+
+    // Check if clips have valid video paths
+    const clipsWithValidPaths = timelineClips.filter(clip => clip.videoLocalPath);
+    if (clipsWithValidPaths.length === 0) {
+      // No valid clips yet, wait for them
+      return;
+    }
+
+    // Clear any existing timeout
+    if (previewGenerationTimeoutRef.current) {
+      clearTimeout(previewGenerationTimeoutRef.current);
+    }
 
     let cancelled = false;
 
@@ -83,16 +120,29 @@ export default function TimelineView() {
       setActualVideoDuration(null); // Reset duration for new preview
 
       try {
-        addChatMessage({
-          role: 'agent',
-          content: 'Generating preview video...',
-          type: 'status',
-        });
+        // Filter out clips without valid video paths
+        const validClips = timelineClips.filter(clip => clip.videoLocalPath);
+        if (validClips.length === 0) {
+          console.warn('[TimelineView] No clips with valid video paths available');
+          setError('No clips with valid video paths available');
+          setIsGeneratingPreview(false);
+          return;
+        }
+
+        // Only show message if this is a significant change (new clips added, not just editing)
+        const clipCountChanged = timelineClips.length !== previousClipCountRef.current;
+        if (clipCountChanged) {
+          addChatMessage({
+            role: 'agent',
+            content: `Updating preview with ${validClips.length} clip${validClips.length > 1 ? 's' : ''}...`,
+            type: 'status',
+          });
+        }
 
         const previewPath = await generatePreview(
-          timelineClips.map(clip => ({
+          validClips.map(clip => ({
             id: clip.id,
-            videoLocalPath: clip.videoLocalPath,
+            videoLocalPath: clip.videoLocalPath!,
             trimStart: clip.trimStart,
             trimEnd: clip.trimEnd,
             sourceDuration: clip.sourceDuration,
@@ -107,12 +157,15 @@ export default function TimelineView() {
           : `/api/serve-video?path=${encodeURIComponent(previewPath)}`;
 
         setPreviewVideoUrl(previewUrl);
+        previousClipCountRef.current = timelineClips.length;
 
-        addChatMessage({
-          role: 'agent',
-          content: 'Preview video ready',
-          type: 'status',
-        });
+        if (clipCountChanged) {
+          addChatMessage({
+            role: 'agent',
+            content: 'Preview updated',
+            type: 'status',
+          });
+        }
       } catch (err) {
         if (cancelled) return;
         const errorMessage = err instanceof Error ? err.message : 'Failed to generate preview';
@@ -129,10 +182,13 @@ export default function TimelineView() {
     const timeoutId = setTimeout(() => {
       generatePreviewVideo();
     }, 500);
+    previewGenerationTimeoutRef.current = timeoutId;
 
     return () => {
       cancelled = true;
-      clearTimeout(timeoutId);
+      if (previewGenerationTimeoutRef.current) {
+        clearTimeout(previewGenerationTimeoutRef.current);
+      }
     };
   // Note: mappedTimelineTime is intentionally not in dependencies - we only read it when starting preview generation
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,6 +222,16 @@ export default function TimelineView() {
 
   // Check if all scenes have videos
   const allScenesHaveVideos = scenes.every(s => {
+    // Check subscenes first (new flow)
+    if (s.subscenesWithState && s.subscenesWithState.length > 0) {
+      return s.subscenesWithState.every(subscene => {
+        if (subscene.selectedVideoId && subscene.generatedVideos) {
+          return subscene.generatedVideos.some(v => v.id === subscene.selectedVideoId);
+        }
+        return !!subscene.videoLocalPath;
+      });
+    }
+    // Legacy flow: check scene-level videos
     if (s.selectedVideoId && s.generatedVideos) {
       return s.generatedVideos.some(v => v.id === s.selectedVideoId);
     }
@@ -367,10 +433,21 @@ export default function TimelineView() {
   // Get video paths for stitching
   const getVideoPathsForStitching = () => {
     if (timelineClips.length > 0) {
-      return timelineClips.map(clip => clip.videoLocalPath);
+      return timelineClips.map(clip => clip.videoLocalPath).filter((path): path is string => !!path);
     }
     return scenes
-      .map(s => {
+      .flatMap(s => {
+        // Check subscenes first (new flow)
+        if (s.subscenesWithState && s.subscenesWithState.length > 0) {
+          return s.subscenesWithState.map(subscene => {
+            if (subscene.selectedVideoId && subscene.generatedVideos) {
+              const selectedVideo = subscene.generatedVideos.find(v => v.id === subscene.selectedVideoId);
+              return selectedVideo?.localPath;
+            }
+            return subscene.videoLocalPath;
+          });
+        }
+        // Legacy flow: check scene-level videos
         if (s.selectedVideoId && s.generatedVideos) {
           const selectedVideo = s.generatedVideos.find(v => v.id === s.selectedVideoId);
           return selectedVideo?.localPath;
@@ -484,9 +561,7 @@ export default function TimelineView() {
   };
 
   const handleRefreshClips = () => {
-    setIsInitialized(false);
     initializeTimelineClips();
-    setIsInitialized(true);
   };
 
   const handleClipSelect = (clipId: string) => {
@@ -739,6 +814,29 @@ export default function TimelineView() {
                     style={{ width: `${playheadPosition}%` }}
                   />
                 </div>
+              </div>
+            ) : error ? (
+              <div className="h-96 flex flex-col items-center justify-center bg-white/5 rounded-lg border border-white/10">
+                <AlertCircle className="w-8 h-8 text-red-500 mb-2" />
+                <p className="text-sm text-white/60 mb-2">Failed to generate preview</p>
+                <p className="text-xs text-white/40 mb-4">{error}</p>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    // Trigger preview regeneration by clearing timeout and letting useEffect run again
+                    if (previewGenerationTimeoutRef.current) {
+                      clearTimeout(previewGenerationTimeoutRef.current);
+                    }
+                    // Force re-trigger by updating a dependency
+                    const timeoutId = setTimeout(() => {
+                      // This will trigger the useEffect again
+                    }, 100);
+                    previewGenerationTimeoutRef.current = timeoutId;
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Retry
+                </button>
               </div>
             ) : (
               <div className="h-96 flex items-center justify-center bg-white/5 rounded-lg border border-white/10">

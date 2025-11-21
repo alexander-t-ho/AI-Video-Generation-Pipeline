@@ -74,6 +74,7 @@ interface ProjectStore {
   updateMediaDrawer: (updates: Partial<MediaDrawerState>) => void;
   updateDragDrop: (updates: Partial<DragDropState>) => void;
   setUploadedImages: (images: Array<import('../storage/image-storage').UploadedImage>) => void;
+  addUploadedImages: (images: Array<import('../storage/image-storage').UploadedImage>) => void;
   
   // Scene generation actions
   setSceneStatus: (sceneIndex: number, status: SceneWithState['status']) => void;
@@ -93,9 +94,11 @@ interface ProjectStore {
   setSubsceneVideoPath: (sceneIndex: number, subsceneIndex: number, videoPath: string, actualDuration?: number) => void;
   addSubsceneGeneratedVideo: (sceneIndex: number, subsceneIndex: number, video: GeneratedVideo) => void;
   selectSubsceneVideo: (sceneIndex: number, subsceneIndex: number, videoId: string) => void;
+  updateSubscenePrompt: (sceneIndex: number, subsceneIndex: number, imagePrompt: string, negativePrompt?: string) => void;
   
   // Generation action helpers (Phase 5.1.1)
   generateImageForScene: (sceneIndex: number, prompt?: string, seedFrame?: string) => Promise<void>;
+  autoGenerateSubsceneImages: () => Promise<void>;
   generateVideoForScene: (sceneIndex: number) => Promise<void>;
   extractFramesForScene: (sceneIndex: number) => Promise<void>;
   stitchAllVideos: () => Promise<void>;
@@ -239,6 +242,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         scenes: scenesWithState,
       };
     });
+
   },
 
   updateScene: (sceneId: string, updates: Partial<Scene>) => {
@@ -589,6 +593,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
           ),
         };
       }
+      
+      // Add clip to timeline incrementally when video is ready
+      // Use setTimeout to ensure state update completes first
+      
       return { scenes: updatedScenes };
     });
   },
@@ -622,6 +630,33 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         };
       }
       return { scenes: updatedScenes };
+    });
+  },
+
+  updateSubscenePrompt: (sceneIndex: number, subsceneIndex: number, imagePrompt: string, negativePrompt?: string) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard[sceneIndex]) return state;
+      
+      const scene = state.project.storyboard[sceneIndex];
+      if (!scene.subscenes || !scene.subscenes[subsceneIndex]) return state;
+      
+      // Update the subscene in the storyboard
+      const updatedStoryboard = [...state.project.storyboard];
+      updatedStoryboard[sceneIndex] = {
+        ...updatedStoryboard[sceneIndex],
+        subscenes: updatedStoryboard[sceneIndex].subscenes!.map((sub, i) =>
+          i === subsceneIndex
+            ? { ...sub, imagePrompt, ...(negativePrompt !== undefined && { negativePrompt }) }
+            : sub
+        ),
+      };
+      
+      return {
+        project: {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        },
+      };
     });
   },
 
@@ -745,6 +780,29 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
+
+  addUploadedImages: (newImages) => {
+    set((state) => {
+      if (!state.project) return state;
+      
+      // Merge with existing images, avoiding duplicates by ID
+      const existingIds = new Set(state.project.uploadedImages?.map(img => img.id) || []);
+      const uniqueNewImages = newImages.filter(img => !existingIds.has(img.id));
+      const allImages = [...(state.project.uploadedImages || []), ...uniqueNewImages];
+      
+      // Extract URLs for backward compatibility
+      const referenceImageUrls = allImages.map(img => img.url);
+      
+      return {
+        project: {
+          ...state.project,
+          uploadedImages: allImages,
+          referenceImageUrls, // Keep for backward compatibility
+        },
+        hasUploadedImages: allImages.length > 0,
+      };
+    });
+  },
   
   // Generation action helpers (Phase 5.1.1)
   generateImageForScene: async (sceneIndex: number, prompt?: string, seedFrame?: string) => {
@@ -756,7 +814,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     if (!scene) throw new Error('Invalid scene');
     
     // Use character references as reference images for object consistency
-    const referenceImageUrls: string[] = state.project.characterReferences || [];
+    // These are set from the brand identity page when user selects images
+    const referenceImageUrls: string[] = state.project.characterReferences || state.project.referenceImageUrls || [];
     
     // OPTION 1: Reference image is the PRIMARY driver for ALL scenes
     // Use reference image as seed (primary) + seed frame via IP-Adapter (for continuity in scenes 1-4)
@@ -867,6 +926,198 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     } else {
       throw new Error('Failed to stitch videos');
     }
+  },
+  
+  // Auto-generate 1 image and 1 video for each subscene when storyboard is created
+  autoGenerateSubsceneImages: async () => {
+    const state = useProjectStore.getState();
+    if (!state.project) {
+      console.warn('[AutoGenerate] No project found, skipping auto-generation');
+      return;
+    }
+
+    const { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3 } = await import('@/lib/api-client');
+    const { getRuntimeConfig } = await import('@/lib/config/model-runtime');
+    
+    // Collect all subscene generation tasks
+    const generationTasks: Array<{
+      sceneIndex: number;
+      subsceneIndex: number;
+      prompt: string;
+      negativePrompt?: string;
+      duration: number;
+    }> = [];
+
+    // Build list of all subscenes that need images/videos
+    state.scenes.forEach((scene, sceneIndex) => {
+      if (scene.subscenes && scene.subscenes.length > 0) {
+        scene.subscenes.forEach((subscene, subsceneIndex) => {
+          // Only generate if no images exist yet
+          const subsceneState = scene.subscenesWithState?.[subsceneIndex];
+          if (!subsceneState || subsceneState.generatedImages.length === 0) {
+            generationTasks.push({
+              sceneIndex,
+              subsceneIndex,
+              prompt: subscene.imagePrompt,
+              negativePrompt: subscene.negativePrompt,
+              duration: subscene.suggestedDuration,
+            });
+          }
+        });
+      }
+    });
+
+    if (generationTasks.length === 0) {
+      console.log('[AutoGenerate] No subscenes need image/video generation');
+      return;
+    }
+
+    console.log(`[AutoGenerate] Starting auto-generation for ${generationTasks.length} subscenes (1 image + 1 video each)`);
+    
+    // Get reference images from project
+    const referenceImageUrls: string[] = state.project.characterReferences || state.project.referenceImageUrls || [];
+    const runtimeConfig = getRuntimeConfig();
+    const promptAdjustmentMode = runtimeConfig.promptAdjustmentMode || 'scene-specific';
+
+    // Helper function to generate 1 image and 1 video for a subscene
+    const generateSubsceneImageAndVideo = async (
+      sceneIndex: number,
+      subsceneIndex: number,
+      prompt: string,
+      negativePrompt: string | undefined,
+      duration: number
+    ): Promise<void> => {
+      const store = useProjectStore.getState();
+      const scene = store.scenes[sceneIndex];
+      if (!scene) return;
+
+      try {
+        // Determine seed image
+        let seedImageUrl: string | undefined = undefined;
+
+        if (referenceImageUrls.length > 0) {
+          // Use reference image as seed image for all scenes
+          seedImageUrl = referenceImageUrls[0];
+        }
+
+        // Step 1: Generate 1 image for this subscene
+        console.log(`[AutoGenerate] Generating image for Scene ${sceneIndex + 1}, Subscene ${subsceneIndex + 1}...`);
+        store.setSubsceneStatus(sceneIndex, subsceneIndex, 'generating_image');
+
+        const imageResponse = await generateImage({
+          prompt,
+          projectId: state.project!.id,
+          sceneIndex,
+          subsceneIndex,
+          seedImage: seedImageUrl,
+          referenceImageUrls,
+          negativePrompt,
+          promptAdjustmentMode,
+        });
+
+        if (!imageResponse.success || !imageResponse.predictionId) {
+          throw new Error(imageResponse.error || 'Failed to start image generation');
+        }
+
+        // Poll for image completion
+        const imageStatus = await pollImageStatus(imageResponse.predictionId, {
+          interval: 2000,
+          timeout: 300000,
+          projectId: state.project!.id,
+          sceneIndex,
+          prompt,
+        });
+
+        if (imageStatus.status !== 'succeeded' || !imageStatus.image) {
+          throw new Error(imageStatus.error || 'Image generation failed');
+        }
+
+        // Add image to store and auto-select it
+        store.addSubsceneGeneratedImage(sceneIndex, subsceneIndex, imageStatus.image);
+        store.selectSubsceneImage(sceneIndex, subsceneIndex, imageStatus.image.id);
+        store.setSubsceneStatus(sceneIndex, subsceneIndex, 'image_ready');
+        console.log(`[AutoGenerate] ✓ Image generated for Scene ${sceneIndex + 1}, Subscene ${subsceneIndex + 1}`);
+
+        // Step 2: Generate video immediately after image is ready
+        console.log(`[AutoGenerate] Generating video for Scene ${sceneIndex + 1}, Subscene ${subsceneIndex + 1}...`);
+        store.setSubsceneStatus(sceneIndex, subsceneIndex, 'generating_video');
+
+        // Prepare image URL for video generation
+        let imageUrlForReplicate: string;
+        if (imageStatus.image.localPath) {
+          // Upload local image to S3 and get pre-signed URL
+          const uploadResult = await uploadImageToS3(imageStatus.image.localPath, state.project!.id);
+          imageUrlForReplicate = uploadResult.preSignedUrl;
+        } else if (imageStatus.image.url.startsWith('http://') || imageStatus.image.url.startsWith('https://')) {
+          imageUrlForReplicate = imageStatus.image.url;
+        } else {
+          // Convert local path to serveable URL
+          imageUrlForReplicate = `/api/serve-image?path=${encodeURIComponent(imageStatus.image.localPath || imageStatus.image.url)}`;
+        }
+
+
+        // Generate video
+        const videoResponse = await generateVideo(
+          imageUrlForReplicate,
+          prompt,
+          state.project!.id,
+          sceneIndex,
+          undefined, // No seed frame
+          duration,
+          subsceneIndex
+        );
+
+        if (!videoResponse.predictionId) {
+          throw new Error('Failed to start video generation');
+        }
+
+        // Poll for video completion
+        const videoStatus = await pollVideoStatus(videoResponse.predictionId, {
+          interval: 5000,
+          timeout: 600000,
+          projectId: state.project!.id,
+          sceneIndex,
+        });
+
+        if (videoStatus.status === 'succeeded' && videoStatus.videoPath) {
+          store.setSubsceneVideoPath(sceneIndex, subsceneIndex, videoStatus.videoPath);
+          store.setSubsceneStatus(sceneIndex, subsceneIndex, 'video_ready');
+          console.log(`[AutoGenerate] ✓ Video generated for Scene ${sceneIndex + 1}, Subscene ${subsceneIndex + 1}`);
+        } else {
+          throw new Error(videoStatus.error || 'Video generation failed');
+        }
+      } catch (error) {
+        console.error(`[AutoGenerate] Failed to generate image/video for Scene ${sceneIndex + 1}, Subscene ${subsceneIndex + 1}:`, error);
+        store.setSubsceneStatus(sceneIndex, subsceneIndex, 'pending');
+        throw error;
+      }
+    };
+
+    // Process all tasks in parallel (no batching delays - go as fast as possible)
+    console.log(`[AutoGenerate] Processing all ${generationTasks.length} subscenes in parallel...`);
+    
+    const results = await Promise.allSettled(
+      generationTasks.map(task => 
+        generateSubsceneImageAndVideo(
+          task.sceneIndex,
+          task.subsceneIndex,
+          task.prompt,
+          task.negativePrompt,
+          task.duration
+        )
+      )
+    );
+
+    const successCount = results.filter(r => r.status === 'fulfilled').length;
+    const failureCount = results.filter(r => r.status === 'rejected').length;
+
+    console.log(`[AutoGenerate] Auto-generation completed: ${successCount} succeeded, ${failureCount} failed`);
+    
+    useProjectStore.getState().addChatMessage({
+      role: 'agent',
+      content: `✓ Auto-generated ${successCount}/${generationTasks.length} subscenes (image + video)`,
+      type: successCount === generationTasks.length ? 'status' : 'error',
+    });
   },
   
   // Workflow state management (Phase 5.1.2)
@@ -1028,9 +1279,22 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   
   // Style selection management
   setSelectedStyle: (style: 'whimsical' | 'luxury' | 'offroad', prompt: string) => {
-    set({
-      selectedStyle: style,
-      selectedStylePrompt: prompt,
+    set((state) => {
+      // Also update the project with the visual style
+      if (state.project) {
+        return {
+          selectedStyle: style,
+          selectedStylePrompt: prompt,
+          project: {
+            ...state.project,
+            visualStyle: style,
+          },
+        };
+      }
+      return {
+        selectedStyle: style,
+        selectedStylePrompt: prompt,
+      };
     });
   },
   
@@ -1038,7 +1302,6 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setSelectedClipId: (clipId: string | null) => {
     set({ selectedClipId: clipId });
   },
-  
   initializeTimelineClips: () => {
     set((state) => {
       if (!state.project) return state;
@@ -1072,11 +1335,14 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
             if (video && video.localPath) {
               const duration = video.actualDuration || subscene.suggestedDuration || 1;
+              // Get subscene description from the original scene
+              const subsceneDescription = state.project?.storyboard[sceneIndex]?.subscenes?.[subsceneIndex]?.description || `Scene ${sceneIndex + 1}-${subsceneIndex + 1}`;
               clips.push({
                 id: uuidv4(),
                 sceneIndex,
+                subsceneIndex,
                 sceneId: scene.id,
-                title: `${scene.description} - ${subscene.description}`,
+                title: subsceneDescription, // Use subscene description as title
                 videoId: video.id,
                 videoLocalPath: video.localPath,
                 startTime: currentTime,
@@ -1122,7 +1388,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                 id: uuidv4(),
                 sceneIndex,
                 sceneId: scene.id,
-                title: `${scene.description} (${clipIndex + 1}/${CLIPS_PER_SCENE})`,
+                title: `Scene ${sceneIndex + 1}-${clipIndex + 1}`,
                 videoId: video.id,
                 videoLocalPath: video.localPath,
                 startTime: currentTime,

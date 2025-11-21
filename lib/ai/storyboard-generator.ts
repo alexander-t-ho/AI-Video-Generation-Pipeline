@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import { Scene, Subscene, StoryboardResponse } from '../types';
+import { getStyleDefinition, VisualStyleType } from '../config/visual-styles';
 
 // ============================================================================
 // Constants
@@ -29,14 +30,59 @@ export function setRuntimeTextModel(model: string) {
 }
 
 /**
- * System prompt for storyboard generation
- * From PRD Appendix: Prompt Templates
- *
- * Updated to enforce SHORT, concise scene descriptions for advertising, with a default
- * bias toward product and automotive work and an Arri Alexa commercial look.
+ * Generates style-aware system prompt for storyboard generation
+ * @param visualStyle The selected visual style (whimsical, luxury, offroad, or null for default)
+ * @returns System prompt customized for the selected style
  */
-const STORYBOARD_SYSTEM_PROMPT = `You are a professional video storyboard creator specializing in performance-focused advertising,
+function generateSystemPrompt(visualStyle?: VisualStyleType | null): string {
+  let styleGuidance = '';
+  let defaultCinematography = 'Arri Alexa with a high-end commercial finish';
+  let styleSpecificInstructions = '';
+
+  if (visualStyle) {
+    const styleDef = getStyleDefinition(visualStyle);
+
+    // Extract key cinematography elements
+    const cameraMovement = styleDef.cinematography.cameraMovement.slice(0, 3).join('; ');
+    const lighting = styleDef.cinematography.lightingStyle.slice(0, 2).join('; ');
+    const pacing = styleDef.cinematography.pacing;
+    const colorPalette = styleDef.cinematography.colorPalette.slice(0, 3).join(', ');
+
+    defaultCinematography = `${styleDef.name} style aesthetic`;
+
+    styleGuidance = `
+VISUAL STYLE: ${styleDef.name.toUpperCase()}
+${styleDef.description}
+
+STORYBOARD STRUCTURE GUIDANCE:
+- Scene Structure: ${styleDef.storyboardGuidance.sceneStructure}
+- Transition Style: ${styleDef.storyboardGuidance.transitionStyle}
+- Visual Progression: ${styleDef.storyboardGuidance.visualProgression}
+- Climax Approach: ${styleDef.storyboardGuidance.climaxApproach}
+
+CINEMATOGRAPHY GUIDELINES:
+- Camera Movement: ${cameraMovement}
+- Lighting: ${lighting}
+- Pacing: ${pacing}
+- Color Palette: ${colorPalette}
+
+NARRATIVE TONE:
+- Storytelling: ${styleDef.narrative.storytellingApproach}
+- Emotional Tone: ${styleDef.narrative.emotionalTone.join(', ')}
+- Pace: ${styleDef.narrative.paceDescription}
+
+Every scene and subscene must embody this visual style. The imagePrompt for each subscene should include specific style elements.`;
+
+    styleSpecificInstructions = `
+CRITICAL: Every imagePrompt must incorporate the ${styleDef.name} style elements:
+- Begin prompts with: "${styleDef.globalPromptModifiers.prefix}"
+- End prompts with: "${styleDef.globalPromptModifiers.suffix}"
+- Consider these negative elements to avoid: ${styleDef.globalPromptModifiers.negativePrompt}`;
+  }
+
+  return `You are a professional video storyboard creator specializing in performance-focused advertising,
 with particular strength in product and automotive commercials.
+${styleGuidance}
 
 Given a short creative brief for a video advertisement, create exactly 5 scenes. Each scene must have exactly 3 subscenes that break down the scene's action into a mini-narrative arc.
 
@@ -44,12 +90,13 @@ For each scene:
 - Total duration: 3 seconds (1 second per subscene)
 - Clear visual focus and logical progression from the previous scene
 - Keep the scene description SHORT and CONCISE - 3-6 words maximum
+${visualStyle ? `- Ensure the scene embodies the ${visualStyle} visual style` : ''}
 
 For each subscene within a scene:
 - Duration: 1 second
 - Should progress the scene's story (beginning, middle, end of the moment)
 - Keep the subscene description SHORT - 2-4 words
-- Provide detailed imagePrompt for visual generation
+- Provide detailed imagePrompt for visual generation that INCLUDES THE VISUAL STYLE
 
 Scene description examples:
 "driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
@@ -60,8 +107,9 @@ Subscene description examples (for a "driver close-up" scene):
 - Subscene 2: "determined expression"
 
 Unless the brief clearly specifies otherwise, assume:
-- The spot is shot on Arri Alexa with a high-end commercial finish
+- The spot is shot with ${defaultCinematography}
 - The goal is to showcase the product or vehicle in a bold, cinematic way
+${styleSpecificInstructions}
 
 Output strictly valid JSON in this format:
 {
@@ -73,7 +121,7 @@ Output strictly valid JSON in this format:
         {
           "order": 0,
           "description": "Short 2-4 word subscene description",
-          "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
+          "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition. MUST include visual style elements.",
           "duration": 1
         },
         {
@@ -95,6 +143,7 @@ Output strictly valid JSON in this format:
 }
 
 Keep image prompts specific, visual, and production-ready. Each subscene should feel like a natural progression within its parent scene.`;
+}
 
 // ============================================================================
 // Types
@@ -160,12 +209,14 @@ interface RawStoryboardResponse {
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 15)
  * @param referenceImageUrls Optional array of reference image URLs
+ * @param visualStyle Optional visual style to apply to storyboard
  * @returns Raw JSON response from OpenRouter
  */
 async function callOpenRouterAPI(
   prompt: string,
   targetDuration: number = 15,
-  referenceImageUrls?: string[]
+  referenceImageUrls?: string[],
+  visualStyle?: VisualStyleType | null
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -252,12 +303,14 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
     }
   }
 
+  const systemPrompt = generateSystemPrompt(visualStyle);
+
   const requestBody: OpenRouterRequest = {
     model: OPENROUTER_MODEL,
     messages: [
       {
         role: 'system',
-        content: STORYBOARD_SYSTEM_PROMPT + '\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object.',
+        content: systemPrompt + '\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object.',
       },
       {
         role: 'user',
@@ -511,12 +564,14 @@ async function retryWithBackoff<T>(
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 15)
  * @param referenceImageUrls Optional array of reference image URLs for visual context
+ * @param visualStyle Optional visual style to apply (whimsical, luxury, offroad)
  * @returns Array of 5 validated scenes with UUIDs
  */
 export async function generateStoryboard(
   prompt: string,
   targetDuration: number = 15,
-  referenceImageUrls?: string[]
+  referenceImageUrls?: string[],
+  visualStyle?: VisualStyleType | null
 ): Promise<Scene[]> {
   // Validate inputs
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -532,12 +587,13 @@ export async function generateStoryboard(
   console.log(`${logPrefix} Starting storyboard generation`);
   console.log(`${logPrefix} Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
   console.log(`${logPrefix} Target duration: ${targetDuration}s`);
+  console.log(`${logPrefix} Visual style: ${visualStyle || 'default'}`);
   console.log(`${logPrefix} Timestamp: ${new Date().toISOString()}`);
 
   // Retry logic with exponential backoff
   const scenes = await retryWithBackoff(async () => {
     // Call OpenRouter API
-    const apiResponse = await callOpenRouterAPI(prompt, targetDuration, referenceImageUrls);
+    const apiResponse = await callOpenRouterAPI(prompt, targetDuration, referenceImageUrls, visualStyle);
 
     // Extract JSON content from response
     const content = apiResponse.choices[0]?.message?.content;

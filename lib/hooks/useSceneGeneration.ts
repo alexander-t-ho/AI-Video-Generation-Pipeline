@@ -115,9 +115,15 @@ export function useSceneGeneration(
       });
 
       const seedFrameUrl = getSeedFrameUrl(sceneIndex);
-      // Reference images would come from uploaded images for object consistency
-      // For now, using empty array as placeholder
-      const referenceImageUrls: string[] = [];
+      // Get reference images from project state (set from brand identity page)
+      // These are the images selected on the brand identity page for object consistency
+      const referenceImageUrls: string[] = project.characterReferences || project.referenceImageUrls || [];
+      
+      if (referenceImageUrls.length > 0) {
+        console.log(`[useSceneGeneration] Scene ${sceneIndex}: Using ${referenceImageUrls.length} reference image(s) from brand identity`);
+      } else {
+        console.warn(`[useSceneGeneration] Scene ${sceneIndex}: No reference images found in project state`);
+      }
       
       // OPTION 1: Reference image is the PRIMARY driver for ALL scenes
       // Use reference image as seed (primary) + seed frame via IP-Adapter (for continuity in scenes 1-4)

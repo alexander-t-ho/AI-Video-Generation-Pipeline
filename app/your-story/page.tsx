@@ -236,8 +236,9 @@ function YourStoryContent() {
         }
       }
 
-      // Generate storyboard using the API
-      const result = await createProject(prompt, duration);
+      // Generate storyboard using the API with visual style
+      const visualStyle = store.selectedStyle || null;
+      const result = await createProject(prompt, duration, visualStyle);
 
       if (result.storyboard.success && result.storyboard.scenes) {
         setStoryboardScenes(result.storyboard.scenes);

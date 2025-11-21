@@ -5,6 +5,9 @@ import { CarDatabase, CarVariant, CarReferenceImage } from '@/components/brand-i
 import { CarMediaType } from '@prisma/client';
 import { getStorageService } from '@/lib/storage/storage-service';
 
+// Force dynamic rendering since this route uses headers() via getSession()
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/assets/cars
  * Fetch car assets database from Database (Postgres)

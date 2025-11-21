@@ -111,11 +111,13 @@ export async function POST(request: NextRequest) {
     const prompt = body.prompt.trim();
     const targetDuration = body.targetDuration || 15;
     const referenceImageUrls = body.referenceImageUrls || [];
+    const visualStyle = body.visualStyle || null;
 
     console.log('[Storyboard API] Request received:', {
       prompt: prompt.substring(0, 50) + '...',
       targetDuration,
       referenceImageCount: referenceImageUrls.length,
+      visualStyle: visualStyle || 'default',
     });
 
     // Check for API key
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate storyboard
-    const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls);
+    const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls, visualStyle);
 
     const duration = Date.now() - startTime;
     console.log(`[Storyboard API] Successfully generated storyboard in ${duration}ms`);

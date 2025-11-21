@@ -210,7 +210,7 @@ export default function AssetViewer({
     setSelectedColor(color);
     // Store selected color in project state
     storeSelectedColor(color);
-    
+
     setIsRecoloring(true);
     setRecolorError(null);
 
@@ -237,25 +237,24 @@ export default function AssetViewer({
 
       console.log(`[AssetViewer] Recoloring ${imagesToRecolor.length} images...`);
 
-      // Process images sequentially to avoid overwhelming the API/rate limits
-      // and to provide better progress updates
+      // Process images in parallel for faster recoloring
       const recoloredResults: Array<{ url: string, colorHex: string }> = [];
-      
-      for (const image of imagesToRecolor) {
+
+      const recolorPromises = imagesToRecolor.map(async (image) => {
         try {
           // Ensure we have a publicly accessible URL for the AI model
           let imageUrl = image.url;
           console.log(`[AssetViewer] Processing image ${image.id}:`, imageUrl);
-    
+
           if (imageUrl.includes('/api/serve-image?path=')) {
             // For serve-image URLs (local files), we need to upload to S3 first
             console.log('Local serve-image URL detected, attempting to upload to S3 for recoloring:', imageUrl);
-    
+
             try {
               // Extract the actual file path from serve-image URLs
               const urlParams = new URLSearchParams(imageUrl.split('?')[1]);
               const filePath = urlParams.get('path') || imageUrl;
-    
+
               const uploadResponse = await fetch('/api/upload-image-s3', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -264,7 +263,7 @@ export default function AssetViewer({
                   projectId: 'brand-identity-recolor-upload',
                 }),
               });
-    
+
               const uploadData = await uploadResponse.json();
               if (uploadData.success && uploadData.data?.s3Url) {
                 imageUrl = uploadData.data.s3Url;
@@ -277,7 +276,7 @@ export default function AssetViewer({
               // Continue with the original URL - FLUX-dev might be able to handle it
             }
           }
-    
+
           // Call the recolor API
           const response = await fetch('/api/recolor-image', {
             method: 'POST',
@@ -291,22 +290,27 @@ export default function AssetViewer({
               sceneIndex: 0,
             }),
           });
-    
+
           const data = await response.json();
-    
+
           if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to recolor image');
           }
-          
-          // Collect result
-          recoloredResults.push({ url: data.image.url, colorHex: color });
+
           console.log(`[AssetViewer] Successfully recolored image ${image.id}`);
-          
+          return { url: data.image.url, colorHex: color };
+
         } catch (singleImageError) {
           console.error(`[AssetViewer] Failed to recolor image ${image.id}:`, singleImageError);
-          // Continue with other images even if one fails
+          return null;
         }
-      }
+      });
+
+      // Wait for all recolor operations to complete
+      const results = await Promise.all(recolorPromises);
+
+      // Filter out failed operations and collect successful results
+      recoloredResults.push(...results.filter((result): result is { url: string, colorHex: string } => result !== null));
       
       // Add all successfully recolored images in one batch
       if (recoloredResults.length > 0 && selectedCar) {
@@ -327,6 +331,7 @@ export default function AssetViewer({
       setRecolorError(errorMessage);
       console.error('Recoloring failed:', errorMessage);
     } finally {
+      // Always reset the recoloring state to allow future color changes
       setIsRecoloring(false);
     }
   };

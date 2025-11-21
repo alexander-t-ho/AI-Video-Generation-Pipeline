@@ -2,9 +2,10 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
-import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight, X, Upload, Loader2 } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
+import { uploadImages } from '@/lib/api-client';
 
 interface MediaItem {
   id: string;
@@ -56,6 +57,10 @@ export default function MediaDrawer() {
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const thumbnailRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadZoneRef = useRef<HTMLDivElement>(null);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -112,6 +117,42 @@ export default function MediaDrawer() {
   const generatedImages = useMemo(() => {
     const allImages: MediaItem[] = [];
     scenes.forEach((scene, sceneIndex) => {
+      // Check subscenes first (new flow)
+      if (scene.subscenesWithState && scene.subscenesWithState.length > 0) {
+        scene.subscenesWithState.forEach((subscene, subsceneIndex) => {
+          subscene.generatedImages?.forEach((img) => {
+            // Always serve through API using localPath for consistent access
+            // S3 URLs may not be publicly accessible, so we proxy through our API
+            let imageUrl: string;
+            if (img.localPath) {
+              imageUrl = `/api/serve-image?path=${encodeURIComponent(img.localPath)}`;
+            } else if (img.url.startsWith('/api')) {
+              imageUrl = img.url;
+            } else if (!img.url.startsWith('http://') && !img.url.startsWith('https://')) {
+              imageUrl = `/api/serve-image?path=${encodeURIComponent(img.url)}`;
+            } else {
+              // For external URLs (including S3), still try to use localPath if available
+              imageUrl = `/api/serve-image?path=${encodeURIComponent(img.localPath || img.url)}`;
+            }
+
+            allImages.push({
+              id: img.id,
+              type: 'image' as const,
+              url: imageUrl,
+              sceneIndex,
+              prompt: img.prompt,
+              timestamp: img.createdAt,
+              metadata: {
+                // Store full URL for preview modal
+                fullUrl: imageUrl,
+                subsceneIndex,
+              },
+            });
+          });
+        });
+      }
+      
+      // Legacy flow: check scene-level images
       scene.generatedImages?.forEach((img) => {
         // Always serve through API using localPath for consistent access
         // S3 URLs may not be publicly accessible, so we proxy through our API
@@ -147,6 +188,62 @@ export default function MediaDrawer() {
   const generatedVideos = useMemo(() => {
     const allVideos: MediaItem[] = [];
     scenes.forEach((scene, sceneIndex) => {
+      // Check subscenes first (new flow)
+      if (scene.subscenesWithState && scene.subscenesWithState.length > 0) {
+        scene.subscenesWithState.forEach((subscene, subsceneIndex) => {
+          // Show all generated videos for this subscene
+          if (subscene.generatedVideos && subscene.generatedVideos.length > 0) {
+            subscene.generatedVideos.forEach((video) => {
+              // Always serve through API using localPath for consistent access
+              let videoUrl: string;
+              if (video.localPath) {
+                videoUrl = `/api/serve-video?path=${encodeURIComponent(video.localPath)}`;
+              } else if (video.url.startsWith('/api')) {
+                videoUrl = video.url;
+              } else {
+                videoUrl = `/api/serve-video?path=${encodeURIComponent(video.localPath || video.url)}`;
+              }
+
+              allVideos.push({
+                id: video.id,
+                type: 'video' as const,
+                url: videoUrl,
+                sceneIndex,
+                timestamp: video.timestamp,
+                metadata: {
+                  isSelected: subscene.selectedVideoId === video.id,
+                  localPath: video.localPath,
+                  actualDuration: video.actualDuration,
+                  prompt: video.prompt,
+                  subsceneIndex,
+                },
+              });
+            });
+          } else if (subscene.videoLocalPath) {
+            // Backward compatibility: if no generatedVideos array but videoLocalPath exists
+            let videoUrl = subscene.videoLocalPath;
+            if (!videoUrl.startsWith('http') && !videoUrl.startsWith('/api')) {
+              videoUrl = `/api/serve-video?path=${encodeURIComponent(subscene.videoLocalPath)}`;
+            }
+
+            allVideos.push({
+              id: `video-${sceneIndex}-${subsceneIndex}-legacy`,
+              type: 'video' as const,
+              url: videoUrl,
+              sceneIndex,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                isSelected: true, // Legacy videos are always selected
+                localPath: subscene.videoLocalPath,
+                actualDuration: subscene.actualDuration,
+                subsceneIndex,
+              },
+            });
+          }
+        });
+      }
+      
+      // Legacy flow: check scene-level videos
       // Show all generated videos (old and new)
       if (scene.generatedVideos && scene.generatedVideos.length > 0) {
         scene.generatedVideos.forEach((video) => {
@@ -312,18 +409,26 @@ export default function MediaDrawer() {
   // Character references from project state
   const characterReferences = useMemo(() => {
     const refs: MediaItem[] = [];
-    project?.characterReferences?.forEach((url, index) => {
-      // Always serve through API - character references are stored as URLs/paths
+    if (!project?.characterReferences || project.characterReferences.length === 0) {
+      console.log('[MediaDrawer] No character references found in project state');
+      return refs;
+    }
+    
+    console.log('[MediaDrawer] Processing character references:', project.characterReferences.length);
+    project.characterReferences.forEach((url, index) => {
+      // Handle different URL formats from brand identity page
       let imageUrl: string;
       if (url.startsWith('/api')) {
+        // Already a serve-image API URL
         imageUrl = url;
-      } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        imageUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        // Already a full HTTP/HTTPS URL (S3 signed URL, external URL, etc.) - use directly
+        imageUrl = url;
       } else {
-        // For S3 or external URLs, try to proxy through API
-        // Note: This may fail if localPath isn't available
+        // Local path - convert to serve-image API URL
         imageUrl = `/api/serve-image?path=${encodeURIComponent(url)}`;
       }
+      console.log(`[MediaDrawer] Character ref ${index}: ${url.substring(0, 80)}... -> ${imageUrl.substring(0, 80)}...`);
       refs.push({
         id: `character-ref-${index}`,
         type: 'image' as const,
@@ -331,6 +436,7 @@ export default function MediaDrawer() {
         timestamp: new Date().toISOString(),
       });
     });
+    console.log('[MediaDrawer] Created', refs.length, 'character reference items');
     return refs;
   }, [project?.characterReferences]);
 
@@ -409,6 +515,67 @@ export default function MediaDrawer() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(file => 
+      file.type.startsWith('image/')
+    );
+    await processFileUpload(files);
+  };
+
+  const processFileUpload = async (files: File[]) => {
+    if (files.length === 0 || !project) return;
+
+    setIsUploading(true);
+    try {
+      const uploadResult = await uploadImages(files, project.id);
+      
+      // Add new images to the project store
+      if (uploadResult.images && uploadResult.images.length > 0) {
+        const { addUploadedImages } = useProjectStore.getState();
+        addUploadedImages(uploadResult.images);
+      }
+    } catch (error) {
+      console.error('Failed to upload images:', error);
+      alert('Failed to upload images. Please try again.');
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files).filter(file => 
+      file.type.startsWith('image/')
+    );
+
+    if (files.length > 0) {
+      await processFileUpload(files);
+    }
   };
 
   const renderMediaThumbnail = (item: MediaItem) => {
@@ -744,13 +911,98 @@ export default function MediaDrawer() {
         )}
 
         {/* Uploaded Media */}
-        {renderSection(
-          'Uploaded Media',
-          'uploaded',
-          uploadedMedia,
-          <ImageIcon className="w-4 h-4" />,
-          'No media uploaded'
-        )}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => toggleSection('uploaded')}
+              className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-white hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                {expandedSections.uploaded ? (
+                  <ChevronDown className="w-4 h-4 text-white/60" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-white/60" />
+                )}
+                <span className="text-white/60"><ImageIcon className="w-4 h-4" /></span>
+                <span>Uploaded Media</span>
+                {uploadedMedia.length > 0 && (
+                  <span className="ml-2 px-2 py-0.5 text-xs bg-white/10 text-white/80 rounded-full border border-white/20">
+                    {uploadedMedia.length}
+                  </span>
+                )}
+              </div>
+            </button>
+          </div>
+
+          {expandedSections.uploaded && (
+            <div className="mt-2">
+              {/* Upload Button with Drag & Drop */}
+              <div className="mb-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  multiple
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <div
+                  ref={uploadZoneRef}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`w-full px-4 py-3 border-2 border-dashed rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    isDragging
+                      ? 'border-white/40 bg-white/15'
+                      : 'border-white/20 bg-white/5 hover:border-white/30 hover:bg-white/10'
+                  } ${isUploading || !project ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  onClick={!isUploading && project ? handleUploadClick : undefined}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-white/80">Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 text-white/60" />
+                      <span className="text-sm text-white/80">
+                        {isDragging ? 'Drop images here' : 'Click or drag to add more images'}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Media Grid */}
+              {uploadedMedia.length === 0 ? (
+                <p className="text-xs text-white/60 px-2 py-4 text-center">
+                  No media uploaded
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {uploadedMedia
+                    .filter((item) => {
+                      if (mediaDrawer.searchQuery) {
+                        const query = mediaDrawer.searchQuery.toLowerCase();
+                        const matchesName = item.metadata?.originalName?.toLowerCase().includes(query);
+                        const matchesLabel = item.metadata?.label?.toLowerCase().includes(query);
+                        if (!matchesName && !matchesLabel) return false;
+                      }
+                      if (mediaDrawer.filters.scene !== undefined && item.sceneIndex !== mediaDrawer.filters.scene) {
+                        return false;
+                      }
+                      if (mediaDrawer.filters.type && item.type !== mediaDrawer.filters.type) {
+                        return false;
+                      }
+                      return true;
+                    })
+                    .map(renderMediaThumbnail)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Final Output */}
         {finalVideo && (

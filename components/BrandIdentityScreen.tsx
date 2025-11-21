@@ -185,9 +185,71 @@ export default function BrandIdentityScreen() {
     setSelectedAssetIds(new Set());
   };
 
-  const handleContinue = () => {
-    // Go directly to the main workspace
+  const handleContinue = async () => {
+    // Collect selected reference image URLs and save them to project state
+    const store = useProjectStore.getState();
+    const { setCharacterReferences, autoGenerateSubsceneImages } = store;
+    const referenceImageUrls: string[] = [];
+    
+    if (selectedCar && selectedAssetIds.size > 0) {
+      // Get URLs of all selected reference images
+      selectedCar.referenceImages.forEach((img) => {
+        if (selectedAssetIds.has(img.id)) {
+          referenceImageUrls.push(img.url);
+        }
+      });
+    }
+    
+    // Save reference images to project state for use in image generation
+    if (referenceImageUrls.length > 0) {
+      console.log('[BrandIdentityScreen] Saving reference images to project state:', referenceImageUrls.length);
+      console.log('[BrandIdentityScreen] Reference image URLs:', referenceImageUrls);
+      setCharacterReferences(referenceImageUrls);
+    } else if (selectedCar) {
+      // If no specific assets selected, use all reference images from the selected car
+      const allUrls = selectedCar.referenceImages.map(img => img.url);
+      if (allUrls.length > 0) {
+        console.log('[BrandIdentityScreen] No assets selected, using all reference images from selected car:', allUrls.length);
+        console.log('[BrandIdentityScreen] Reference image URLs:', allUrls);
+        setCharacterReferences(allUrls);
+      }
+    } else {
+      console.warn('[BrandIdentityScreen] No car selected and no reference images to save');
+    }
+    
+    // Navigate to workspace immediately (don't wait for generation)
     router.push('/workspace');
+    
+    // Trigger auto-generation in the background after navigation
+    // Use setTimeout to ensure state update (setCharacterReferences) has completed
+    // and to allow navigation to happen first
+    setTimeout(() => {
+      const currentState = useProjectStore.getState();
+      const hasSubscenes = currentState.scenes.some(scene => scene.subscenes && scene.subscenes.length > 0);
+      
+      if (hasSubscenes) {
+        console.log('[BrandIdentityScreen] Storyboard with subscenes found, starting auto-generation...');
+        console.log('[BrandIdentityScreen] Using character references:', currentState.project?.characterReferences?.length || 0);
+        currentState.addChatMessage({
+          role: 'agent',
+          content: 'Starting automatic image and video generation for all subscenes using selected brand elements...',
+          type: 'status',
+        });
+        
+        // Start auto-generation in the background (don't wait for it)
+        // Images/videos will appear in real-time as they're generated
+        currentState.autoGenerateSubsceneImages().catch((error) => {
+          console.error('[BrandIdentityScreen] Error during auto-generation:', error);
+          useProjectStore.getState().addChatMessage({
+            role: 'agent',
+            content: `⚠️ Auto-generation encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: 'error',
+          });
+        });
+      } else {
+        console.log('[BrandIdentityScreen] No subscenes found in storyboard, skipping auto-generation');
+      }
+    }, 200); // Small delay to ensure state update is complete and navigation has started
   };
 
   const handleAddRecoloredImages = (baseCarId: string, images: Array<{ url: string, colorHex: string }>) => {

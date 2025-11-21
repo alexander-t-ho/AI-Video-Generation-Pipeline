@@ -2,11 +2,10 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
-import SeedFrameSelector from './SeedFrameSelector';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages } from '@/lib/api-client';
-import { GeneratedImage, GeneratedVideo, SeedFrame } from '@/lib/types';
+import { GeneratedImage, GeneratedVideo } from '@/lib/types';
 import { UploadedImage, ProcessedImage } from '@/lib/storage/image-storage';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
@@ -60,9 +59,7 @@ export default function EditorView() {
     selectImage,
     setVideoPath,
     setCurrentSceneIndex,
-    setSeedFrames,
     setViewMode,
-    selectSeedFrame,
     updateScenePrompt,
     updateSceneSettings,
     // Subscene actions
@@ -70,6 +67,10 @@ export default function EditorView() {
     addSubsceneGeneratedImage,
     selectSubsceneImage,
     setSubsceneVideoPath,
+    selectSubsceneVideo,
+    updateSubscenePrompt,
+    // Video selection
+    selectVideo,
   } = useProjectStore();
 
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -77,12 +78,10 @@ export default function EditorView() {
   const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
-  const [isExtractingFrames, setIsExtractingFrames] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState('');
   const [editedNegativePrompt, setEditedNegativePrompt] = useState('');
   const [editedDuration, setEditedDuration] = useState<number | ''>('');
-  const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(false);
   const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
   const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' }>>([]);
   const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
@@ -90,9 +89,11 @@ export default function EditorView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [enlargedSeedFrameUrl, setEnlargedSeedFrameUrl] = useState<string | null>(null);
+  const lastSavedPromptRef = useRef<string | null>(null); // Track last saved prompt to avoid reading stale activePrompt
   // Subscene selection state
   const [currentSubsceneIndex, setCurrentSubsceneIndex] = useState(0);
+  // Media tab selection (Images or Videos)
+  const [mediaTab, setMediaTab] = useState<'images' | 'videos'>('images');
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -128,6 +129,9 @@ export default function EditorView() {
 
   const sceneImages = activeState?.generatedImages || [];
   const sceneHasImage = sceneImages.length > 0;
+  // Check if generation is in progress (from store status or local state)
+  const isGeneratingFromStore = activeState?.status === 'generating_image' || activeState?.status === 'generating_video';
+  const isActuallyGenerating = isGeneratingImage || isGeneratingFromStore;
   const selectedImage = sceneImages.find((img: GeneratedImage) => img.id === (selectedImageId || activeState?.selectedImageId));
   // Get selected video (prefer selectedVideoId, fallback to videoLocalPath for backward compatibility)
   // Use activeState for subscene support
@@ -150,7 +154,6 @@ export default function EditorView() {
     : undefined);
   
   const sceneHasVideo = !!selectedVideo && !!videoUrl;
-  const seedFrames = sceneState?.seedFrames || [];
 
   // Update selected image ID when scene/subscene state changes
   useEffect(() => {
@@ -168,12 +171,18 @@ export default function EditorView() {
   useEffect(() => {
     if (currentScene) {
       // Use active prompt for subscene support
-      setEditedPrompt(activePrompt);
+      // If we have a saved prompt ref, use that (it's what we just saved)
+      // Otherwise, use activePrompt which should have the latest saved value
+      if (lastSavedPromptRef.current) {
+        setEditedPrompt(lastSavedPromptRef.current);
+        lastSavedPromptRef.current = null; // Clear after using
+      } else {
+        setEditedPrompt(activePrompt);
+      }
       setEditedNegativePrompt(activeNegativePrompt || '');
       // For subscenes, use the subscene duration; for legacy, use scene custom duration
       setEditedDuration(hasSubscenes ? '' : (currentScene.customDuration || ''));
       // Default to false (opt-in for longer scenes), or use saved value
-      setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
       // Initialize custom images - support both single string (legacy) and array
       const imageInputs = currentScene.customImageInput
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
@@ -197,7 +206,7 @@ export default function EditorView() {
         return { url: previewUrl, source: 'media' as const };
       }));
     }
-  }, [activePrompt, activeNegativePrompt, hasSubscenes, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex, currentSubsceneIndex]);
+  }, [activePrompt, activeNegativePrompt, hasSubscenes, currentScene?.customDuration, currentScene?.customImageInput, currentSceneIndex, currentSubsceneIndex]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -224,14 +233,13 @@ export default function EditorView() {
         setSceneStatus(currentSceneIndex, 'generating_image');
       }
 
-      // Get reference images from project (uploaded images for object consistency)
-      let referenceImageUrls = project.referenceImageUrls || [];
+      // Get reference images from project (set from brand identity page for object consistency)
+      let referenceImageUrls = project.characterReferences || project.referenceImageUrls || [];
 
-      // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
+      // Determine seed image
       let seedImageUrl: string | undefined = undefined;
-      let seedFrameUrl: string | undefined = undefined;
 
-      // Priority: Custom image input > seed frame > reference image
+      // Priority: Custom image input > reference image
       // Handle custom image inputs (can be single string or array)
       const customImageInputs = currentScene.customImageInput
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
@@ -265,36 +273,8 @@ export default function EditorView() {
           referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls];
           console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
         }
-      } else if (currentSceneIndex > 0) {
-        // Only use seed frame if explicitly enabled via checkbox
-        const useSeedFrame = currentScene.useSeedFrame === true;
-        if (useSeedFrame) {
-          const previousScene = scenes[currentSceneIndex - 1];
-          if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
-            // Use selected seed frame, or default to first frame if none selected
-            const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
-            const selectedFrame = previousScene.seedFrames[selectedIndex];
-
-            // Ensure the seed frame URL is a public URL (S3 or serveable)
-            if (selectedFrame?.url) {
-              const frameUrl = selectedFrame.url;
-              // If it's a local path, convert to serveable URL
-              if (!frameUrl.startsWith('http://') && !frameUrl.startsWith('https://') && !frameUrl.startsWith('/api')) {
-                seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || frameUrl)}`;
-              } else {
-                seedFrameUrl = frameUrl;
-              }
-
-              // Use the seed frame as the seed image for image-to-image generation
-              seedImageUrl = seedFrameUrl;
-              console.log(`[EditorView] Scene ${currentSceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl!.substring(0, 80) + '...');
-            }
-          }
-        } else {
-          console.log(`[EditorView] Scene ${currentSceneIndex}: Seed frame checkbox is disabled, not using seed frame`);
-        }
       } else if (referenceImageUrls.length > 0) {
-        // For Scene 0: Use reference image as seed image if available
+        // Use reference image as seed image if available
         seedImageUrl = referenceImageUrls[0];
         console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
       }
@@ -316,9 +296,8 @@ export default function EditorView() {
             projectId: project.id,
             sceneIndex: currentSceneIndex,
             subsceneIndex: hasSubscenes ? currentSubsceneIndex : undefined, // Pass subscene index if applicable
-            seedImage: seedImageUrl, // Custom image input, seed frame from previous scene, or reference image for Scene 0
+            seedImage: seedImageUrl, // Custom image input or reference image
             referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
-            seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
             negativePrompt: activeNegativePrompt, // Use active negative prompt
             promptAdjustmentMode, // Prompt adjustment mode from runtime config
           });
@@ -451,10 +430,6 @@ export default function EditorView() {
   };
 
   const handleRegenerateVideo = async () => {
-    // Clear seed frames for current scene before regenerating
-    // This ensures new seed frames are extracted from the newly generated video
-    setSeedFrames(currentSceneIndex, []);
-    console.log(`[EditorView] Cleared seed frames for Scene ${currentSceneIndex + 1} before regeneration`);
     
     // Regenerate video using the same logic as handleGenerateVideo
     await handleGenerateVideo();
@@ -524,34 +499,6 @@ export default function EditorView() {
         console.log('[EditorView] Uploaded image to S3, using pre-signed URL:', imageUrlForReplicate.substring(0, 80) + '...');
       }
 
-      // Get seed frame from previous scene (if enabled and not Scene 0)
-      // When enabled, the seed frame will be used as the first frame of the generated clip
-      let seedFrameUrl: string | undefined;
-      const useSeedFrame = currentScene.useSeedFrame === true; // Only use if explicitly enabled
-      if (currentSceneIndex > 0 && useSeedFrame) {
-        const previousScene = scenes[currentSceneIndex - 1];
-        if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
-          const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
-          const selectedFrame = previousScene.seedFrames[selectedIndex];
-
-          // Check if frame URL is already a public URL (S3 or served via API)
-          if (selectedFrame.url.startsWith('http://') || selectedFrame.url.startsWith('https://')) {
-            seedFrameUrl = selectedFrame.url; // Already an S3/public URL
-          } else {
-            // Upload to S3 and get pre-signed URL for Replicate
-            const localPath = selectedFrame.localPath || selectedFrame.url;
-            try {
-              const { preSignedUrl: framePreSignedUrl } = await uploadImageToS3(localPath, project.id);
-              seedFrameUrl = framePreSignedUrl; // Use pre-signed URL for Replicate access
-            } catch (error) {
-              console.error('Error uploading seed frame:', error);
-              // If upload fails, we can't proceed - the API requires a public URL
-              throw new Error('Failed to upload seed frame. Please try again.');
-            }
-          }
-        }
-      }
-
       // Get scene duration (customDuration takes precedence over suggestedDuration)
       // For subscenes, use activeDuration
       const sceneDuration = hasSubscenes ? activeDuration : (currentScene.customDuration || currentScene.suggestedDuration);
@@ -562,7 +509,7 @@ export default function EditorView() {
         activePrompt, // Use active prompt (subscene or scene)
         project.id,
         currentSceneIndex,
-        seedFrameUrl, // Pass seed frame for scenes 1-4
+        undefined, // No seed frame
         sceneDuration, // Pass scene-specific duration (will be rounded up to model-acceptable values)
         hasSubscenes ? currentSubsceneIndex : undefined // Pass subscene index if applicable
       );
@@ -592,110 +539,6 @@ export default function EditorView() {
           console.warn('Video download failed, using Replicate URL:', videoStatus.error);
         }
 
-        // Extract seed frames immediately after video generation (for the next scene)
-        // Only extract if this isn't the last scene
-        if (currentSceneIndex < 4) {
-          setIsExtractingFrames(true);
-          try {
-            // Clear any existing seed frames for this scene before extracting new ones
-            // This ensures we only use frames from the current video generation
-            setSeedFrames(currentSceneIndex, []);
-            console.log(`[EditorView] Cleared existing seed frames for Scene ${currentSceneIndex + 1} before extraction`);
-            
-            // IMPORTANT: Use the video path from videoStatus (which we just received)
-            // and verify it's for the correct scene index
-            let videoPath = videoStatus.videoPath;
-            
-            // Verify the video path matches the current scene index
-            // Video files are named like: scene-{sceneIndex}-{timestamp}.mp4
-            const sceneIndexInPath = videoPath.match(/scene-(\d+)-/);
-            if (sceneIndexInPath) {
-              const pathSceneIndex = parseInt(sceneIndexInPath[1]);
-              if (pathSceneIndex !== currentSceneIndex) {
-                console.error(`[EditorView] CRITICAL: Video path scene index mismatch!`);
-                console.error(`[EditorView] Expected scene ${currentSceneIndex}, but video path contains scene ${pathSceneIndex}`);
-                console.error(`[EditorView] Video path: ${videoPath}`);
-                console.error(`[EditorView] This will cause seed frames to be extracted from the wrong scene!`);
-                // Try to get the correct video path from scene state (might be updated by now)
-                const currentSceneState = scenes[currentSceneIndex];
-                const currentSelectedVideo = currentSceneState?.generatedVideos?.find((v: GeneratedVideo) => v.id === currentSceneState.selectedVideoId)
-                  || (currentSceneState?.videoLocalPath ? { localPath: currentSceneState.videoLocalPath } : undefined);
-                if (currentSelectedVideo?.localPath) {
-                  const correctPathSceneIndex = currentSelectedVideo.localPath.match(/scene-(\d+)-/);
-                  if (correctPathSceneIndex && parseInt(correctPathSceneIndex[1]) === currentSceneIndex) {
-                    console.log(`[EditorView] Using corrected video path from scene state: ${currentSelectedVideo.localPath}`);
-                    videoPath = currentSelectedVideo.localPath;
-                  } else {
-                    throw new Error(`Cannot extract seed frames: Video path is for scene ${pathSceneIndex}, but we need scene ${currentSceneIndex}`);
-                  }
-                } else {
-                  throw new Error(`Cannot extract seed frames: Video path is for scene ${pathSceneIndex}, but we need scene ${currentSceneIndex}`);
-                }
-              } else {
-                console.log(`[EditorView] ✓ Verified: Video path matches current scene ${currentSceneIndex + 1}`);
-              }
-            } else {
-              console.warn(`[EditorView] Could not verify scene index in video path: ${videoPath}`);
-              console.warn(`[EditorView] Proceeding with extraction, but path format may be unexpected`);
-            }
-            
-            console.log(`[EditorView] Extracting seed frames from Scene ${currentSceneIndex + 1} video: ${videoPath}`);
-            console.log(`[EditorView] Calling extractFrames with sceneIndex=${currentSceneIndex} (Scene ${currentSceneIndex + 1})`);
-
-            // If it's a URL, we can't extract frames from it directly
-            if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
-              console.warn('Video path is a URL, cannot extract frames. Expected local path.');
-            } else {
-              // Double-check the video file exists and matches the scene
-              console.log(`[EditorView] Verifying video file exists and is for correct scene...`);
-              const response = await extractFrames(
-                videoPath,
-                project.id,
-                currentSceneIndex
-              );
-              console.log(`[EditorView] ✓ extractFrames completed for Scene ${currentSceneIndex + 1}, got ${response.frames?.length || 0} frames`);
-
-              if (response.frames && response.frames.length > 0) {
-                // Upload seed frames to S3 so they can be used for video generation
-                const uploadedFrames = await Promise.all(
-                  response.frames.map(async (frame) => {
-                    try {
-                      // Upload frame to S3 and get pre-signed URL for Replicate
-                      const { s3Url, preSignedUrl } = await uploadImageToS3(frame.url, project.id);
-                      return {
-                        ...frame,
-                        url: preSignedUrl, // Use pre-signed URL for Replicate access
-                        localPath: frame.url, // Keep local path for reference
-                        s3Url, // Store S3 URL for storage reference
-                      };
-                    } catch (error) {
-                      console.error('Error uploading seed frame to S3:', error);
-                      // If S3 upload fails, convert local path to serveable URL
-                      const localPath = (frame as any).localPath || frame.url;
-                      if (!localPath.startsWith('http://') && !localPath.startsWith('https://') && !localPath.startsWith('/api')) {
-                        return {
-                          ...frame,
-                          url: `/api/serve-image?path=${encodeURIComponent(localPath)}`,
-                          localPath: localPath,
-                        } as SeedFrame;
-                      }
-                      return frame as SeedFrame;
-                    }
-                  })
-                );
-
-                // Store seed frames in CURRENT scene (to be used for next scene)
-                setSeedFrames(currentSceneIndex, uploadedFrames);
-                console.log(`Extracted and stored ${uploadedFrames.length} seed frames for Scene ${currentSceneIndex + 1} (for use in Scene ${currentSceneIndex + 2})`);
-              }
-            }
-          } catch (error) {
-            console.error('Error extracting seed frames:', error);
-            // Don't fail the entire video generation if seed frame extraction fails
-          } finally {
-            setIsExtractingFrames(false);
-          }
-        }
       } else if (videoStatus.status === 'succeeded' && !videoStatus.videoPath) {
         // Video succeeded but no path available (shouldn't happen with our fix, but handle it)
         throw new Error(videoStatus.error || 'Video generated but no video path available. Please try again.');
@@ -756,23 +599,24 @@ export default function EditorView() {
         return;
       }
 
-      // Move to next scene (seed frames already extracted after video generation)
+      // Move to next scene
       const nextSceneIndex = currentSceneIndex + 1;
       setCurrentSceneIndex(nextSceneIndex);
     }
   };
 
-  const handleSelectSeedFrame = (frameIndex: number) => {
-    // Just select the frame - the checkbox controls whether it's actually used
-    selectSeedFrame(currentSceneIndex, frameIndex);
-  };
 
-  const handleTogglePromptExpansion = () => {
+  const handleTogglePromptExpansion = async () => {
     if (!isPromptExpanded) {
       // Expanding: Initialize edit fields and enter edit mode
-      setEditedPrompt(currentScene.imagePrompt);
-      setEditedNegativePrompt(currentScene.negativePrompt || '');
-      setEditedDuration(currentScene.customDuration || '');
+      // Use activePrompt which correctly handles subscenes, or use saved ref if available
+      const promptToUse = lastSavedPromptRef.current || activePrompt;
+      setEditedPrompt(promptToUse);
+      if (lastSavedPromptRef.current) {
+        lastSavedPromptRef.current = null; // Clear after using
+      }
+      setEditedNegativePrompt(activeNegativePrompt || '');
+      setEditedDuration(hasSubscenes ? '' : (currentScene.customDuration || ''));
       // Initialize custom images - support both single string (legacy) and array
       const imageInputs = currentScene.customImageInput 
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
@@ -798,11 +642,23 @@ export default function EditorView() {
       setIsEditingPrompt(true);
       setIsPromptExpanded(true);
     } else {
-      // Collapsing: Just close the editor (auto-save has already saved changes)
-      // Clear any pending saves
+      // Collapsing: Save immediately if there are unsaved changes
+      // Clear any pending debounced saves
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
       }
+      
+      // Immediately save if there are changes (don't wait for debounce)
+      if (editedPrompt.trim() && editedPrompt.trim() !== activePrompt) {
+        // Trigger immediate save (bypass debounce) and wait for it to complete
+        await autoSave(true, true);
+        // Track what we just saved so we can use it when expanding again
+        lastSavedPromptRef.current = editedPrompt.trim();
+        // Small delay to ensure store update propagates before collapsing
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
       setIsEditingPrompt(false);
       setIsPromptExpanded(false);
     }
@@ -898,16 +754,6 @@ export default function EditorView() {
       }
     }
 
-    // Search in seed frames
-    for (const scene of scenes) {
-      if (scene.seedFrames) {
-        const frame = scene.seedFrames.find((f: SeedFrame) => f.id === itemId);
-        if (frame) {
-          // Return the URL - could be S3 URL or local path
-          return frame.url || frame.localPath || null;
-        }
-      }
-    }
 
     // Search in uploaded images
     if (project?.uploadedImages) {
@@ -1036,7 +882,7 @@ export default function EditorView() {
   };
 
   // Auto-save function with debouncing
-  const autoSave = useCallback(async (skipImages = false) => {
+  const autoSave = useCallback(async (skipImages = false, immediate = false) => {
     if (!editedPrompt.trim()) {
       return; // Don't save if prompt is empty
     }
@@ -1044,10 +890,10 @@ export default function EditorView() {
     // Clear any pending save
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
     }
 
-    // Debounce the save
-    saveTimeoutRef.current = setTimeout(async () => {
+    const performSave = async () => {
       let imageInputUrls: string[] = [];
 
       // Collect all image URLs from different sources
@@ -1109,23 +955,45 @@ export default function EditorView() {
           ? imageInputUrls[0] 
           : imageInputUrls;
 
-      // Update scene settings
-      updateSceneSettings(currentSceneIndex, {
-        imagePrompt: editedPrompt.trim(),
-        negativePrompt: editedNegativePrompt.trim() || undefined,
-        customDuration: editedDuration ? Number(editedDuration) : undefined,
-        customImageInput: imageInput,
-        useSeedFrame: editedUseSeedFrame,
-      });
-    }, 1000); // 1 second debounce
-  }, [editedPrompt, editedNegativePrompt, editedDuration, editedUseSeedFrame, customImageFiles, customImagePreviews, droppedImageUrls, currentSceneIndex, project, updateSceneSettings]);
+      // Update scene or subscene settings
+      if (hasSubscenes) {
+        // Update subscene prompt
+        updateSubscenePrompt(
+          currentSceneIndex,
+          currentSubsceneIndex,
+          editedPrompt.trim(),
+          editedNegativePrompt.trim() || undefined
+        );
+        // Also update scene-level settings for duration and image input (shared across subscenes)
+        updateSceneSettings(currentSceneIndex, {
+          customDuration: editedDuration ? Number(editedDuration) : undefined,
+          customImageInput: imageInput,
+        });
+      } else {
+        // Update scene settings (legacy flow)
+        updateSceneSettings(currentSceneIndex, {
+          imagePrompt: editedPrompt.trim(),
+          negativePrompt: editedNegativePrompt.trim() || undefined,
+          customDuration: editedDuration ? Number(editedDuration) : undefined,
+          customImageInput: imageInput,
+        });
+      }
+    };
+
+    // If immediate, save right away; otherwise debounce
+    if (immediate) {
+      performSave().catch(console.error);
+    } else {
+      saveTimeoutRef.current = setTimeout(performSave, 1000); // 1 second debounce
+    }
+  }, [editedPrompt, editedNegativePrompt, editedDuration, customImageFiles, customImagePreviews, droppedImageUrls, currentSceneIndex, currentSubsceneIndex, hasSubscenes, project, updateSceneSettings, updateSubscenePrompt]);
 
   // Auto-save on text field changes
   useEffect(() => {
     if (isPromptExpanded && editedPrompt.trim()) {
       autoSave(true); // Skip images for text-only changes
     }
-  }, [editedPrompt, editedNegativePrompt, editedDuration, editedUseSeedFrame, isPromptExpanded, autoSave]);
+  }, [editedPrompt, editedNegativePrompt, editedDuration, isPromptExpanded, autoSave]);
 
   // Auto-save when images change (with upload)
   useEffect(() => {
@@ -1149,10 +1017,9 @@ export default function EditorView() {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    setEditedPrompt(currentScene.imagePrompt);
-    setEditedNegativePrompt(currentScene.negativePrompt || '');
-    setEditedDuration(currentScene.customDuration || '');
-    setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
+    setEditedPrompt(activePrompt);
+    setEditedNegativePrompt(activeNegativePrompt || '');
+    setEditedDuration(hasSubscenes ? '' : (currentScene.customDuration || ''));
     
     // Clean up blob URLs
     customImagePreviews.forEach(preview => {
@@ -1261,6 +1128,62 @@ export default function EditorView() {
                 {currentSubscene.description}
               </p>
             )}
+
+            {/* Images/Videos Sub-tabs */}
+            <div className="mt-4 flex gap-2 border-b border-white/10">
+              <button
+                onClick={() => setMediaTab('images')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  mediaTab === 'images'
+                    ? 'border-white text-white'
+                    : 'border-transparent text-white/60 hover:text-white/80'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4" />
+                  Images
+                  {hasSubscenes ? (
+                    sceneState?.subscenesWithState?.[currentSubsceneIndex]?.generatedImages && (
+                      <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">
+                        {sceneState.subscenesWithState[currentSubsceneIndex].generatedImages.length}
+                      </span>
+                    )
+                  ) : (
+                    sceneState?.generatedImages && (
+                      <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">
+                        {sceneState.generatedImages.length}
+                      </span>
+                    )
+                  )}
+                </div>
+              </button>
+              <button
+                onClick={() => setMediaTab('videos')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  mediaTab === 'videos'
+                    ? 'border-white text-white'
+                    : 'border-transparent text-white/60 hover:text-white/80'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Video className="w-4 h-4" />
+                  Videos
+                  {hasSubscenes ? (
+                    sceneState?.subscenesWithState?.[currentSubsceneIndex]?.generatedVideos && (
+                      <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">
+                        {sceneState.subscenesWithState[currentSubsceneIndex].generatedVideos.length}
+                      </span>
+                    )
+                  ) : (
+                    sceneState?.generatedVideos && (
+                      <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">
+                        {sceneState.generatedVideos.length}
+                      </span>
+                    )
+                  )}
+                </div>
+              </button>
+            </div>
             <div className="mt-2">
               <div className="flex items-start gap-2">
                 <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -1330,51 +1253,6 @@ export default function EditorView() {
                           </div>
                         </div>
                         
-                        {/* Use Seed Frame Toggle */}
-                        {currentSceneIndex > 0 && (() => {
-                          const previousScene = scenes[currentSceneIndex - 1];
-                          const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
-                          const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
-                          const seedFrameUrl = seedFrame?.url 
-                            ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
-                                ? seedFrame.url
-                                : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
-                            : null;
-                          
-                          return (
-                            <div className="flex-1">
-                              <label className="block text-xs font-medium text-white mb-1">
-                                Use seed frame
-                              </label>
-                              <div className="flex items-center gap-2">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={editedUseSeedFrame}
-                                    onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
-                                    className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
-                                  />
-                                  <span className="text-xs font-medium text-white/80">
-                                    Enable for longer scenes that will be stitched together
-                                  </span>
-                                </label>
-                                {editedUseSeedFrame && seedFrameUrl && (
-                                  <div 
-                                    className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                                    onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
-                                    title="Double-click to enlarge"
-                                  >
-                                    <img
-                                      src={seedFrameUrl}
-                                      alt="Seed frame preview"
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
                       </div>
 
                       {/* Image Input (Optional) */}
@@ -1476,7 +1354,23 @@ export default function EditorView() {
 
       {/* Main Preview Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {!sceneHasImage && !sceneHasVideo && !isGeneratingImage && (
+        {mediaTab === 'images' ? (
+          <>
+            {/* Loading indicator - show while generating and no content exists yet */}
+            {!sceneHasImage && !sceneHasVideo && isActuallyGenerating && (
+          <div className="flex flex-col items-center justify-center h-full bg-white/5 rounded-lg border-2 border-dashed border-white/20">
+            <Loader2 className="w-16 h-16 text-white/60 animate-spin mb-4" />
+            <p className="text-lg font-medium text-white/90 mb-2">
+              Generating your first image...
+            </p>
+            <p className="text-sm text-white/60 text-center max-w-md">
+              Using your selected brand elements to create the first scene. This may take a moment.
+            </p>
+          </div>
+        )}
+
+        {/* Empty state - show when not generating and no content exists */}
+        {!sceneHasImage && !sceneHasVideo && !isActuallyGenerating && (
           <div className="flex flex-col items-center justify-center h-full bg-white/5 rounded-lg border-2 border-dashed border-white/20">
             <ImageIcon className="w-12 h-12 text-white/40 mb-4" />
             <p className="text-sm text-white/60 mb-4">
@@ -1494,11 +1388,11 @@ export default function EditorView() {
         )}
 
         {/* Image Generation Grid */}
-        {(isGeneratingImage || sceneHasImage) && !sceneHasVideo && (
+        {(isActuallyGenerating || sceneHasImage) && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-medium text-white">
-                {isGeneratingImage ? 'Generating images...' : 'Select an image'}
+                {isActuallyGenerating ? 'Generating images...' : 'Select an image'}
               </h4>
               {sceneHasImage && (
                 <button
@@ -1589,91 +1483,151 @@ export default function EditorView() {
             )}
           </div>
         )}
-
-        {sceneHasVideo && (
+          </>
+        ) : (
+          /* Videos Tab */
           <div className="space-y-4">
-            {/* Video Preview */}
-            <div className="relative">
-              <VideoPlayer
-                src={videoUrl}
-                className="w-full"
-              />
-              {/* Regenerate Button */}
-              <button
-                onClick={handleRegenerateVideo}
-                disabled={isGeneratingVideo}
-                className="absolute top-4 right-4 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20 backdrop-blur-sm flex items-center gap-2"
-                title="Regenerate video"
-              >
-                {isGeneratingVideo ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Regenerating...
-                  </>
-                ) : (
-                  <>
-                    <Video className="w-4 h-4" />
-                    Regenerate
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Get all videos for current clip/subscene */}
+            {(() => {
+              const allVideos = hasSubscenes 
+                ? (sceneState?.subscenesWithState?.[currentSubsceneIndex]?.generatedVideos || [])
+                : (sceneState?.generatedVideos || []);
+              const selectedVideoId = hasSubscenes
+                ? (sceneState?.subscenesWithState?.[currentSubsceneIndex]?.selectedVideoId)
+                : (sceneState?.selectedVideoId);
 
-            {/* Seed Frame Selection */}
-            {seedFrames.length > 0 && currentSceneIndex < 4 && (
-              <div className="mt-6 p-4 bg-white/5 rounded-lg border border-white/20">
-                <SeedFrameSelector
-                  frames={seedFrames}
-                  selectedFrameIndex={sceneState?.selectedSeedFrameIndex}
-                  onSelectFrame={handleSelectSeedFrame}
-                />
-              </div>
-            )}
+              if (allVideos.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-64 bg-white/5 rounded-lg border-2 border-dashed border-white/20">
+                    <Video className="w-12 h-12 text-white/40 mb-4" />
+                    <p className="text-sm text-white/60 mb-4">
+                      No videos generated yet
+                    </p>
+                    <p className="text-xs text-white/40 text-center max-w-md">
+                      Generate an image first, then create a video from it
+                    </p>
+                  </div>
+                );
+              }
 
-            {/* Approve & Continue */}
-            <button
-              onClick={handleApproveAndContinue}
-              disabled={isExtractingFrames}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
-            >
-              {isExtractingFrames ? (
+              return (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Extracting seed frames...
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-white">
+                      Select a video
+                    </h4>
+                  </div>
+
+                  {/* Videos Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {allVideos.map((video) => {
+                      const isSelected = video.id === selectedVideoId;
+                      const videoUrl = video.url || (video.localPath 
+                        ? (video.localPath.startsWith('http://') || video.localPath.startsWith('https://')
+                          ? video.localPath
+                          : `/api/serve-video?path=${encodeURIComponent(video.localPath)}`)
+                        : '');
+
+                      return (
+                        <div
+                          key={video.id}
+                          onClick={() => {
+                            if (hasSubscenes) {
+                              selectSubsceneVideo(currentSceneIndex, currentSubsceneIndex, video.id);
+                            } else {
+                              selectVideo(currentSceneIndex, video.id);
+                            }
+                          }}
+                          className={`relative aspect-video rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-white ring-2 ring-white/20'
+                              : 'border-white/20 hover:border-white/40'
+                          }`}
+                        >
+                          {videoUrl ? (
+                            <>
+                              <VideoPlayer
+                                src={videoUrl}
+                                className="w-full h-full"
+                              />
+                              {isSelected && (
+                                <div className="absolute top-2 right-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white rounded-full p-1">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                              <Video className="w-8 h-8 text-white/40" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Regenerate Video Button */}
+                  {selectedVideoId && (
+                    <button
+                      onClick={handleRegenerateVideo}
+                      disabled={isGeneratingVideo}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+                    >
+                      {isGeneratingVideo ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Regenerating Video...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-5 h-5" />
+                          Regenerate Video
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Approve & Continue - Show if video is selected */}
+                  {selectedVideoId && (
+                    <button
+                      onClick={handleApproveAndContinue}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+                    >
+                      {hasSubscenes ? (
+                        currentSubsceneIndex < (currentScene.subscenes?.length || 0) - 1 ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Approve & Continue to Clip {currentSubsceneIndex + 2}
+                          </>
+                        ) : currentSceneIndex >= 4 ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Approve & View Final Video
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Approve & Continue to Scene {currentSceneIndex + 2}
+                          </>
+                        )
+                      ) : (
+                        currentSceneIndex >= 4 ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Approve & View Final Video
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Approve & Continue to Next Scene
+                          </>
+                        )
+                      )}
+                    </button>
+                  )}
                 </>
-              ) : hasSubscenes ? (
-                // Subscene workflow
-                currentSubsceneIndex < (currentScene.subscenes?.length || 0) - 1 ? (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Approve & Continue to Clip {currentSubsceneIndex + 2}
-                  </>
-                ) : currentSceneIndex >= 4 ? (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Approve & View Final Video
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Approve & Continue to Scene {currentSceneIndex + 2}
-                  </>
-                )
-              ) : (
-                // Legacy workflow
-                currentSceneIndex >= 4 ? (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Approve & View Final Video
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Approve & Continue to Next Scene
-                  </>
-                )
-              )}
-            </button>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1688,28 +1642,6 @@ export default function EditorView() {
       )}
 
       {/* Enlarged Seed Frame Modal */}
-      {enlargedSeedFrameUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setEnlargedSeedFrameUrl(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center">
-            <img
-              src={enlargedSeedFrameUrl}
-              alt="Seed frame (enlarged)"
-              className="max-w-full max-h-full object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <button
-              onClick={() => setEnlargedSeedFrameUrl(null)}
-              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors"
-              title="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
