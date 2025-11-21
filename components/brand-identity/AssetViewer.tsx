@@ -204,7 +204,7 @@ export default function AssetViewer({
     }
   };
 
-  const handleColorSelect = async (color: string) => {
+  const handleColorSelect = async (color: string, seed?: number) => {
     if (!selectedCar) return;
 
     setSelectedColor(color);
@@ -288,6 +288,7 @@ export default function AssetViewer({
               colorHex: color,
               projectId: 'brand-identity-recolor', // Use a fixed project ID for now
               sceneIndex: 0,
+              seed: seed, // Pass the optional seed
             }),
           });
 
@@ -333,6 +334,8 @@ export default function AssetViewer({
     } finally {
       // Always reset the recoloring state to allow future color changes
       setIsRecoloring(false);
+      // Reset the selected color to allow the user to change colors again with a fresh state
+      setSelectedColor(null);
     }
   };
 
