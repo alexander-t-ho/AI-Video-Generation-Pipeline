@@ -18,7 +18,7 @@ export interface ChatMessage {
 // UI State Types
 // ============================================================================
 
-export type ViewMode = 'storyboard' | 'timeline' | 'editor';
+export type ViewMode = 'storyboard' | 'timeline' | 'editor' | 'images';
 
 export interface MediaDrawerState {
   selectedItems: string[];

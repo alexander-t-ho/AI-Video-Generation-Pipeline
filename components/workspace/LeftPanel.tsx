@@ -578,7 +578,8 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       const response = await generateStoryboard(
         prompt,
         project.targetDuration,
-        [] // TODO: Get reference image URLs from project if available
+        project.visualStyle || null,
+        project.referenceImageUrls || []
       );
 
       if (response.success && response.scenes) {

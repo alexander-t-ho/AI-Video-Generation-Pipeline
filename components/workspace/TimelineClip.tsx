@@ -82,7 +82,9 @@ export default function TimelineClip({
 
           {/* Scene Number Badge */}
           <div className="absolute top-1 left-1 bg-blue-600/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10">
-            Scene {clip.sceneIndex + 1}
+            {clip.subsceneIndex !== undefined 
+              ? `Scene ${clip.sceneIndex + 1}-${clip.subsceneIndex + 1}`
+              : `Scene ${clip.sceneIndex + 1}`}
           </div>
 
           {/* Clip Title */}

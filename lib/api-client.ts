@@ -127,6 +127,7 @@ async function retryRequest<T>(
 export async function generateStoryboard(
   prompt: string,
   targetDuration: number = 15,
+  visualStyle?: 'whimsical' | 'luxury' | 'offroad' | null,
   referenceImageUrls?: string[]
 ): Promise<StoryboardResponse> {
   return retryRequest(async () => {
@@ -140,6 +141,7 @@ export async function generateStoryboard(
         prompt,
         targetDuration,
         referenceImageUrls,
+        visualStyle,
       } as StoryboardRequest),
     });
 
@@ -158,9 +160,10 @@ export async function generateStoryboard(
 export async function createProject(
   prompt: string,
   targetDuration: number = 15,
+  visualStyle?: 'whimsical' | 'luxury' | 'offroad' | null,
   referenceImageUrls?: string[]
 ): Promise<{ projectId: string; storyboard: StoryboardResponse }> {
-  const storyboard = await generateStoryboard(prompt, targetDuration, referenceImageUrls);
+  const storyboard = await generateStoryboard(prompt, targetDuration, visualStyle, referenceImageUrls);
 
   if (!storyboard.success || !storyboard.scenes) {
     throw new Error(storyboard.error || 'Failed to generate storyboard');

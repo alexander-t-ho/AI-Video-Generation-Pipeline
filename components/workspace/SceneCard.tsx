@@ -77,16 +77,6 @@ export default function SceneCard({
     }
   };
 
-  // Get seed frame from previous scene
-  const getSeedFrameUrl = (): string | undefined => {
-    if (sceneIndex === 0 || !project) return undefined;
-    const previousScene = scenes[sceneIndex - 1];
-    if (previousScene?.selectedSeedFrameIndex !== undefined && previousScene.seedFrames) {
-      const selectedFrame = previousScene.seedFrames[previousScene.selectedSeedFrameIndex];
-      return selectedFrame?.url;
-    }
-    return undefined;
-  };
 
   const getProductReferenceImage = (): string | undefined => {
     if (!project) return undefined;
@@ -145,14 +135,13 @@ export default function SceneCard({
         type: 'status',
       });
 
-      // Get reference images from project (uploaded images for object consistency)
-      let referenceImageUrls = project.referenceImageUrls || [];
+      // Get reference images from project (set from brand identity page for object consistency)
+      let referenceImageUrls = project.characterReferences || project.referenceImageUrls || [];
 
-      // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
+      // Determine seed image
       let seedImageUrl: string | undefined = undefined;
-      let seedFrameUrl: string | undefined = undefined;
 
-      // Priority: Custom image input > seed frame > reference image
+      // Priority: Custom image input > reference image
       // Handle custom image inputs (can be single string or array)
       const customImageInputs = scene.customImageInput
         ? (Array.isArray(scene.customImageInput) ? scene.customImageInput : [scene.customImageInput])
@@ -186,36 +175,8 @@ export default function SceneCard({
           referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls];
           console.log(`[SceneCard] Scene ${sceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
         }
-      } else if (sceneIndex > 0) {
-        // Only use seed frame if explicitly enabled via checkbox
-        const useSeedFrame = scene.useSeedFrame === true;
-        if (useSeedFrame) {
-          const previousScene = scenes[sceneIndex - 1];
-          if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
-            // Use selected seed frame, or default to first frame if none selected
-            const selectedIndex = previousScene.selectedSeedFrameIndex ?? 0;
-            const selectedFrame = previousScene.seedFrames[selectedIndex];
-
-            // Ensure the seed frame URL is a public URL (S3 or serveable)
-            if (selectedFrame?.url) {
-              const frameUrl = selectedFrame.url;
-              // If it's a local path, convert to serveable URL
-              if (!frameUrl.startsWith('http://') && !frameUrl.startsWith('https://') && !frameUrl.startsWith('/api')) {
-                seedFrameUrl = `/api/serve-image?path=${encodeURIComponent(selectedFrame.localPath || frameUrl)}`;
-              } else {
-                seedFrameUrl = frameUrl;
-              }
-
-              // Use the seed frame as the seed image for image-to-image generation
-              seedImageUrl = seedFrameUrl;
-              console.log(`[SceneCard] Scene ${sceneIndex}: Using seed frame as seed image for image-to-image generation:`, seedImageUrl!.substring(0, 80) + '...');
-            }
-          }
-        } else {
-          console.log(`[SceneCard] Scene ${sceneIndex}: Seed frame checkbox is disabled, not using seed frame`);
-        }
       } else if (referenceImageUrls.length > 0) {
-        // For Scene 0: Use reference image as seed image if available
+        // Use reference image as seed image if available
         seedImageUrl = referenceImageUrls[0];
         console.log(`[SceneCard] Scene ${sceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
       }
@@ -230,9 +191,8 @@ export default function SceneCard({
         prompt: scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedImageUrl, // Custom image input, seed frame from previous scene, or reference image for Scene 0
+        seedImage: seedImageUrl, // Custom image input or reference image
         referenceImageUrls, // Reference images via IP-Adapter (for object consistency)
-        seedFrame: seedFrameUrl, // Seed frame URL (same as seedImage for scenes 1-4, unless custom image input is used)
         negativePrompt: scene.negativePrompt, // Optional negative prompt
         promptAdjustmentMode, // Prompt adjustment mode from runtime config
       };
@@ -304,13 +264,12 @@ export default function SceneCard({
         type: 'status',
       });
 
-      const seedFrameUrl = getSeedFrameUrl();
       const response = await generateVideo(
         selectedImage.url,
         scene.imagePrompt,
         project.id,
         sceneIndex,
-        seedFrameUrl
+        undefined // No seed frame
       );
 
       if (!response.predictionId) {

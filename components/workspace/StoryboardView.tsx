@@ -26,8 +26,12 @@ export default function StoryboardView() {
     });
 
     try {
-      const response = await generateStoryboard(project.prompt, project.targetDuration);
-      
+      const response = await generateStoryboard(
+        project.prompt,
+        project.targetDuration,
+        project.visualStyle || null
+      );
+
       if (response.success && response.scenes) {
         setStoryboard(response.scenes);
         addChatMessage({

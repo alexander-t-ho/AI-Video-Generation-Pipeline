@@ -38,6 +38,7 @@ export interface StoryboardRequest {
   prompt: string;
   targetDuration?: number;   // Default: 15
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images
+  visualStyle?: 'whimsical' | 'luxury' | 'offroad' | null; // Optional: Visual style to apply to storyboard
 }
 
 export interface StoryboardResponse {
@@ -103,10 +104,10 @@ export interface ProjectState {
   targetDuration: number; // 15, 30, or 60 seconds
   status: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';
   createdAt: string;
-  
+
   storyboard: Scene[];
   currentSceneIndex: number;
-  
+
   finalVideoUrl?: string;
   finalVideoS3Key?: string;
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images for object consistency (backward compatibility)
@@ -114,7 +115,10 @@ export interface ProjectState {
   characterDescription?: string; // Optional: Description of the character/product
   uploadedImageUrls?: string[]; // Optional: Original uploaded image URLs (before background removal)
   uploadedImages?: Array<import('./storage/image-storage').UploadedImage>; // Full uploaded image objects with processed versions
-  
+
+  // Visual style context
+  visualStyle?: 'whimsical' | 'luxury' | 'offroad' | null; // Selected visual style for storyboard generation
+
   // Brand identity context (for asset-based generation)
   assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
   selectedColor?: string; // Hex color code of last selected color
@@ -197,8 +201,9 @@ export interface SeedFrame {
 export interface TimelineClip {
   id: string;                // UUID v4
   sceneIndex: number;        // Original scene index this clip came from
+  subsceneIndex?: number;    // Optional: Subscene index (for subscene-based workflow)
   sceneId: string;           // Original scene ID
-  title: string;             // Clip title (usually scene description)
+  title: string;             // Clip title (subscene description or scene description)
   videoId: string;           // Reference to GeneratedVideo ID
   videoLocalPath: string;    // Local path to the source video file
   startTime: number;         // Start time in the timeline (seconds)
