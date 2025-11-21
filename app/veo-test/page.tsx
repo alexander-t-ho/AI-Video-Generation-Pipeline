@@ -1,54 +1,99 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Loader2, Download, X } from 'lucide-react';
 
+interface ImageWithPreview {
+  file: File;
+  preview: string;
+}
+
 export default function VeoTestPage() {
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
+  const [primaryImage, setPrimaryImage] = useState<ImageWithPreview | null>(null);
+  const [additionalImages, setAdditionalImages] = useState<ImageWithPreview[]>([]);
   const [prompt, setPrompt] = useState('');
+  const [negativePrompt, setNegativePrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedVideo, setGeneratedVideo] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const primaryFileInputRef = useRef<HTMLInputElement>(null);
+  const additionalFileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePrimaryImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+      const preview = URL.createObjectURL(file);
+      setPrimaryImage({ file, preview });
       setError('');
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleAdditionalImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    
+    const newImages: ImageWithPreview[] = imageFiles.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    
+    setAdditionalImages((prev) => [...prev, ...newImages]);
+    setError('');
+    
+    // Reset input
+    if (additionalFileInputRef.current) {
+      additionalFileInputRef.current.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, isPrimary: boolean) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent, isPrimary: boolean) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+
+    if (isPrimary && imageFiles.length > 0) {
+      const file = imageFiles[0];
+      const preview = URL.createObjectURL(file);
+      setPrimaryImage({ file, preview });
+      setError('');
+    } else if (!isPrimary && imageFiles.length > 0) {
+      const newImages: ImageWithPreview[] = imageFiles.map((file) => ({
+        file,
+        preview: URL.createObjectURL(file),
+      }));
+      setAdditionalImages((prev) => [...prev, ...newImages]);
       setError('');
     }
   };
 
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const removePrimaryImage = () => {
+    if (primaryImage) {
+      URL.revokeObjectURL(primaryImage.preview);
+      setPrimaryImage(null);
     }
+    if (primaryFileInputRef.current) {
+      primaryFileInputRef.current.value = '';
+    }
+  };
+
+  const removeAdditionalImage = (index: number) => {
+    setAdditionalImages((prev) => {
+      const removed = prev[index];
+      URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleSubmit = async () => {
-    if (!imageFile || !prompt.trim()) {
-      setError('Please provide both an image and a prompt');
+    if (!primaryImage || !prompt.trim()) {
+      setError('Please provide at least a primary image and a prompt');
       return;
     }
 
@@ -57,10 +102,20 @@ export default function VeoTestPage() {
     setGeneratedVideo('');
 
     try {
-      // Create form data with image and prompt
+      // Create form data with images and prompts
       const formData = new FormData();
-      formData.append('image', imageFile);
+      formData.append('image', primaryImage.file);
+      
+      // Add additional images
+      additionalImages.forEach((img) => {
+        formData.append('images', img.file);
+      });
+      
       formData.append('prompt', prompt);
+      
+      if (negativePrompt.trim()) {
+        formData.append('negativePrompt', negativePrompt);
+      }
 
       // Call the API endpoint
       const response = await fetch('/api/veo-test/generate', {
@@ -108,6 +163,18 @@ export default function VeoTestPage() {
     }
   };
 
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (primaryImage) {
+        URL.revokeObjectURL(primaryImage.preview);
+      }
+      additionalImages.forEach((img) => {
+        URL.revokeObjectURL(img.preview);
+      });
+    };
+  }, [primaryImage, additionalImages]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
       <div className="max-w-5xl mx-auto">
@@ -120,37 +187,38 @@ export default function VeoTestPage() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Left Column - Input */}
           <div className="space-y-6">
-            {/* Image Upload */}
+            {/* Primary Image Upload */}
             <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold text-white mb-4">Input Image</h2>
+              <h2 className="text-xl font-semibold text-white mb-2">Primary Image *</h2>
+              <p className="text-gray-400 text-sm mb-4">Required: Main input image for video generation</p>
 
-              {!imagePreview ? (
+              {!primaryImage ? (
                 <div
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => handleDragOver(e, true)}
+                  onDrop={(e) => handleDrop(e, true)}
+                  onClick={() => primaryFileInputRef.current?.click()}
                   className="border-2 border-dashed border-gray-600 rounded-xl p-12 text-center cursor-pointer hover:border-gray-500 transition-colors"
                 >
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-300 mb-2">Click to upload or drag and drop</p>
                   <p className="text-gray-500 text-sm">PNG, JPG, or WebP</p>
                   <input
-                    ref={fileInputRef}
+                    ref={primaryFileInputRef}
                     type="file"
                     accept="image/*"
-                    onChange={handleImageSelect}
+                    onChange={handlePrimaryImageSelect}
                     className="hidden"
                   />
                 </div>
               ) : (
                 <div className="relative">
                   <img
-                    src={imagePreview}
-                    alt="Preview"
+                    src={primaryImage.preview}
+                    alt="Primary preview"
                     className="w-full h-auto rounded-xl"
                   />
                   <button
-                    onClick={removeImage}
+                    onClick={removePrimaryImage}
                     className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 rounded-full text-white transition-colors"
                   >
                     <X className="w-4 h-4" />
@@ -159,9 +227,54 @@ export default function VeoTestPage() {
               )}
             </div>
 
+            {/* Additional Reference Images */}
+            <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
+              <h2 className="text-xl font-semibold text-white mb-2">Reference Images (Optional)</h2>
+              <p className="text-gray-400 text-sm mb-4">Additional images for consistency and style reference</p>
+
+              {additionalImages.length > 0 && (
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  {additionalImages.map((img, index) => (
+                    <div key={index} className="relative">
+                      <img
+                        src={img.preview}
+                        alt={`Reference ${index + 1}`}
+                        className="w-full h-32 object-cover rounded-lg"
+                      />
+                      <button
+                        onClick={() => removeAdditionalImage(index)}
+                        className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 rounded-full text-white transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div
+                onDragOver={(e) => handleDragOver(e, false)}
+                onDrop={(e) => handleDrop(e, false)}
+                onClick={() => additionalFileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-gray-500 transition-colors"
+              >
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-300 text-sm mb-1">Add reference images</p>
+                <p className="text-gray-500 text-xs">Click or drag and drop multiple images</p>
+                <input
+                  ref={additionalFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleAdditionalImagesSelect}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
             {/* Prompt Input */}
             <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold text-white mb-4">Prompt</h2>
+              <h2 className="text-xl font-semibold text-white mb-4">Prompt *</h2>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -171,10 +284,23 @@ export default function VeoTestPage() {
               />
             </div>
 
+            {/* Negative Prompt Input */}
+            <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
+              <h2 className="text-xl font-semibold text-white mb-2">Negative Prompt (Optional)</h2>
+              <p className="text-gray-400 text-sm mb-4">Specify what you want to avoid in the video</p>
+              <textarea
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                placeholder="Things to avoid (e.g., blurry, distorted, low quality)..."
+                rows={4}
+                className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 resize-none"
+              />
+            </div>
+
             {/* Submit Button */}
             <button
               onClick={handleSubmit}
-              disabled={!imageFile || !prompt.trim() || isGenerating}
+              disabled={!primaryImage || !prompt.trim() || isGenerating}
               className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-3"
             >
               {isGenerating ? (
@@ -230,7 +356,9 @@ export default function VeoTestPage() {
               <ul className="text-blue-200/80 text-sm space-y-1 list-disc list-inside">
                 <li>Use high-quality images for best results</li>
                 <li>Be descriptive in your prompts</li>
-                <li>Video generation may take 1-2 minutes</li>
+                <li>Reference images help maintain consistency</li>
+                <li>Negative prompts help avoid unwanted elements</li>
+                <li>Video generation may take 1-6 minutes</li>
               </ul>
             </div>
           </div>

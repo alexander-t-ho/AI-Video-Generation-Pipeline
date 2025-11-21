@@ -3,20 +3,8 @@ import { authOptions } from './auth-options';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 
-// NextAuth disabled - return mock session
 export async function getSession() {
-  // Return a mock session so API routes don't break
-  return {
-    user: {
-      id: 'mock-user-id',
-      email: 'mock@example.com',
-      name: 'Mock User',
-      companyId: 'mock-company-id',
-      companyName: 'Mock Company',
-      role: 'ADMIN',
-    },
-    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-  };
+  return await getServerSession(authOptions);
 }
 
 export async function getCurrentUser() {
@@ -88,13 +76,28 @@ export function withAdmin(
 }
 
 // Check if user belongs to company
-// NextAuth disabled - always return true
 export async function checkCompanyAccess(userId: string, companyId: string): Promise<boolean> {
-  return true; // Always allow access when auth is disabled
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  return user?.companyId === companyId;
 }
 
 // Check if user owns project or is in same company
-// NextAuth disabled - always return true
 export async function checkProjectAccess(userId: string, projectId: string): Promise<boolean> {
-  return true; // Always allow access when auth is disabled
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  if (!project) {
+    return false;
+  }
+
+  // Allow access if user owns project or is in same company
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  return project.ownerId === userId || (user !== null && project.companyId === user.companyId);
 }

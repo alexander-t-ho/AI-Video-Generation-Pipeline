@@ -1,9 +1,37 @@
+import { withAuth } from 'next-auth/middleware';
 import { NextResponse } from 'next/server';
 
-// NextAuth disabled - all routes are public
-export default function middleware(req: any) {
-  return NextResponse.next();
-}
+export default withAuth(
+  function middleware(req) {
+    return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ req, token }) => {
+        // Allow access to auth pages
+        if (req.nextUrl.pathname.startsWith('/auth/')) {
+          return true;
+        }
+
+        // Allow access to test routes (flux-test, veo-test)
+        if (
+          req.nextUrl.pathname.startsWith('/flux-test') ||
+          req.nextUrl.pathname.startsWith('/veo-test') ||
+          req.nextUrl.pathname.startsWith('/api/flux-test') ||
+          req.nextUrl.pathname.startsWith('/api/veo-test')
+        ) {
+          return true;
+        }
+
+        // Require authentication for all other routes
+        return !!token;
+      },
+    },
+    pages: {
+      signIn: '/auth/signin',
+    },
+  }
+);
 
 export const config = {
   matcher: [
@@ -13,8 +41,7 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
-     * - api routes that should be public (test routes)
      */
-    '/((?!_next/static|_next/image|favicon.ico|public|api/test-).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public).*)',
   ],
 };
