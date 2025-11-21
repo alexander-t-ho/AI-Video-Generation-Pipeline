@@ -190,14 +190,15 @@ export async function generateStylizedPreviews(
       // Generate video using existing generator
       // Use sceneIndex = i to organize files
       // Skip automotive enhancement to preserve style-specific instructions
-      const localVideoPath = await generateVideo(
+      const result = await generateVideo(
         publicImageUrl,
         enhancedPrompt,
         undefined, // No seed frame for previews
         projectId,
         i,
-        true // skipAutomotiveEnhancement = true for stylized previews
+        undefined // sceneId - not needed for stylized previews
       );
+      const localVideoPath = result.localPath;
 
       // Upload video to S3 for public access
       console.log(`${logPrefix} Uploading video to S3...`);

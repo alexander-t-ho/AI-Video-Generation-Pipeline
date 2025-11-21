@@ -114,14 +114,15 @@ async function main() {
     console.log('This may take several minutes...');
     console.log('');
 
-    const videoPath = await generateVideo(
+    const result = await generateVideo(
       imageUrl,
       PROMPT,
       undefined, // No seed frame
       projectId,
       sceneIndex,
-      true // Skip automotive enhancement to use the exact prompt
+      undefined // sceneId - not needed for this script
     );
+    const videoPath = result.localPath;
 
     console.log('');
     console.log('========================================');

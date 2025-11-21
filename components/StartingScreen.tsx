@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
-import { Settings, ArrowRight, Image, X, Sparkles, Video, Loader2 } from 'lucide-react';
+import { Settings, ArrowRight, Image, X, Sparkles, Video, Loader2, Wand2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StartingScreen({
@@ -181,6 +181,13 @@ export default function StartingScreen({
 
       {/* Top Right Buttons */}
       <div className="fixed top-6 right-6 z-40 flex items-center space-x-3">
+        <Link
+          href="/flux-test"
+          className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"
+          title="Flux Pro Image Generation"
+        >
+          <Wand2 className="w-4 h-4" />
+        </Link>
         <Link
           href="/veo-test"
           className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"
