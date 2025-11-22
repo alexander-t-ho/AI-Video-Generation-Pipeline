@@ -743,26 +743,6 @@ export default function EditorView() {
     }
   };
 
-  const handleDeleteGeneratedImage = async (image: GeneratedImage) => {
-    try {
-      // Call API to delete the image files
-      await deleteGeneratedImage(image.id, image.localPath, image.s3Key);
-
-      // Remove from state
-      removeGeneratedImage(currentSceneIndex, image.id);
-
-      // Clear seed image if it was the deleted image
-      if (seedImageId === image.id) {
-        setSeedImageId(null);
-      }
-
-      console.log(`[EditorView] Deleted image: ${image.id}`);
-    } catch (error) {
-      console.error(`[EditorView] Failed to delete image:`, error);
-      // Could show a toast notification here, but for now just log
-    }
-  };
-
   // Find image URL from itemId and itemType (for drag and drop from media drawer)
   const findImageUrlFromItem = (itemId: string, itemType: 'image' | 'video' | 'frame'): string | null => {
     if (itemType === 'video') {
