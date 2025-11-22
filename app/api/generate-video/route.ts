@@ -7,14 +7,23 @@ import { createVideoPredictionWithRetry, setRuntimeVideoModel } from '@/lib/vide
  *
  * Request Body:
  * {
- *   imageUrl: string;              // Required: S3 URL or public HTTP/HTTPS URL
+ *   imageUrl: string;              // Required: S3 URL or public HTTP/HTTPS URL (used as starting frame if no seedFrame)
  *   prompt: string;                // Required: Motion/action description
- *   seedFrame?: string;            // Optional: Seed frame URL for Scene 1-4
+ *   seedFrame?: string;            // Optional: Seed frame URL for Scene 1-4 (used as starting frame, overrides imageUrl)
  *   sceneIndex: number;            // Required: Scene index (0-4)
  *   projectId: string;             // Required: Project ID
  *   duration?: number;             // Optional: Video duration in seconds (1-30)
  *   referenceImageUrls?: string[]; // Optional: Reference images for consistency/IP-Adapter
+ *   modelParameters?: {            // Optional: Model-specific parameters
+ *     last_frame?: string;         // Optional: Ending frame URL (for interpolation mode - mutually exclusive with using seedFrame/imageUrl as starting frame)
+ *     [key: string]: any;
+ *   };
  * }
+ *
+ * Note: For Google Veo models:
+ * - Standard mode: Provide imageUrl or seedFrame as starting frame. The model generates video from this starting point.
+ * - Interpolation mode: Provide last_frame in modelParameters. The model generates transition from imageUrl/seedFrame to last_frame.
+ * - You can use EITHER standard mode OR interpolation mode, not both simultaneously.
  *
  * Response:
  * {

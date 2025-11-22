@@ -200,10 +200,14 @@ export async function createVideoPrediction(
   const replicate = createReplicateClient();
 
   // Build input parameters
-  // For Veo models:
-  //   - If seedFrame exists (scenes > 0): use seedFrame as 'image' (first frame)
-  //   - If no seedFrame (scene 0): use imageUrl as 'image'
-  //   - We do NOT use last_frame (that's for interpolation between two images)
+  // For Veo models, there are two modes:
+  //   1. Standard mode (default):
+  //      - Use 'image' parameter with seedFrame (scenes > 0) or imageUrl (scene 0)
+  //      - Model generates video from this starting frame
+  //   2. Interpolation mode (optional):
+  //      - Use 'image' parameter with starting frame AND 'last_frame' parameter with ending frame
+  //      - Model generates transition video between the two frames
+  //      - Note: last_frame is mutually exclusive with standard single-frame generation
   // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
   const isVeoModel = isVeo; // Already defined above for duration
   const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image
@@ -235,9 +239,9 @@ export async function createVideoPrediction(
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // Add reference images for Google Veo models if provided
     ...(isVeoModel && referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
-    // NOTE: We do NOT use last_frame for Veo. The last_frame parameter is for interpolation
-    // between two images (creating a transition). We want video generation from a single
-    // starting frame (either seed frame from previous scene or generated image for scene 0).
+    // NOTE: last_frame parameter is handled via modelParameters (user-controlled)
+    // - When last_frame is NOT provided: Standard mode - generates video from single starting frame
+    // - When last_frame IS provided: Interpolation mode - generates transition between image and last_frame
     // Model-specific parameters
     ...(isVeoModel ? {
       // Google Veo 3.1 parameters

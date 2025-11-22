@@ -560,6 +560,10 @@ export default function EditorView() {
       }
 
       // Handle last frame (slot index 4) if provided
+      // NOTE: For Google Veo models, this enables "interpolation mode"
+      // - Standard mode: Uses only the starting frame (seed frame or generated image)
+      // - Interpolation mode: Uses both starting frame AND last_frame to generate transition video
+      // - These modes are mutually exclusive - you use one OR the other
       let lastFrameUrl: string | undefined;
       const lastFramePreview = customImagePreviews[4]; // Slot 4 is the last frame
       if (lastFramePreview) {
@@ -599,16 +603,19 @@ export default function EditorView() {
 
       // Generate video
       // Get model parameters from current scene and add last_frame if provided
+      // NOTE: When last_frame is provided, we're using "interpolation mode"
+      // where the model generates a transition from the starting frame to the last_frame
       const modelParameters = {
         ...(currentScene.modelParameters || {}),
         ...(lastFrameUrl ? { last_frame: lastFrameUrl } : {}),
       };
 
+      console.log('[EditorView] Video generation mode:', lastFrameUrl ? 'Interpolation (start → end)' : 'Standard (from start frame)');
       console.log('[EditorView] Video generation parameters:', {
         baseImage: s3Url,
         seedFrame: seedFrameUrl,
         lastFrame: lastFrameUrl,
-        hasLastFrame: !!lastFrameUrl,
+        mode: lastFrameUrl ? 'interpolation' : 'standard',
       });
 
       const videoResponse = await generateVideo(
@@ -1429,8 +1436,11 @@ export default function EditorView() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-white">
-                    Last Frame <span className="text-white/60 text-xs">(Ending image)</span>
+                    Last Frame <span className="text-white/60 text-xs">(Interpolation mode)</span>
                   </label>
+                  <p className="text-xs text-white/40 mt-0.5">
+                    Optional: Creates transition from start to end frame
+                  </p>
                 </div>
               </div>
 
