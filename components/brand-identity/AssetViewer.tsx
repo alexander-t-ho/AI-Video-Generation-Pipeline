@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera, Check, CheckSquare, Square } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Send, Palette, Upload, X, Loader2, Sparkles, Camera, Check, CheckSquare, Square, Scissors } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage } from './types';
 import ColorPicker from './ColorPicker';
 import AngleSelectionModal from './AngleSelectionModal';

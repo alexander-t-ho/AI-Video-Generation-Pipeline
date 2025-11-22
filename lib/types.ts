@@ -24,6 +24,9 @@ export interface Scene {
   customImageInput?: string | string[]; // Optional: Custom image input URL(s) for image-to-image generation (up to 3 images)
   useSeedFrame?: boolean;    // Optional: Whether to use seed frame from previous scene (default: true for scenes > 0)
   modelParameters?: Record<string, any>; // Optional: Model-specific parameters for video generation (e.g., aspect_ratio, resolution, seed, etc.)
+  referenceImageId?: string; // Optional: ID of selected reference/seed image
+  backgroundImageId?: string; // Optional: ID of selected background image
+  compositeImageId?: string;  // Optional: ID of generated composite image (reference + background)
 }
 
 export interface StoryboardRequest {
@@ -121,7 +124,8 @@ export interface ProjectState {
   characterDescription?: string; // Optional: Description of the character/product
   uploadedImageUrls?: string[]; // Optional: Original uploaded image URLs (before background removal)
   uploadedImages?: Array<import('./storage/image-storage').UploadedImage>; // Full uploaded image objects with processed versions
-  
+  backgroundImages?: Array<import('./storage/image-storage').UploadedImage>; // Background images uploaded separately
+
   // Brand identity context (for asset-based generation)
   assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
   selectedColor?: string; // Hex color code of last selected color

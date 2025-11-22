@@ -864,3 +864,54 @@ export async function deleteGeneratedImage(
   });
 }
 
+/**
+ * Generate composite image by inserting reference/subject into background
+ */
+export async function generateComposite(
+  referenceImageUrl: string,
+  backgroundImageUrl: string,
+  projectId: string,
+  sceneIndex: number,
+  prompt?: string,
+  seed?: number
+): Promise<{
+  success: boolean;
+  image?: {
+    id: string;
+    url: string;
+    localPath: string;
+    s3Key?: string;
+    prompt: string;
+    replicateId: string;
+    createdAt: string;
+  };
+  error?: string;
+  code?: string;
+}> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/generate-composite`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getRuntimeModelHeaders(),
+      },
+      body: JSON.stringify({
+        referenceImageUrl,
+        backgroundImageUrl,
+        prompt,
+        projectId,
+        sceneIndex,
+        seed,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to generate composite' }));
+      throw new Error(error.error || 'Failed to generate composite');
+    }
+
+    return response.json();
+  });
+}
+

@@ -3,6 +3,7 @@
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
+import SceneCompositionPanel from './SceneCompositionPanel';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages, deleteGeneratedImage } from '@/lib/api-client';
@@ -1317,6 +1318,11 @@ export default function EditorView() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Scene Composition Panel */}
+      <div className="px-4 py-4 border-b border-white/10">
+        <SceneCompositionPanel sceneIndex={currentSceneIndex} />
       </div>
 
       {/* Main Preview Area */}

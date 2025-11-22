@@ -5,6 +5,7 @@ import { GeneratedImage, SeedFrame } from '@/lib/types';
 import { Image as ImageIcon, Video, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
+import { getPublicBackgrounds, publicBackgroundToUploadedImage, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
 
 interface MediaItem {
   id: string;
@@ -52,6 +53,7 @@ export default function MediaDrawer() {
     videos: true,
     frames: true,
     uploaded: true,
+    backgrounds: true,
     final: true,
   });
   const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
@@ -60,6 +62,17 @@ export default function MediaDrawer() {
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
   const videoHoverTimeoutsMap = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
+
+  // Load public backgrounds on mount
+  useEffect(() => {
+    async function loadPublicBackgrounds() {
+      const backgrounds = await getPublicBackgrounds();
+      setPublicBackgrounds(backgrounds);
+      console.log('[MediaDrawer] Loaded public backgrounds:', backgrounds);
+    }
+    loadPublicBackgrounds();
+  }, []);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const thumbnailRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -352,6 +365,113 @@ export default function MediaDrawer() {
     });
     return refs;
   }, [project?.characterReferences]);
+
+  // Background images from project state + public backgrounds
+  const backgroundImages = useMemo(() => {
+    const allBackgrounds: MediaItem[] = [];
+
+    // Add public backgrounds first
+    publicBackgrounds.forEach((bg) => {
+      const uploadedImage = publicBackgroundToUploadedImage(bg);
+      const imageUrl = uploadedImage.url;
+
+      allBackgrounds.push({
+        id: uploadedImage.id,
+        type: 'image' as const,
+        url: imageUrl,
+        metadata: {
+          originalName: uploadedImage.originalName,
+          isPublicBackground: true,
+          fullUrl: imageUrl,
+          description: bg.description,
+          tags: bg.tags,
+        },
+        timestamp: uploadedImage.createdAt,
+      });
+    });
+
+    if (project?.backgroundImages) {
+      project.backgroundImages.forEach((backgroundImage, imgIndex) => {
+        console.log('[MediaDrawer] Processing background image:', {
+          id: backgroundImage.id,
+          url: backgroundImage.url,
+          localPath: backgroundImage.localPath,
+          s3Key: backgroundImage.s3Key,
+          hasProcessedVersions: !!backgroundImage.processedVersions?.length
+        });
+
+        // Add original image
+        // For S3 URLs, use them directly; for local paths, serve through API
+        let imageUrl: string;
+        if (backgroundImage.url.startsWith('http://') || backgroundImage.url.startsWith('https://')) {
+          // S3 or external URL - use directly
+          imageUrl = backgroundImage.url;
+        } else if (backgroundImage.localPath) {
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(backgroundImage.localPath)}`;
+        } else if (backgroundImage.url.startsWith('/api')) {
+          imageUrl = backgroundImage.url;
+        } else {
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(backgroundImage.url)}`;
+        }
+
+        console.log('[MediaDrawer] Resolved background image URL:', imageUrl);
+
+        allBackgrounds.push({
+          id: backgroundImage.id,
+          type: 'image' as const,
+          url: imageUrl,
+          metadata: {
+            originalName: backgroundImage.originalName,
+            imageIndex: imgIndex,
+            fullUrl: imageUrl,
+          },
+          timestamp: backgroundImage.createdAt,
+        });
+
+        // Add all processed versions with labels
+        if (backgroundImage.processedVersions && backgroundImage.processedVersions.length > 0) {
+          backgroundImage.processedVersions.forEach((processed) => {
+            // Always serve through API using localPath
+            let processedUrl: string;
+            if (processed.localPath) {
+              processedUrl = `/api/serve-image?path=${encodeURIComponent(processed.localPath)}`;
+            } else if (processed.url.startsWith('/api')) {
+              processedUrl = processed.url;
+            } else {
+              processedUrl = `/api/serve-image?path=${encodeURIComponent(processed.localPath || processed.url)}`;
+            }
+
+            // Determine label based on iteration number
+            // Iterations 1-2 are background removal, 3+ are edge cleanup
+            let label = '';
+            if (processed.iteration <= 2) {
+              label = `BG Removed ${processed.iteration}`;
+            } else {
+              const edgeCleanupIter = processed.iteration - 2;
+              label = `Edge Cleaned ${edgeCleanupIter}x`;
+            }
+
+            allBackgrounds.push({
+              id: processed.id,
+              type: 'image' as const,
+              url: processedUrl,
+              metadata: {
+                label,
+                iteration: processed.iteration,
+                originalName: backgroundImage.originalName,
+                isProcessed: true,
+                imageIndex: imgIndex,
+                fullUrl: processedUrl,
+              },
+              timestamp: processed.createdAt,
+            });
+          });
+        }
+      });
+    }
+
+    return allBackgrounds;
+  }, [project?.backgroundImages, publicBackgrounds]);
 
   // Drag and drop handler
   const handleMediaDrop = (itemId: string, itemType: 'image' | 'video' | 'frame', targetSceneIndex?: number) => {
@@ -762,6 +882,15 @@ export default function MediaDrawer() {
           brandAssets,
           <ImageIcon className="w-4 h-4" />,
           'No brand assets selected'
+        )}
+
+        {/* Backgrounds */}
+        {renderSection(
+          'Backgrounds',
+          'backgrounds',
+          backgroundImages,
+          <ImageIcon className="w-4 h-4" />,
+          'No backgrounds uploaded'
         )}
 
         {/* Final Output */}
