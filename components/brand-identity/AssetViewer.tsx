@@ -341,6 +341,75 @@ export default function AssetViewer({
     }
   };
 
+  const handleCleanEdges = async () => {
+    if (!selectedCar) return;
+
+    setIsCleaningEdges(true);
+    setEdgeCleanupError(null);
+
+    try {
+      // Determine which images to clean
+      const imagesToClean: CarReferenceImage[] = [];
+
+      if (selectedAssetIds.size > 0) {
+        // If specific assets are selected, use those
+        const selectedImages = images.filter(img => selectedAssetIds.has(img.id));
+        imagesToClean.push(...selectedImages);
+      } else if (currentImage) {
+        // If no assets selected, use current image
+        imagesToClean.push(currentImage);
+      }
+
+      if (imagesToClean.length === 0) {
+        console.log('No images to clean');
+        setIsCleaningEdges(false);
+        return;
+      }
+
+      console.log(`[AssetViewer] Cleaning edges for ${imagesToClean.length} image(s)...`);
+
+      // Get the image URLs
+      const imageUrls = imagesToClean.map(img => img.url);
+
+      // Call the clean-edges API
+      const response = await fetch('/api/clean-edges', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrls: imageUrls,
+          projectId: 'brand-identity-edge-cleanup',
+          iterations: 1,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to clean edges');
+      }
+
+      console.log(`[AssetViewer] Successfully cleaned ${data.processedImages.length} image(s)`);
+
+      // Add the cleaned images to the asset
+      if (data.processedImages && data.processedImages.length > 0 && onAddRecoloredImages) {
+        const cleanedResults = data.processedImages.map((img: any) => ({
+          url: img.url,
+          colorHex: selectedColor || '#FFFFFF',
+        }));
+        onAddRecoloredImages(selectedCar.id, cleanedResults);
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setEdgeCleanupError(errorMessage);
+      console.error('[AssetViewer] Edge cleanup failed:', errorMessage);
+    } finally {
+      setIsCleaningEdges(false);
+    }
+  };
+
   const handleGenerateAngles = async (selectedAngles: AngleType[]) => {
     if (!currentImage || !selectedCar) return;
 
@@ -663,6 +732,19 @@ export default function AssetViewer({
             )}
           </button>
 
+          <button
+            onClick={handleCleanEdges}
+            disabled={isCleaningEdges}
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:opacity-50 border border-white/20 disabled:border-white/10 rounded-xl text-white text-sm transition-all"
+          >
+            <Scissors className="w-4 h-4" />
+            <span className="hidden sm:inline">Clean Edges</span>
+            <span className="sm:hidden">Clean</span>
+            {isCleaningEdges && (
+              <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            )}
+          </button>
+
           {/* Commented out: Generate Turnaround button */}
           {/*
           <button
@@ -723,6 +805,13 @@ export default function AssetViewer({
         {recolorError && (
           <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
             {recolorError}
+          </div>
+        )}
+
+        {/* Edge Cleanup Error Message */}
+        {edgeCleanupError && (
+          <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+            {edgeCleanupError}
           </div>
         )}
 

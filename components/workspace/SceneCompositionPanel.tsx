@@ -113,7 +113,6 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   const [backgroundPrompt, setBackgroundPrompt] = useState('');
   const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isBoxesCollapsed, setIsBoxesCollapsed] = useState(false);
 
   // Load public backgrounds on mount
   useEffect(() => {
@@ -184,6 +183,10 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
         return publicBackgroundToUploadedImage(publicBg);
       }
     }
+
+    // Check generated images (backgrounds generated via the Generate Background feature)
+    const generatedBg = sceneState?.generatedImages?.find((i: GeneratedImage) => i.id === scene.backgroundImageId);
+    if (generatedBg) return generatedBg;
 
     // Check project background images
     if (project.backgroundImages) {
@@ -450,180 +453,166 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       {/* Collapsible Content */}
       {!isCollapsed && (
         <>
-          {/* Boxes Section - Separately Collapsible */}
-          <button
-            onClick={() => setIsBoxesCollapsed(!isBoxesCollapsed)}
-            className="w-full flex items-center justify-between px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10"
-          >
-            <span className="text-xs font-medium text-white/70">Reference, Background & Composite</span>
-            {isBoxesCollapsed ? (
-              <ChevronDown className="w-3.5 h-3.5 text-white/50" />
-            ) : (
-              <ChevronUp className="w-3.5 h-3.5 text-white/50" />
-            )}
-          </button>
-
-          {!isBoxesCollapsed && (
-            <div className="grid grid-cols-3 gap-3">
-        {/* Reference Box */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-white/80">Reference</label>
-          <div
-            onClick={() => setShowReferenceModal(true)}
-            onDrop={referenceDropZone.handleDrop}
-            onDragOver={referenceDropZone.handleDragOver}
-            onDragLeave={referenceDropZone.handleDragLeave}
-            className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
-              referenceDropZone.isOverDropZone
-                ? 'border-blue-400 bg-blue-500/10'
-                : referenceImage
-                ? 'border-white/20 hover:border-white/40'
-                : 'border-white/20 hover:border-white/40 bg-white/5'
-            }`}
-          >
-            {referenceImage ? (
-              <img
-                src={getImageUrl(referenceImage)}
-                alt="Reference"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <Upload className="w-6 h-6 text-white/40" />
-                <p className="text-xs text-white/40">Click or drag</p>
-              </div>
-            )}
-            <input
-              ref={referenceInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleFileSelect(e, 'reference')}
-            />
-          </div>
-        </div>
-
-        {/* Background Box */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-white/80">Background</label>
-          <div
-            onClick={() => setShowBackgroundModal(true)}
-            onDrop={backgroundDropZone.handleDrop}
-            onDragOver={backgroundDropZone.handleDragOver}
-            onDragLeave={backgroundDropZone.handleDragLeave}
-            className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
-              backgroundDropZone.isOverDropZone
-                ? 'border-blue-400 bg-blue-500/10'
-                : backgroundImage
-                ? 'border-white/20 hover:border-white/40'
-                : 'border-white/20 hover:border-white/40 bg-white/5'
-            }`}
-          >
-            {backgroundImage ? (
-              <img
-                src={getImageUrl(backgroundImage)}
-                alt="Background"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <Upload className="w-6 h-6 text-white/40" />
-                <p className="text-xs text-white/40">Click or drag</p>
-              </div>
-            )}
-            <input
-              ref={backgroundInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleFileSelect(e, 'background')}
-            />
-          </div>
-        </div>
-
-        {/* Composite Box */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-white/80">Composite</label>
-          <div
-            className="relative aspect-video rounded-lg border-2 border-white/20 overflow-hidden bg-white/5"
-          >
-            {compositeImage ? (
-              <img
-                src={getImageUrl(compositeImage)}
-                alt="Composite"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                {isGeneratingComposite ? (
-                  <>
-                    <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
-                    <p className="text-xs text-white/40">Generating...</p>
-                  </>
+          {/* Reference, Background & Composite */}
+          <div className="grid grid-cols-3 gap-3">
+            {/* Reference Box */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-white/80">Reference</label>
+              <div
+                onClick={() => setShowReferenceModal(true)}
+                onDrop={referenceDropZone.handleDrop}
+                onDragOver={referenceDropZone.handleDragOver}
+                onDragLeave={referenceDropZone.handleDragLeave}
+                className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                  referenceDropZone.isOverDropZone
+                    ? 'border-blue-400 bg-blue-500/10'
+                    : referenceImage
+                    ? 'border-white/20 hover:border-white/40'
+                    : 'border-white/20 hover:border-white/40 bg-white/5'
+                }`}
+              >
+                {referenceImage ? (
+                  <img
+                    src={getImageUrl(referenceImage)}
+                    alt="Reference"
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <>
-                    <div className="w-6 h-6 text-white/20">
-                      <svg viewBox="0 0 24 24" fill="none" className="w-full h-full">
-                        <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.5" />
-                        <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.3" />
-                        <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.3" />
-                        <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.5" />
-                      </svg>
-                    </div>
-                    <p className="text-xs text-white/30">No composite</p>
-                  </>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <Upload className="w-6 h-6 text-white/40" />
+                    <p className="text-xs text-white/40">Click or drag</p>
+                  </div>
+                )}
+                <input
+                  ref={referenceInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, 'reference')}
+                />
+              </div>
+            </div>
+
+            {/* Background Box */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-white/80">Background</label>
+              <div
+                onClick={() => setShowBackgroundModal(true)}
+                onDrop={backgroundDropZone.handleDrop}
+                onDragOver={backgroundDropZone.handleDragOver}
+                onDragLeave={backgroundDropZone.handleDragLeave}
+                className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                  backgroundDropZone.isOverDropZone
+                    ? 'border-blue-400 bg-blue-500/10'
+                    : backgroundImage
+                    ? 'border-white/20 hover:border-white/40'
+                    : 'border-white/20 hover:border-white/40 bg-white/5'
+                }`}
+              >
+                {backgroundImage ? (
+                  <img
+                    src={getImageUrl(backgroundImage)}
+                    alt="Background"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <Upload className="w-6 h-6 text-white/40" />
+                    <p className="text-xs text-white/40">Click or drag</p>
+                  </div>
+                )}
+                <input
+                  ref={backgroundInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, 'background')}
+                />
+              </div>
+            </div>
+
+            {/* Composite Box */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-white/80">Composite</label>
+              <div
+                className="relative aspect-video rounded-lg border-2 border-white/20 overflow-hidden bg-white/5"
+              >
+                {compositeImage ? (
+                  <img
+                    src={getImageUrl(compositeImage)}
+                    alt="Composite"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    {isGeneratingComposite ? (
+                      <>
+                        <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+                        <p className="text-xs text-white/40">Generating...</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-6 h-6 text-white/20">
+                          <svg viewBox="0 0 24 24" fill="none" className="w-full h-full">
+                            <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.5" />
+                            <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.3" />
+                            <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.3" />
+                            <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.5" />
+                          </svg>
+                        </div>
+                        <p className="text-xs text-white/30">No composite</p>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Background Generation */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-white/80">Generate Background</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={backgroundPrompt}
+                onChange={(e) => setBackgroundPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isGeneratingBackground) {
+                    handleGenerateBackground();
+                  }
+                }}
+                placeholder="Describe the background scene..."
+                className="flex-1 px-3 py-2 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400/30 text-white placeholder-white/40"
+                disabled={isGeneratingBackground}
+              />
+              <button
+                onClick={handleGenerateBackground}
+                disabled={isGeneratingBackground || !backgroundPrompt.trim()}
+                className="px-4 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isGeneratingBackground ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  'Generate'
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Generate Composite Button */}
+          {referenceImage && backgroundImage && !compositeImage && (
+            <button
+              onClick={handleGenerateComposite}
+              disabled={isGeneratingComposite}
+              className="w-full px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingComposite ? 'Generating Composite...' : 'Generate Composite'}
+            </button>
           )}
-
-      {/* Background Generation */}
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-white/80">Generate Background</label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={backgroundPrompt}
-            onChange={(e) => setBackgroundPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isGeneratingBackground) {
-                handleGenerateBackground();
-              }
-            }}
-            placeholder="Describe the background scene..."
-            className="flex-1 px-3 py-2 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400/30 text-white placeholder-white/40"
-            disabled={isGeneratingBackground}
-          />
-          <button
-            onClick={handleGenerateBackground}
-            disabled={isGeneratingBackground || !backgroundPrompt.trim()}
-            className="px-4 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isGeneratingBackground ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              'Generate'
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Generate Composite Button */}
-      {referenceImage && backgroundImage && !compositeImage && (
-        <button
-          onClick={handleGenerateComposite}
-          disabled={isGeneratingComposite}
-          className="w-full px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isGeneratingComposite ? 'Generating Composite...' : 'Generate Composite'}
-        </button>
-      )}
         </>
       )}
 

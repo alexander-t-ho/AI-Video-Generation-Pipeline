@@ -4,17 +4,23 @@ An end-to-end AI video generation pipeline that converts user prompts into profe
 
 ## Overview
 
-This project generates 5-scene video advertisements from text prompts using AI-powered storyboard generation, image creation, and video synthesis. Users can upload reference images to guide the visual style and aesthetic of generated content.
+This project generates professional video advertisements from text prompts using AI-powered storyboard generation, image creation, and video synthesis. Users can upload reference images to guide the visual style and aesthetic of generated content.
 
 ### Key Features
 
-- **AI Storyboard Generation**: Automatically creates 5-scene storyboards from text prompts using GPT-4o
-- **Reference Image Support**: Upload images to guide visual style and aesthetic
-- **Image Generation**: Generate high-quality images for each scene using Flux Schnell
-- **Video Generation**: Create videos from images using Luma Ray (Dream Machine)
-- **Frame Extraction**: Extract seed frames from videos for visual continuity
-- **Video Stitching**: Combine multiple scenes into a single cohesive video
-- **Interactive Workspace**: Three-panel interface with storyboard, editor, and timeline views
+- **AI Storyboard Generation**: Automatically creates 3-scene storyboards from text prompts using GPT-4o (optimized for 15/30/60 second videos)
+- **Reference Image Support**: Upload and manage brand assets (logos, car models, reference images) for visual consistency
+- **Intelligent Image Generation**:
+  - Scene 0: Uses Runway Gen-4 Image with reference images for maximum object consistency
+  - Scenes 1-4: Uses FLUX Dev with IP-Adapter for style transfer and continuity
+  - Supports custom image inputs and seed frames for visual coherence
+- **Advanced Video Generation**: Create videos using Google Veo 3.1 with support for reference images and last-frame continuity
+- **Frame Extraction**: Automatically extract 5 seed frames from the last second of each video for scene-to-scene continuity
+- **Video Stitching**: Combine multiple scenes with automatic transition detection (SSIM-based similarity analysis for smooth fades/crossfades)
+- **Interactive Workspace**: Three-panel interface with media drawer, editor, and timeline views
+- **Timeline Editing**: Split, crop, delete, and reorder clips with undo/redo support
+- **Brand Identity Management**: Manage company assets, car models, and color schemes
+- **Model Flexibility**: Runtime model selection via Dev Panel (9 text models, 27 image models, 17 video models)
 
 ## Tech Stack
 
@@ -25,9 +31,16 @@ This project generates 5-scene video advertisements from text prompts using AI-p
 - **Image Upload**: Local storage with S3 support
 - **Video Processing**: FFmpeg (server-side)
 - **AI Services**:
-  - **Storyboard**: OpenAI GPT-4o (via OpenRouter)
-  - **Images**: Flux Schnell (via Replicate)
-  - **Videos**: Luma Ray (via Replicate)
+  - **Storyboard**: OpenAI GPT-4o or GPT-4o Mini (via OpenRouter or direct OpenAI API)
+  - **Images**:
+    - FLUX Schnell (T2I default)
+    - FLUX Dev with IP-Adapter (I2I default for scenes 1-4)
+    - Runway Gen-4 Image (Scene 0 with reference images)
+    - 25+ alternative models available
+  - **Videos**:
+    - Google Veo 3.1 (default - supports reference_images + last_frame)
+    - Runway Gen-4 Turbo, Gen-4 Aleph (alternatives)
+    - 15+ alternative models available
 - **Deployment**: Vercel
 - **Testing**: Playwright (E2E tests)
 
@@ -188,6 +201,7 @@ See [docs/ARCHITECTURE_ANALYSIS.md](docs/ARCHITECTURE_ANALYSIS.md) for deploymen
 
 ## Documentation
 
+- [QA Report](QA_REPORT.md) - **Comprehensive QA analysis with 23 identified issues (5 critical)**
 - [Product Requirements Document](docs/prd.md) - Complete PRD with specifications
 - [API Contracts](docs/API_CONTRACTS_IMAGE_STORYBOARD.md) - API endpoint documentation
 - [Architecture Analysis](docs/ARCHITECTURE_ANALYSIS.md) - System architecture and deployment
@@ -196,14 +210,27 @@ See [docs/ARCHITECTURE_ANALYSIS.md](docs/ARCHITECTURE_ANALYSIS.md) for deploymen
 
 ## Workflow
 
-1. **Project Creation**: User enters prompt and optionally uploads reference images
-2. **Storyboard Generation**: AI generates 5 scenes with descriptions and image prompts
-3. **Image Generation**: Generate images for each scene (user can regenerate)
-4. **Video Generation**: Create videos from approved images (sequential, using seed frames)
-5. **Frame Extraction**: Extract candidate frames from each video's final 0.5s
-6. **Seed Frame Selection**: User selects frame to use as seed for next scene
-7. **Video Stitching**: Combine all scenes into final video
-8. **Export**: Download final video
+### Standard Workflow
+1. **Project Creation**: User enters prompt and selects target duration (15/30/60 seconds)
+2. **Brand Identity** (Optional): Select reference images, car models, and brand assets for object consistency
+3. **Storyboard Generation**: AI generates 3 scenes with descriptions, image prompts, and video prompts
+4. **Scene-by-Scene Generation**:
+   - **Image Generation**: Generate 3 image variations per scene
+     - Scene 0: Uses Gen-4 Image + reference images for maximum consistency
+     - Scenes 1-2: Uses FLUX Dev + IP-Adapter with seed frames from previous scene
+   - **Image Selection**: User selects best image from the 3 variations
+   - **Video Generation**: Create video from selected image using Google Veo 3.1
+   - **Frame Extraction**: Automatically extract 5 frames from last 1 second of video
+   - **Seed Frame Selection**: User selects best frame for next scene (default: first frame)
+5. **Timeline Editing** (Optional): Split, crop, delete, or reorder clips in timeline view
+6. **Video Stitching**: Combine all scene videos with automatic smooth transitions (SSIM-based)
+7. **Export**: Download final MP4 video
+
+### Advanced Features
+- **Custom Image Input**: Upload custom images as seed for any scene
+- **Prompt Editing**: Edit image/video prompts, negative prompts, and durations per scene
+- **Model Selection**: Override default models via Dev Panel for testing different AI models
+- **Multi-tenant Support**: Company-based asset sharing and user management
 
 ## License
 
