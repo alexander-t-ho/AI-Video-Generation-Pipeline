@@ -238,7 +238,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     const refs: Array<{ id: string; url: string; label?: string; originalName?: string }> = [];
 
     // Add uploaded images
-    if (project.uploadedImages) {
+    if (project?.uploadedImages) {
       project.uploadedImages.forEach((uploadedImage) => {
         refs.push({
           id: uploadedImage.id,
@@ -287,7 +287,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       });
     });
 
-    if (project.backgroundImages) {
+    if (project?.backgroundImages) {
       project.backgroundImages.forEach((backgroundImage) => {
         bgs.push({
           id: backgroundImage.id,

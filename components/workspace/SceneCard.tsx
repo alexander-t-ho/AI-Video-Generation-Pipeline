@@ -236,7 +236,7 @@ export default function SceneCard({
           }
 
           seedImageUrl = imageUrl;
-          console.log(`[SceneCard] Scene ${sceneIndex}: Using media drawer seed image for i2i:`, seedImageUrl.substring(0, 80) + '...');
+          console.log(`[SceneCard] Scene ${sceneIndex}: Using media drawer seed image for i2i:`, seedImageUrl?.substring(0, 80) + '...');
         }
       } else if (sceneIndex > 0) {
         // Only use seed frame if explicitly enabled via checkbox

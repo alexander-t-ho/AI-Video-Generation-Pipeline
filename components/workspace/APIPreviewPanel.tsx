@@ -47,7 +47,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
       const useSeedImage = scene.modelParameters?.useSeedImage !== false; // Default to true
 
       // Get seed image from media drawer (purple selection) if available
-      let effectiveSeedImage = null;
+      let effectiveSeedImage: any = null;
       if (useSeedImage && mediaDrawer.seedImageId) {
         // Search for seed image across all scenes and media sources
         for (const scn of scenes) {

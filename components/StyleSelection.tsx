@@ -72,7 +72,7 @@ export default function StyleSelection() {
       console.log('[StyleSelection] Full prompt length:', fullPrompt.length);
 
       // Initialize project first
-      createProject(initialPrompt, 30); // 3 scenes x 10 seconds
+      createProject('My Video Project', initialPrompt, 30); // 3 scenes x 10 seconds
 
       // Generate storyboard in background
       console.log('[StyleSelection] Calling generateStoryboard API...');

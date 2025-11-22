@@ -66,7 +66,8 @@ export async function GET(
       // Fetch specific version
       try {
         const version = await replicate.models.versions.get(owner, modelName, versionHash);
-        schema = version.openapi_schema?.components?.schemas?.Input || version.openapi_schema?.components?.schemas?.input;
+        const openapiSchema = version.openapi_schema as any;
+        schema = openapiSchema?.components?.schemas?.Input || openapiSchema?.components?.schemas?.input;
       } catch (error: any) {
         console.error(`[Model Schema API] Error fetching version ${versionHash}:`, error);
         // Fall back to latest version
@@ -78,8 +79,9 @@ export async function GET(
       try {
         const model = await replicate.models.get(owner, modelName);
         if (model.latest_version) {
-          schema = model.latest_version.openapi_schema?.components?.schemas?.Input || 
-                   model.latest_version.openapi_schema?.components?.schemas?.input;
+          const openapiSchema = model.latest_version.openapi_schema as any;
+          schema = openapiSchema?.components?.schemas?.Input ||
+                   openapiSchema?.components?.schemas?.input;
         }
       } catch (error: any) {
         console.error(`[Model Schema API] Error fetching model:`, error);

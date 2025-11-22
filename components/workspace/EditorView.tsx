@@ -244,7 +244,7 @@ export default function EditorView() {
           seedImageUrl = imageUrl;
           currentSeedImageId = foundSeedImage.id;
           setSeedImageId(foundSeedImage.id); // Store for UI highlighting
-          console.log(`[EditorView] Scene ${currentSceneIndex}: Using media drawer seed image for i2i:`, seedImageUrl.substring(0, 80) + '...');
+          console.log(`[EditorView] Scene ${currentSceneIndex}: Using media drawer seed image for i2i:`, seedImageUrl?.substring(0, 80) + '...');
         }
       } else if (useSeedImage && currentSelectedImageBeforeClear && currentSelectedImageBeforeClear.localPath) {
         // Use selected image as seed image (highest priority)

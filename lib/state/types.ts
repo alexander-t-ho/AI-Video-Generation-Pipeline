@@ -70,6 +70,9 @@ export interface SceneSlice {
     customImageInput?: string | string[];
     useSeedFrame?: boolean;
     modelParameters?: Record<string, any>;
+    referenceImageId?: string;
+    backgroundImageId?: string;
+    compositeImageId?: string;
   }) => void;
   updateSceneModelParameters: (sceneIndex: number, modelParameters: Record<string, any>) => void;
   

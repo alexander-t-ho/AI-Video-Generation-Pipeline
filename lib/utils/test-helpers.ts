@@ -20,6 +20,7 @@ export const TestHelpers = {
         order: 0,
         description: 'Opening shot establishing the product',
         imagePrompt: 'Professional product photography of a luxury watch on a marble surface with golden hour lighting',
+        videoPrompt: 'Slow panning shot revealing the watch on a marble surface with golden hour lighting',
         suggestedDuration: 3,
       },
       {
@@ -27,6 +28,7 @@ export const TestHelpers = {
         order: 1,
         description: 'Close-up of the watch face',
         imagePrompt: 'Extreme close-up of watch dial with intricate details, soft focus background',
+        videoPrompt: 'Slow zoom into the watch dial, revealing intricate details with shallow depth of field',
         suggestedDuration: 2,
       },
       {
@@ -34,6 +36,7 @@ export const TestHelpers = {
         order: 2,
         description: 'Model wearing the watch',
         imagePrompt: 'Elegant model wearing the watch, sophisticated pose, studio lighting',
+        videoPrompt: 'Model elegantly presents the watch with smooth hand movement in studio lighting',
         suggestedDuration: 4,
       },
       {
@@ -41,6 +44,7 @@ export const TestHelpers = {
         order: 3,
         description: 'Lifestyle shot in natural setting',
         imagePrompt: 'Watch in natural outdoor setting, golden hour, warm tones',
+        videoPrompt: 'Gentle camera movement showcasing the watch in natural outdoor setting at golden hour',
         suggestedDuration: 3,
       },
       {
@@ -48,6 +52,7 @@ export const TestHelpers = {
         order: 4,
         description: 'Final product showcase',
         imagePrompt: 'Product on elegant background, minimalist composition, premium feel',
+        videoPrompt: 'Slow rotating product shot on elegant background with minimalist composition',
         suggestedDuration: 2,
       },
     ];
@@ -76,7 +81,11 @@ export const TestHelpers = {
    */
   setupTestProject: (project?: Partial<ProjectState>) => {
     const mockProject = TestHelpers.createMockProject(project);
-    useProjectStore.getState().createProject(mockProject.prompt, mockProject.targetDuration);
+    useProjectStore.getState().createProject(
+      mockProject.name || 'Test Project',
+      mockProject.prompt || 'Test prompt',
+      mockProject.targetDuration || 15
+    );
     useProjectStore.getState().setStoryboard(mockProject.storyboard);
     return mockProject;
   },
