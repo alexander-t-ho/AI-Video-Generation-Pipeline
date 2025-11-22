@@ -18,10 +18,12 @@ export interface Scene {
   description: string;       // Narrative description of the scene
   suggestedDuration: number; // Duration in seconds
   imagePrompt: string;       // Detailed visual prompt for image generation
+  videoPrompt: string;       // Detailed prompt for video generation (motion/action description)
   negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
   customDuration?: number;   // Optional: Custom duration in seconds (overrides suggestedDuration)
   customImageInput?: string | string[]; // Optional: Custom image input URL(s) for image-to-image generation (up to 3 images)
   useSeedFrame?: boolean;    // Optional: Whether to use seed frame from previous scene (default: true for scenes > 0)
+  modelParameters?: Record<string, any>; // Optional: Model-specific parameters for video generation (e.g., aspect_ratio, resolution, seed, etc.)
 }
 
 export interface StoryboardRequest {
@@ -52,6 +54,21 @@ export interface GeneratedImage {
   createdAt: string;         // ISO 8601 timestamp
 }
 
+/**
+ * Image Generation Request
+ * 
+ * Parameters for generating images with AI models.
+ * 
+ * Media Drawer Mapping:
+ * - seedImage: Receives URL from PURPLE-highlighted image (mediaDrawer.seedImageId)
+ *   This maps to model-specific parameters in image-generator.ts:
+ *   * Runway Gen-4 Image → 'image' parameter
+ *   * FLUX models → 'image' parameter  
+ *   * Nano Banana → 'image_input' array parameter
+ * 
+ * - referenceImageUrls: Receives URLs from YELLOW-highlighted images (mediaDrawer.selectedItems)
+ *   Used for IP-Adapter or reference consistency
+ */
 export interface ImageGenerationRequest {
   prompt: string;
   projectId: string;

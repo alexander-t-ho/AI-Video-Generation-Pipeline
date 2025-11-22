@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { X, Upload, Image as ImageIcon } from 'lucide-react';
 import { ImageDropZoneProps } from '@/lib/types/components';
@@ -13,6 +13,21 @@ export default function ImageDropZone({
 }: ImageDropZoneProps) {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+
+  // Track URLs in a ref so we can access them in the cleanup function
+  const urlsRef = useRef<string[]>([]);
+
+  // Update ref whenever urls change
+  useEffect(() => {
+    urlsRef.current = previewUrls;
+  }, [previewUrls]);
+
+  // Cleanup ONLY when component unmounts (navigating away)
+  useEffect(() => {
+    return () => {
+      urlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, []); // Empty dependency array = run only on unmount
 
   const onDrop = useCallback(
     (acceptedFiles: File[], rejectedFiles: any[]) => {

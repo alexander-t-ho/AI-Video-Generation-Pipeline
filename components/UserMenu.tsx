@@ -1,25 +1,64 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession, signOut, signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Building2, LogOut, Settings, ChevronDown } from 'lucide-react';
+import { User, Building2, LogOut, Settings, ChevronDown, Mail, Lock } from 'lucide-react';
 
-export default function UserMenu() {
+interface UserMenuProps {
+  showFullButton?: boolean;
+}
+
+export default function UserMenu({ showFullButton = false }: UserMenuProps) {
   const { data: session, status } = useSession();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setIsLoginOpen(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setIsLoginOpen(false);
+        setEmail('');
+        setPassword('');
+        router.refresh();
+      }
+    } catch {
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (status === 'loading') {
     return (
@@ -29,12 +68,89 @@ export default function UserMenu() {
 
   if (!session) {
     return (
-      <Link
-        href="/auth/signin"
-        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-      >
-        Sign In
-      </Link>
+      <div className="relative" ref={menuRef}>
+        <button
+          onClick={() => setIsLoginOpen(!isLoginOpen)}
+          className={`${
+            showFullButton
+              ? 'px-6 py-2.5 text-base font-semibold text-white bg-white/20 hover:bg-white/30 rounded-xl'
+              : 'px-4 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-lg'
+          } transition-colors border border-white/20 backdrop-blur-sm`}
+        >
+          Sign In
+        </button>
+
+        {isLoginOpen && (
+          <div className="absolute right-0 mt-2 w-80 bg-black/90 rounded-lg shadow-lg border border-white/20 py-4 px-5 z-50 backdrop-blur-sm">
+            <h3 className="text-lg font-semibold text-white mb-4">Sign In</h3>
+            
+            {error && (
+              <div className="mb-4 bg-red-500/10 border border-red-500/50 text-red-400 px-3 py-2 rounded text-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-white/70 mb-2">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="w-full pl-10 pr-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/10 transition-all"
+                    placeholder="Enter your email"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-white/70 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full pl-10 pr-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-white/40 focus:bg-white/10 transition-all"
+                    placeholder="Enter your password"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2 px-4 bg-white text-black rounded-lg font-medium hover:bg-white/90 focus:outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-sm text-white/60 text-center">
+                Don't have an account?{' '}
+                <Link
+                  href="/auth/signup"
+                  className="text-white hover:text-white/80 underline"
+                  onClick={() => setIsLoginOpen(false)}
+                >
+                  Sign up
+                </Link>
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -110,7 +226,7 @@ export default function UserMenu() {
             <button
               onClick={() => {
                 setIsOpen(false);
-                signOut({ callbackUrl: '/auth/signin' });
+                signOut({ callbackUrl: '/' });
               }}
               className="flex items-center w-full px-4 py-2 text-sm text-red-400/80 hover:bg-red-500/10 hover:text-red-300 transition-colors"
             >

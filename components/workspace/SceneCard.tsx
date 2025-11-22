@@ -22,10 +22,11 @@ export default function SceneCard({
   isSelected = false,
   onClick,
 }: SceneCardProps) {
-  const { 
-    project, 
-    scenes, 
-    setCurrentSceneIndex, 
+  const {
+    project,
+    scenes,
+    mediaDrawer,
+    setCurrentSceneIndex,
     setViewMode,
     setSceneStatus,
     addGeneratedImage,
@@ -144,14 +145,14 @@ export default function SceneCard({
         type: 'status',
       });
 
-      // Get reference images from project (uploaded images for object consistency)
-      let referenceImageUrls = project.referenceImageUrls || [];
+      // Get reference images from project (uploaded images for object consistency) - limit to 3
+      let referenceImageUrls = (project.referenceImageUrls || []).slice(0, 3);
 
       // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
       let seedImageUrl: string | undefined = undefined;
       let seedFrameUrl: string | undefined = undefined;
 
-      // Priority: Custom image input > seed frame > reference image
+      // Priority: Custom image input > Media drawer seed image > seed frame > reference image
       // Handle custom image inputs (can be single string or array)
       const customImageInputs = scene.customImageInput
         ? (Array.isArray(scene.customImageInput) ? scene.customImageInput : [scene.customImageInput])
@@ -181,9 +182,61 @@ export default function SceneCard({
           seedImageUrl = validatedCustomImages[0];
           console.log(`[SceneCard] Scene ${sceneIndex}: Using custom image input as seed image:`, seedImageUrl.substring(0, 80) + '...');
           
-          // Add all custom images to reference images for IP-Adapter
-          referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls];
-          console.log(`[SceneCard] Scene ${sceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
+          // Add all custom images to reference images for IP-Adapter (limit to 3 total)
+          referenceImageUrls = [...validatedCustomImages, ...referenceImageUrls].slice(0, 3);
+          console.log(`[SceneCard] Scene ${sceneIndex}: Using ${Math.min(validatedCustomImages.length, 3)} custom image(s) as reference images via IP-Adapter`);
+        }
+      } else if (mediaDrawer.seedImageId) {
+        // Check if a seed image is selected in the media drawer (purple selection)
+        // Search for the seed image across all media sources
+        let foundSeedImage: any = null;
+
+        // Check generated images
+        for (const scn of scenes) {
+          const foundImg = scn.generatedImages?.find((img: any) => img.id === mediaDrawer.seedImageId);
+          if (foundImg) {
+            foundSeedImage = foundImg;
+            break;
+          }
+          const foundFrame = scn.seedFrames?.find((frame: any) => frame.id === mediaDrawer.seedImageId);
+          if (foundFrame) {
+            foundSeedImage = foundFrame;
+            break;
+          }
+        }
+
+        // Check uploaded images
+        if (!foundSeedImage && project.uploadedImages) {
+          const foundUpload = project.uploadedImages.find((img: any) => img.id === mediaDrawer.seedImageId);
+          if (foundUpload) {
+            foundSeedImage = foundUpload;
+          }
+          // Also check processed versions
+          if (!foundSeedImage) {
+            for (const uploadedImage of project.uploadedImages) {
+              const foundProcessed = uploadedImage.processedVersions?.find((pv: any) => pv.id === mediaDrawer.seedImageId);
+              if (foundProcessed) {
+                foundSeedImage = foundProcessed;
+                break;
+              }
+            }
+          }
+        }
+
+        if (foundSeedImage) {
+          // Convert to serveable URL
+          let imageUrl = foundSeedImage.url;
+          if (foundSeedImage.localPath) {
+            imageUrl = foundSeedImage.localPath;
+          }
+
+          // Format URL
+          if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('/api')) {
+            imageUrl = `/api/serve-image?path=${encodeURIComponent(imageUrl)}`;
+          }
+
+          seedImageUrl = imageUrl;
+          console.log(`[SceneCard] Scene ${sceneIndex}: Using media drawer seed image for i2i:`, seedImageUrl.substring(0, 80) + '...');
         }
       } else if (sceneIndex > 0) {
         // Only use seed frame if explicitly enabled via checkbox
@@ -281,7 +334,7 @@ export default function SceneCard({
     if (!project || isGenerating) return;
 
     const sceneState = scenes[sceneIndex];
-    const selectedImage = sceneState?.selectedImageId 
+    const selectedImage = sceneState?.selectedImageId
       ? sceneState.generatedImages.find(img => img.id === sceneState.selectedImageId)
       : sceneState?.generatedImages[0];
 
@@ -303,10 +356,23 @@ export default function SceneCard({
         type: 'status',
       });
 
+      // Get the seed frame URL if this is not Scene 0
       const seedFrameUrl = getSeedFrameUrl();
+
+      // Use seed frame as base image if available (for continuity), otherwise use selected generated image
+      const baseImageUrl = seedFrameUrl || (() => {
+        let imgUrl = selectedImage.localPath || selectedImage.url;
+        if (imgUrl.startsWith('/api') || imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+          return imgUrl;
+        }
+        return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
+      })();
+
+      console.log(`[SceneCard] Scene ${sceneIndex}: Using ${seedFrameUrl ? 'seed frame' : 'generated image'} as base image for video:`, baseImageUrl.substring(0, 80) + '...');
+
       const response = await generateVideo(
-        selectedImage.url,
-        scene.imagePrompt,
+        baseImageUrl,
+        scene.videoPrompt || scene.imagePrompt, // Fallback to imagePrompt for backward compatibility
         project.id,
         sceneIndex,
         seedFrameUrl,

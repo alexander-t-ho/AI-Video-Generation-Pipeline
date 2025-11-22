@@ -233,7 +233,7 @@ export default function StartingScreen({
       
       {/* Top Right - User Menu and Settings */}
       <div className="fixed top-6 right-6 z-40 flex items-center gap-3">
-        <UserMenu />
+        <UserMenu showFullButton={true} />
         <button
           onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
           className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"

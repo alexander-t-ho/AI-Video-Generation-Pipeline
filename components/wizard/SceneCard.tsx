@@ -27,8 +27,10 @@ export default function SceneCard({
 }: SceneCardProps) {
   const [editDescription, setEditDescription] = useState(scene.description);
   const [editImagePrompt, setEditImagePrompt] = useState(scene.imagePrompt || '');
+  const [editVideoPrompt, setEditVideoPrompt] = useState(scene.videoPrompt || scene.imagePrompt || '');
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const imagePromptRef = useRef<HTMLTextAreaElement>(null);
+  const videoPromptRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     attributes,
@@ -66,13 +68,15 @@ export default function SceneCard({
     if (isEditing) {
       setEditDescription(scene.description);
       setEditImagePrompt(scene.imagePrompt || '');
+      setEditVideoPrompt(scene.videoPrompt || scene.imagePrompt || '');
     }
-  }, [scene.description, scene.imagePrompt, isEditing]);
+  }, [scene.description, scene.imagePrompt, scene.videoPrompt, isEditing]);
 
   const handleSave = () => {
     onUpdate(scene.id, {
       description: editDescription.trim(),
       imagePrompt: editImagePrompt.trim(),
+      videoPrompt: editVideoPrompt.trim() || editImagePrompt.trim(), // Fallback to imagePrompt if empty
     });
     onEditToggle(null);
   };
@@ -80,6 +84,7 @@ export default function SceneCard({
   const handleCancel = () => {
     setEditDescription(scene.description);
     setEditImagePrompt(scene.imagePrompt || '');
+    setEditVideoPrompt(scene.videoPrompt || scene.imagePrompt || '');
     onEditToggle(null);
   };
 
@@ -162,19 +167,35 @@ export default function SceneCard({
         {/* Full Scene Description */}
         <div className="min-w-0">
           {isEditing ? (
-            <div>
-              <label className="block text-sm font-medium text-white/60 mb-1">
-                Scene Details
-              </label>
-              <textarea
-                ref={imagePromptRef}
-                value={editImagePrompt}
-                onChange={(e) => setEditImagePrompt(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={3}
-                className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded-md text-base text-white placeholder-white/40 focus:outline-none focus:border-white/50 focus:bg-white/15 resize-none"
-                placeholder="Detailed visual description for image generation..."
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-white/60 mb-1">
+                  Image Prompt
+                </label>
+                <textarea
+                  ref={imagePromptRef}
+                  value={editImagePrompt}
+                  onChange={(e) => setEditImagePrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded-md text-base text-white placeholder-white/40 focus:outline-none focus:border-white/50 focus:bg-white/15 resize-none"
+                  placeholder="Detailed visual description for image generation..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-white/60 mb-1">
+                  Video Prompt
+                </label>
+                <textarea
+                  ref={videoPromptRef}
+                  value={editVideoPrompt}
+                  onChange={(e) => setEditVideoPrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded-md text-base text-white placeholder-white/40 focus:outline-none focus:border-white/50 focus:bg-white/15 resize-none"
+                  placeholder="Detailed description for video generation (motion/action)..."
+                />
+              </div>
             </div>
           ) : (
             <div>

@@ -216,7 +216,7 @@ export function useSceneGeneration(
       const seedFrameUrl = getSeedFrameUrl(sceneIndex);
       const response = await generateVideo(
         selectedImage.url,
-        scene.imagePrompt,
+        scene.videoPrompt || scene.imagePrompt, // Fallback to imagePrompt for backward compatibility
         project.id,
         sceneIndex,
         seedFrameUrl

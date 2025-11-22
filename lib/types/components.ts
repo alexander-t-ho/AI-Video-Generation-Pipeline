@@ -22,6 +22,7 @@ export type ViewMode = 'storyboard' | 'timeline' | 'editor';
 
 export interface MediaDrawerState {
   selectedItems: string[];
+  seedImageId?: string | null; // Added for seed image selection
   filters: {
     scene?: number;
     type?: 'image' | 'video' | 'frame';

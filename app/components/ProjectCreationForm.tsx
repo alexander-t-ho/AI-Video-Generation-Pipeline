@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useProjectStore } from '@/lib/store';
+import { useProjectStore } from '@/lib/state/project-store';
 
 export default function ProjectCreationForm() {
   const [prompt, setPrompt] = useState('');
@@ -23,7 +23,8 @@ export default function ProjectCreationForm() {
 
     try {
       // 1. Create project in store
-      createProject(prompt, duration);
+      const name = `Project ${new Date().toLocaleDateString()}`;
+      createProject(name, prompt, duration);
 
       // 2. Generate storyboard
       const response = await fetch('/api/storyboard', {

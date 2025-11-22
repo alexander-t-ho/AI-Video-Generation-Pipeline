@@ -383,7 +383,8 @@ export async function generateVideo(
   sceneIndex: number,
   seedFrame?: string,
   duration?: number, // Optional: Scene-specific duration
-  subsceneIndex?: number // Optional: For subscene-based workflow
+  subsceneIndex?: number, // Optional: For subscene-based workflow
+  modelParameters?: Record<string, any> // Optional: Model-specific parameters
 ): Promise<{ predictionId: string; status: string }> {
   return retryRequest(async () => {
     const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
@@ -400,6 +401,7 @@ export async function generateVideo(
         seedFrame,
         duration, // Pass duration if provided
         subsceneIndex, // Pass subscene index if provided
+        modelParameters, // Pass model parameters if provided
       }),
     });
 
@@ -832,6 +834,33 @@ export async function deleteProject(projectId: string): Promise<void> {
       const error = await response.json().catch(() => ({ error: 'Failed to delete project' }));
       throw new Error(error.error || 'Failed to delete project');
     }
+  });
+}
+
+/**
+ * Delete a generated image
+ */
+export async function deleteGeneratedImage(
+  imageId: string,
+  localPath?: string,
+  s3Key?: string
+): Promise<{ success: boolean; message?: string }> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/images/${imageId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ localPath, s3Key }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to delete image' }));
+      throw new Error(error.error || 'Failed to delete image');
+    }
+
+    return response.json();
   });
 }
 

@@ -219,12 +219,14 @@ function YourStoryContent() {
       const store = useProjectStore.getState();
       if (!store.project) {
         // Create new project with prompt
-        store.createProject(prompt, duration);
+        const name = `Project ${new Date().toLocaleDateString()}`;
+        store.createProject(name, prompt, duration);
       } else {
         // Update existing project with new prompt
         // We need to update the project's prompt while keeping the same project ID
         const currentProject = store.project;
-        store.createProject(prompt, duration);
+        // Pass existing name if available, otherwise generate new
+        store.createProject(currentProject.name || `Project ${new Date().toLocaleDateString()}`, prompt, duration);
         // Restore the project ID to maintain continuity
         if (currentProject.id) {
           useProjectStore.setState({

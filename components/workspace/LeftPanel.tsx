@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import AgentChat from './AgentChat';
 import ChatInput from './ChatInput';
 import APIPreviewPanel from './APIPreviewPanel';
-import { useProjectStore } from '@/lib/state/project-store';
+import ModelParameterForm from './ModelParameterForm';
+import { useProjectStore, useSceneStore, useUIStore, useProjectCoreStore } from '@/lib/state/project-store';
 import { useGenerationStatus } from '@/lib/hooks/useGenerationStatus';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import {
   generateImage,
   pollImageStatus,
@@ -18,6 +19,7 @@ import {
   uploadImages,
 } from '@/lib/api-client';
 import { ImageGenerationRequest, GeneratedImage, GeneratedVideo, SceneWithState } from '@/lib/types';
+import { getActiveModel } from '@/lib/config/model-runtime';
 
 interface LeftPanelProps {
   onCollapse?: () => void;
@@ -37,6 +39,7 @@ interface ParsedCommand {
   sceneIndex?: number;
   frameIndex?: number;
   customPrompt?: string;
+  uploadedImageUrls?: string[];
 }
 
 export default function LeftPanel({ onCollapse }: LeftPanelProps) {
@@ -57,9 +60,12 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     setFinalVideo,
     setStoryboard,
     setViewMode,
+    updateSceneModelParameters,
+    mediaDrawer,
   } = useProjectStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAPIPreviewExpanded, setIsAPIPreviewExpanded] = useState(false);
+  const [isParametersExpanded, setIsParametersExpanded] = useState(false);
 
   // Enable real-time status updates
   // Disabled for now since the endpoint doesn't exist - will enable when API is ready
@@ -225,9 +231,38 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
   };
 
   /**
+   * Helper to resolve Media Item ID to URL
+   */
+  const getMediaUrl = (id: string): string | undefined => {
+    if (!project) return undefined;
+
+    // Check uploaded images
+    const uploaded = project.uploadedImages?.find(img => img.id === id);
+    if (uploaded) {
+      // Prefer S3 URL if available, otherwise fallback to local/served URL
+      // For API calls, we prefer the raw S3 URL if possible
+      return uploaded.url; 
+    }
+
+    // Check generated images in scenes
+    for (const scene of scenes) {
+      const generated = scene.generatedImages?.find(img => img.id === id);
+      if (generated) return generated.url;
+    }
+    
+    // Check seed frames
+    for (const scene of scenes) {
+       const frame = scene.seedFrames?.find(f => f.id === id);
+       if (frame) return frame.url;
+    }
+
+    return undefined;
+  };
+
+  /**
    * Handle image generation command
    */
-  const handleGenerateImage = async (sceneIndex: number, customPrompt?: string) => {
+  const handleGenerateImage = async (sceneIndex: number, customPrompt?: string, uploadedImageUrls: string[] = []) => {
     if (!project || !project.storyboard || !project.storyboard[sceneIndex]) {
       addChatMessage({
         role: 'agent',
@@ -248,18 +283,124 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
         type: 'status',
       });
 
-      // For product consistency: use Scene 0's image as seed for all subsequent scenes
-      // This ensures the same headphones appear in all scenes
-      const productReferenceImage = getProductReferenceImage(sceneIndex);
-      const seedFrameUrl = productReferenceImage || getSeedFrameUrl(sceneIndex);
-      const referenceImageUrls = getReferenceImageUrls(sceneIndex);
+      // Determine Seed Image and Reference Images from Media Drawer
+      // Media Drawer Selection Behavior:
+      // - YELLOW highlighted (selectedItems): Passed as referenceImageUrls to I2I models
+      // - PURPLE highlighted (seedImageId): Passed as seedImage, which maps to model-specific params:
+      //   * Runway Gen-4 Image: 'image' parameter
+      //   * FLUX models: 'image' parameter
+      //   * Nano Banana: 'image_input' array parameter
+      //   (Mapping handled in image-generator.ts createImagePrediction function)
+      //
+      // Priority 1: Image Input (uploadedImageUrls)
+      // Priority 2: Explicit Seed Image (Purple/Violet selection)
+      // Priority 3: First Reference Image (Yellow selection)
+      // Priority 4: Fallback to previous scene consistency logic
+      
+      let seedImage: string | undefined;
+      let referenceImageUrls: string[] = [];
+      
+      // Get latest state
+      const { mediaDrawer } = useProjectStore.getState();
+      const selectedMediaIds = mediaDrawer?.selectedItems || []; // Yellow highlights
+      const explicitSeedId = mediaDrawer?.seedImageId; // Purple highlight
+      
+      console.log('[LeftPanel] Media Drawer State DEBUG:', {
+        selectedMediaIds,
+        explicitSeedId,
+        fullMediaDrawer: mediaDrawer
+      });
+      
+      if (uploadedImageUrls.length > 0) {
+        // Priority 1: Image Input
+        seedImage = uploadedImageUrls[0];
+        
+        // Use other uploaded images as reference
+        if (uploadedImageUrls.length > 1) {
+          referenceImageUrls.push(...uploadedImageUrls.slice(1));
+        }
+        
+        // Add explicit seed as reference (since input is taking precedence as seed)
+        if (explicitSeedId) {
+           const url = getMediaUrl(explicitSeedId);
+           if (url) referenceImageUrls.push(url);
+        }
+        
+        // Add ALL selected media items as reference
+        selectedMediaIds.forEach(id => {
+          const url = getMediaUrl(id);
+          if (url) referenceImageUrls.push(url);
+        });
+        
+        addChatMessage({
+          role: 'agent',
+          content: `Using uploaded image as seed + ${referenceImageUrls.length} references.`,
+          type: 'status',
+        });
+      } else if (explicitSeedId) {
+        // Priority 2: Explicit Seed Image (Purple highlight from Media Drawer)
+        seedImage = getMediaUrl(explicitSeedId);
+        
+        // Use selected items (Yellow highlights) as references
+        selectedMediaIds.forEach(id => {
+          const url = getMediaUrl(id);
+          if (url) referenceImageUrls.push(url);
+        });
+        
+        addChatMessage({
+          role: 'agent',
+          content: `Using selected seed image (purple) + ${referenceImageUrls.length} references (yellow).`,
+          type: 'status',
+        });
+      } else if (selectedMediaIds.length > 0) {
+        // Priority 3: First Reference Image (Yellow highlight - implicit seed)
+        seedImage = getMediaUrl(selectedMediaIds[0]);
+        
+        // Use rest as reference
+        if (selectedMediaIds.length > 1) {
+          selectedMediaIds.slice(1).forEach(id => {
+            const url = getMediaUrl(id);
+            if (url) referenceImageUrls.push(url);
+          });
+        }
+        
+        addChatMessage({
+          role: 'agent',
+          content: `Using first yellow reference as seed + ${referenceImageUrls.length} additional references.`,
+          type: 'status',
+        });
+      } else {
+        // Priority 4: Fallback logic
+        // For product consistency: use Scene 0's image as seed for all subsequent scenes
+        const productReferenceImage = getProductReferenceImage(sceneIndex);
+        seedImage = productReferenceImage || getSeedFrameUrl(sceneIndex);
+        referenceImageUrls = getReferenceImageUrls(sceneIndex);
+      }
+
       const request: ImageGenerationRequest = {
         prompt: customPrompt || scene.imagePrompt,
         projectId: project.id,
         sceneIndex,
-        seedImage: seedFrameUrl, // Use product reference image for consistency
+        seedImage, 
         referenceImageUrls,
       };
+
+      // Log complete API request for debugging
+      console.log('========================================');
+      console.log('[LeftPanel] Image Generation Request');
+      console.log('========================================');
+      console.log('Scene Index:', sceneIndex);
+      console.log('Prompt:', request.prompt);
+      console.log('Project ID:', request.projectId);
+      console.log('Seed Image (purple highlight):', seedImage ? `${seedImage.substring(0, 80)}...` : 'none');
+      console.log('Reference Images (yellow highlights):', referenceImageUrls.length);
+      if (referenceImageUrls.length > 0) {
+        referenceImageUrls.forEach((url, idx) => {
+          console.log(`  [${idx}]: ${url.substring(0, 80)}...`);
+        });
+      }
+      console.log('Full Request Object:', JSON.stringify(request, null, 2));
+      console.log('========================================');
 
       const response = await generateImage(request);
 
@@ -349,13 +490,38 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
         type: 'status',
       });
 
-      const seedFrameUrl = getSeedFrameUrl(sceneIndex);
+      // Determine seed frame:
+      // 1. Explicit seed image from Media Drawer (Violet selection)
+      // 2. Default: Last frame of previous scene
+      
+      const { mediaDrawer } = useProjectStore.getState();
+      const explicitSeedId = mediaDrawer?.seedImageId;
+      
+      let seedFrameUrl = getSeedFrameUrl(sceneIndex);
+      
+      if (explicitSeedId) {
+         const explicitUrl = getMediaUrl(explicitSeedId);
+         if (explicitUrl) {
+            seedFrameUrl = explicitUrl;
+            addChatMessage({
+               role: 'agent',
+               content: `Using selected seed image as start frame.`,
+               type: 'status'
+            });
+         }
+      }
+
+      const sceneState = scenes[sceneIndex];
+      const modelParameters = sceneState?.modelParameters;
       const response = await generateVideo(
         selectedImage.url,
-        scene.imagePrompt,
+        scene.videoPrompt || scene.imagePrompt, // Fallback to imagePrompt for backward compatibility
         project.id,
         sceneIndex,
-        seedFrameUrl
+        seedFrameUrl,
+        scene.customDuration, // Pass custom duration if set
+        undefined, // subsceneIndex not used
+        modelParameters // Pass model-specific parameters
       );
 
       if (!response.predictionId) {
@@ -613,7 +779,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       case 'generate_image':
       case 'regenerate_image':
         if (command.sceneIndex !== undefined) {
-          await handleGenerateImage(command.sceneIndex, command.customPrompt);
+          await handleGenerateImage(command.sceneIndex, command.customPrompt, command.uploadedImageUrls);
         }
         break;
 
@@ -669,6 +835,8 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       type: 'message',
     });
 
+    let uploadedUrls: string[] = [];
+
     // Handle image uploads if provided
     if (images && images.length > 0 && project) {
       try {
@@ -683,6 +851,11 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
         if (uploadResult.images) {
           const { setUploadedImages } = useProjectStore.getState();
           setUploadedImages(uploadResult.images);
+        }
+
+        // Get URLs for command processing
+        if (uploadResult.urls) {
+          uploadedUrls = uploadResult.urls;
         }
         
         addChatMessage({
@@ -701,9 +874,15 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     }
 
     // Parse and process command
-    if (message.trim()) {
-      const command = parseCommand(message);
-      await processCommand(command);
+    if (message.trim() || uploadedUrls.length > 0) {
+      // Use message if available, otherwise default to generating image if images were uploaded
+      const commandText = message.trim() || (uploadedUrls.length > 0 ? "generate image" : "");
+      
+      if (commandText) {
+        const command = parseCommand(commandText);
+        command.uploadedImageUrls = uploadedUrls;
+        await processCommand(command);
+      }
     }
   };
 
@@ -746,6 +925,41 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       ) : (
         /* Chat Mode */
         <>
+          {/* Model Parameters Section - Collapsible */}
+          {project && scenes[currentSceneIndex] && (
+            <div className="flex-shrink-0 border-b border-white/20">
+              <button
+                onClick={() => setIsParametersExpanded(!isParametersExpanded)}
+                className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-white/60" />
+                  <span className="text-xs font-medium text-white/80">
+                    Model Parameters
+                  </span>
+                </div>
+                {isParametersExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-white/60" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-white/60" />
+                )}
+              </button>
+              {isParametersExpanded && (
+                <div className="px-3 py-3 bg-black/50 border-t border-white/10">
+                  <ModelParameterForm
+                    modelId={getActiveModel('video')}
+                    initialParameters={scenes[currentSceneIndex]?.modelParameters}
+                    sceneIndex={currentSceneIndex}
+                    onChange={(parameters) => {
+                      updateSceneModelParameters(currentSceneIndex, parameters);
+                    }}
+                    disabled={isProcessing}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Chat Container - Cursor style: clean padding */}
           <div
             ref={containerRef}

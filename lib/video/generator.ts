@@ -133,7 +133,8 @@ export async function createVideoPrediction(
   prompt: string,
   seedFrame?: string,
   duration?: number,
-  referenceImages?: string[]
+  referenceImages?: string[],
+  modelParameters?: Record<string, any>
 ): Promise<string> {
   // Validate inputs
   if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -165,23 +166,36 @@ export async function createVideoPrediction(
     console.log(`${logPrefix} Negative Prompt: "${negativePrompt}"`);
   }
   
+  // Determine if using Veo model (need this early for logging)
+  const isVeo = REPLICATE_MODEL.includes('veo-3.1') || REPLICATE_MODEL.includes('veo') || REPLICATE_MODEL.includes('google/veo');
+
   console.log(`${logPrefix} Inputs:`);
   console.log(`${logPrefix}   - Image URL: ${imageUrl}`);
   if (seedFrame) {
-    console.log(`${logPrefix}   - Seed Frame: ${seedFrame}`);
-    console.log(`${logPrefix}   - Mode: image-to-video with seed frame`);
+    if (isVeo) {
+      console.log(`${logPrefix}   - Last Frame (Veo): ${seedFrame}`);
+      console.log(`${logPrefix}   - Mode: image-to-video with last_frame parameter`);
+    } else {
+      console.log(`${logPrefix}   - Seed Frame: ${seedFrame}`);
+      console.log(`${logPrefix}   - Mode: image-to-video with seed frame`);
+    }
   } else {
     console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
   }
   if (referenceImages && referenceImages.length > 0) {
-    console.log(`${logPrefix}   - Reference Images: ${referenceImages.length}`);
+    if (isVeo) {
+      console.log(`${logPrefix}   - Reference Images (Veo reference_images parameter): ${referenceImages.length}`);
+    } else {
+      console.log(`${logPrefix}   - Reference Images: ${referenceImages.length}`);
+    }
     referenceImages.forEach((url, idx) => {
       const urlPreview = url.length > 80 ? url.substring(0, 80) + '...' : url;
       console.log(`${logPrefix}     [${idx + 1}] ${urlPreview}`);
     });
   }
   // Use provided duration or fall back to default, then validate and adjust
-  const requestedDuration = duration || VIDEO_DURATION;
+  // Default to 8 seconds for Veo models (4, 6, 8 are the only valid durations)
+  const requestedDuration = duration || (isVeo ? 8 : VIDEO_DURATION);
   const validatedDuration = validateAndAdjustDuration(requestedDuration, REPLICATE_MODEL);
   console.log(`${logPrefix} Settings:`);
   console.log(`${logPrefix}   - Duration: ${validatedDuration}s${validatedDuration !== requestedDuration ? ` (rounded up from ${requestedDuration}s)` : ''}`);
@@ -190,15 +204,15 @@ export async function createVideoPrediction(
   const replicate = createReplicateClient();
 
   // Build input parameters
-  // For Scene 0: use imageUrl directly
-  // For Scene 1-4: use seedFrame if provided, otherwise use imageUrl
-  const inputImageUrl = seedFrame || imageUrl;
+  // For Veo models: Always use imageUrl as main image, seedFrame goes to last_frame parameter
+  // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
+  const isVeoModel = isVeo; // Already defined above for duration
+  const inputImageUrl = isVeoModel ? imageUrl : (seedFrame || imageUrl);
 
   // Model-specific parameter handling
-  // Gen-4 models may have different parameter names/requirements than WAN models
   const isGen4 = REPLICATE_MODEL.includes('gen4');
   const isGen4Aleph = REPLICATE_MODEL.includes('gen4-aleph');
-  
+
   // Gen-4 Aleph requires 'video' input, not 'image'
   // Gen-4 Turbo uses 'image' input
   // For Scene 0 (first scene), we should use Gen-4 Turbo, not Aleph
@@ -208,7 +222,8 @@ export async function createVideoPrediction(
     // This is a configuration error - Gen-4 Aleph should not be used for Scene 0
     throw new Error('Gen-4 Aleph requires a video input. Use Gen-4 Turbo or another image-to-video model for Scene 0.');
   }
-  
+
+  // Start with model-specific parameters (user-provided)
   const input: ReplicateInput = {
     // Gen-4 Aleph uses 'video', others use 'image'
     ...(isGen4Aleph ? {
@@ -219,17 +234,23 @@ export async function createVideoPrediction(
     prompt: enhancedPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
-    // Add reference images for Google Veo / Gen-4 Image if provided
-    ...(referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
-    // WAN models use 'duration' and 'resolution'
-    // Gen-4 models may use different parameters - adjust if needed
-    ...(isGen4 ? {
-      // Gen-4 specific parameters (adjust based on actual API requirements)
+    // Add reference images for Google Veo models if provided
+    ...(isVeoModel && referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
+    // Add last_frame for Veo models (seed frame from previous scene)
+    ...(isVeoModel && seedFrame ? { last_frame: seedFrame } : {}),
+    // Model-specific parameters
+    ...(isVeoModel ? {
+      // Google Veo 3.1 parameters
+      duration: validatedDuration,
+      aspect_ratio: VIDEO_RESOLUTION === '720p' ? '16:9' : VIDEO_RESOLUTION === '1080p' ? '16:9' : '16:9',
+    } : isGen4 ? {
+      // Gen-4 specific parameters
       // Note: Gen-4 Turbo uses 'duration' and 'aspect_ratio' (not 'resolution')
       // Gen-4 Aleph may have different requirements
       ...(isGen4Aleph ? {
         // Gen-4 Aleph parameters (video editing/transformation)
         aspect_ratio: VIDEO_RESOLUTION === '720p' ? '16:9' : VIDEO_RESOLUTION === '1080p' ? '16:9' : '16:9',
+        ...(referenceImages && referenceImages.length > 0 ? { reference_image: referenceImages[0] } : {}),
       } : {
         // Gen-4 Turbo parameters (image-to-video)
         duration: validatedDuration,
@@ -242,6 +263,21 @@ export async function createVideoPrediction(
       enable_prompt_expansion: true, // WAN-specific: Enable prompt optimization
     }),
   };
+
+  // Merge user-provided model parameters (override defaults)
+  // Filter out null/undefined values and exclude parameters we've already set
+  if (modelParameters) {
+    for (const [key, value] of Object.entries(modelParameters)) {
+      // Skip null/undefined values
+      if (value !== null && value !== undefined && value !== '') {
+        // Allow model parameters to override defaults (except for core required params like prompt, image/video)
+        // For safety, we don't allow overriding prompt, image, or video
+        if (key !== 'prompt' && key !== 'image' && key !== 'video') {
+          input[key] = value;
+        }
+      }
+    }
+  }
 
   try {
     // Replicate SDK accepts either:
@@ -334,9 +370,10 @@ export async function createVideoPredictionWithRetry(
   prompt: string,
   seedFrame?: string,
   duration?: number,
-  referenceImages?: string[]
+  referenceImages?: string[],
+  modelParameters?: Record<string, any>
 ): Promise<string> {
-  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration, referenceImages));
+  return retryWithBackoff(() => createVideoPrediction(imageUrl, prompt, seedFrame, duration, referenceImages, modelParameters));
 }
 
 // ============================================================================

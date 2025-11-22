@@ -53,7 +53,7 @@ interface ReplicateInput {
   output_format?: string;
   output_quality?: number;
   image?: string; // For image-to-image
-  image_input?: string[]; // For nano-banana model
+  image_input?: string[]; // For google/nano-banana-pro model
   ip_adapter_images?: string[]; // For IP-Adapter reference images (FLUX models)
   ip_adapter_scale?: number; // Control how strongly to follow reference (0-1, default 0.7)
   reference_images?: string[]; // For Gen-4 Image models (Runway Gen-4 Image)
@@ -91,6 +91,18 @@ function createReplicateClient(): Replicate {
 
 /**
  * Creates an image prediction on Replicate
+ * 
+ * Media Drawer Integration:
+ * - seedImage: Receives URL from PURPLE-highlighted image in media drawer
+ *   Maps to model-specific parameters based on selected model:
+ *   * Runway Gen-4 Image → 'image' parameter
+ *   * FLUX models (with IP-Adapter) → 'image' parameter
+ *   * Nano Banana → 'image_input' array parameter (combined with referenceImageUrls)
+ *   * Other I2I models → 'image' parameter
+ * 
+ * - referenceImageUrls: Receives URLs from YELLOW-highlighted images in media drawer
+ *   Used for IP-Adapter or reference consistency depending on model
+ * 
  * @param prompt Image generation prompt
  * @param seedImage Optional seed image URL for image-to-image generation
  * @param referenceImageUrls Optional array of reference image URLs for IP-Adapter (object consistency)
@@ -147,7 +159,7 @@ export async function createImagePrediction(
 
   // Detect model types for different parameter handling
   const isGen4Image = REPLICATE_MODEL.includes('gen4-image');
-  const isNanoBanana = REPLICATE_MODEL.includes('nano-banana');
+  const isNanoBanana = REPLICATE_MODEL.includes('google/nano-banana-pro');
 
   // Build input parameters - model-specific
   let input: ReplicateInput;
@@ -160,11 +172,11 @@ export async function createImagePrediction(
       aspect_ratio: seedImage ? 'match_input_image' : '16:9',
       output_format: 'jpg', // Model default
     };
-    // Add seed if provided (nano-banana may support it)
+    // Add seed if provided (google/nano-banana-pro may support it)
     if (randomSeed !== undefined) {
       input.seed = randomSeed;
     }
-    console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage} + ${referenceImageUrls?.length || 0} reference images`);
+    console.log(`${logPrefix} Using google/nano-banana-pro with image_input: ${seedImage} + ${referenceImageUrls?.length || 0} reference images`);
   } else {
     // Standard parameters for other models
     input = {
@@ -180,13 +192,13 @@ export async function createImagePrediction(
       input.seed = randomSeed;
     }
 
-    // Add seed image for non-nano-banana models
+    // Add seed image for non-google/nano-banana-pro models
     if (seedImage) {
       input.image = seedImage;
     }
   }
 
-  // Add reference images - only for non-nano-banana models
+  // Add reference images - only for non-google/nano-banana-pro models
   if (!isNanoBanana && referenceImageUrls && referenceImageUrls.length > 0) {
     if (isGen4Image) {
       // Gen-4 Image models use reference_images parameter
@@ -201,6 +213,50 @@ export async function createImagePrediction(
   }
 
   try {
+    // Log complete Replicate API call details
+    console.log('========================================');
+    console.log('[ImageGenerator] Replicate API Call');
+    console.log('========================================');
+    console.log('Model:', REPLICATE_MODEL);
+    console.log('Model Type:', isGen4Image ? 'Gen-4 Image' : isNanoBanana ? 'Nano Banana' : 'FLUX/Other');
+    console.log('Input Parameters:');
+    console.log('  prompt:', input.prompt?.substring(0, 100) + (input.prompt && input.prompt.length > 100 ? '...' : ''));
+    console.log('  aspect_ratio:', input.aspect_ratio);
+    console.log('  output_format:', input.output_format);
+    console.log('  output_quality:', input.output_quality);
+    console.log('  seed:', input.seed);
+    
+    if (isNanoBanana && input.image_input) {
+      console.log('  image_input (Nano Banana):');
+      (input.image_input as string[]).forEach((url, idx) => {
+        const displayUrl = url.startsWith('data:') ? `[base64 data, ${(url.length / 1024).toFixed(2)} KB]` : `${url.substring(0, 80)}...`;
+        console.log(`    [${idx}]: ${displayUrl}`);
+      });
+    } else {
+      const displayImage = input.image ? (input.image.startsWith('data:') ? `[base64 data, ${(input.image.length / 1024).toFixed(2)} KB]` : `${input.image.substring(0, 80)}...`) : 'none';
+      console.log('  image (seed/base):', displayImage);
+    }
+    
+    if (input.reference_images) {
+      console.log('  reference_images (Gen-4):');
+      (input.reference_images as string[]).forEach((url, idx) => {
+        const displayUrl = url.startsWith('data:') ? `[base64 data, ${(url.length / 1024).toFixed(2)} KB]` : `${url.substring(0, 80)}...`;
+        console.log(`    [${idx}]: ${displayUrl}`);
+      });
+    }
+    
+    if (input.ip_adapter_images) {
+      console.log('  ip_adapter_images (FLUX):');
+      (input.ip_adapter_images as string[]).forEach((url, idx) => {
+        const displayUrl = url.startsWith('data:') ? `[base64 data, ${(url.length / 1024).toFixed(2)} KB]` : `${url.substring(0, 80)}...`;
+        console.log(`    [${idx}]: ${displayUrl}`);
+      });
+      console.log('  ip_adapter_scale:', input.ip_adapter_scale);
+    }
+    
+    console.log('Note: base64 conversion is automatic for S3/local URLs (Replicate requirement)');
+    console.log('========================================');
+    
     const prediction = await replicate.predictions.create({
       version: REPLICATE_MODEL,
       input,

@@ -134,6 +134,7 @@ async function main() {
             sceneTitle: 'Opening Shot',
             sceneSummary: 'Wide aerial shot of mountain landscape at golden hour, camera slowly reveals the winding road below.',
             imagePrompt: 'Cinematic aerial shot of mountain landscape at golden hour, winding mountain road visible below, dramatic clouds, 4K quality',
+            videoPrompt: 'Slow camera pan across mountain landscape, revealing winding road below, dramatic clouds moving, golden hour lighting',
             suggestedDuration: 4,
           },
           {
@@ -141,6 +142,7 @@ async function main() {
             sceneTitle: 'Car Introduction',
             sceneSummary: 'First glimpse of the Mustang GT appearing around a curve, engine sound building.',
             imagePrompt: '2024 Ford Mustang GT in deep blue, emerging from mountain curve, motion blur background, cinematic lighting, professional car photography',
+            videoPrompt: 'Mustang GT emerges from mountain curve, camera follows the car, motion blur background, engine sound building, cinematic camera movement',
             suggestedDuration: 5,
           },
           {
@@ -148,6 +150,7 @@ async function main() {
             sceneTitle: 'Performance Details',
             sceneSummary: 'Close-up shots of performance features: wheels spinning, exhaust, hood lines.',
             imagePrompt: 'Close-up of Mustang GT performance wheel spinning, brake caliper visible, dynamic action shot, shallow depth of field',
+            videoPrompt: 'Wheel spinning in motion, brake caliper visible, dynamic camera movement, shallow depth of field, performance-focused action',
             suggestedDuration: 6,
           },
           {
@@ -155,6 +158,7 @@ async function main() {
             sceneTitle: 'Driving Experience',
             sceneSummary: 'Interior shot of driver enjoying the ride, hands on steering wheel, dashboard visible.',
             imagePrompt: 'Interior shot of driver in Mustang GT, hands on steering wheel, digital dashboard glowing, leather seats, sunset light streaming through window',
+            videoPrompt: 'Driver hands on steering wheel, dashboard glowing, camera moves through interior, sunset light streaming through window, immersive driving experience',
             suggestedDuration: 5,
           },
           {
@@ -162,6 +166,7 @@ async function main() {
             sceneTitle: 'Final Shot',
             sceneSummary: 'Hero shot of the car parked at scenic overlook with sunset, logo fade in.',
             imagePrompt: 'Ford Mustang GT parked at scenic mountain overlook, sunset background, hero shot, professional automotive photography, dramatic composition',
+            videoPrompt: 'Mustang GT parked at scenic overlook, camera slowly circles the car, sunset in background, logo fade in, dramatic final shot',
             suggestedDuration: 10,
           },
         ],

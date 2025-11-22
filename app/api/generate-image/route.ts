@@ -17,8 +17,7 @@ import {
 } from '@/lib/ai/image-generator';
 import { ImageGenerationRequest, ImageGenerationResponse } from '@/lib/types';
 import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
-import { DEFAULT_RUNTIME_CONFIG, PromptAdjustmentMode } from '@/lib/config/model-runtime';
-import { adjustPromptForReferenceImage } from '@/lib/utils/prompt-optimizer';
+import { DEFAULT_RUNTIME_CONFIG } from '@/lib/config/model-runtime';
 import path from 'path';
 
 // ============================================================================
@@ -208,6 +207,25 @@ export async function POST(request: NextRequest) {
     let body: ImageGenerationRequest;
     try {
       body = await request.json();
+      
+      // Log received API request
+      console.log('========================================');
+      console.log('[API Route] Received Image Generation Request');
+      console.log('========================================');
+      console.log('Scene Index:', body.sceneIndex);
+      console.log('Project ID:', body.projectId);
+      console.log('Prompt:', body.prompt?.substring(0, 100) + (body.prompt?.length > 100 ? '...' : ''));
+      console.log('Seed Image (purple):', body.seedImage ? `${body.seedImage.substring(0, 80)}...` : 'none');
+      console.log('Reference Images (yellow):', body.referenceImageUrls?.length || 0);
+      if (body.referenceImageUrls && body.referenceImageUrls.length > 0) {
+        body.referenceImageUrls.forEach((url, idx) => {
+          console.log(`  [${idx}]: ${url.substring(0, 80)}...`);
+        });
+      }
+      console.log('Seed Frame:', body.seedFrame ? `${body.seedFrame.substring(0, 80)}...` : 'none');
+      console.log('Negative Prompt:', body.negativePrompt || 'none');
+      console.log('Full Request Body:', JSON.stringify(body, null, 2));
+      console.log('========================================');
     } catch (parseError) {
       console.error('[Image Generation API] Failed to parse request body:', parseError);
       return NextResponse.json(
@@ -272,6 +290,11 @@ export async function POST(request: NextRequest) {
     const seedFrame = body.seedFrame?.trim();
     let seedImage = body.seedImage?.trim();
 
+    // Store original URLs for logging
+    const originalSeedImage = seedImage;
+    const originalReferenceUrls = [...referenceImageUrls];
+    const originalSeedFrame = seedFrame;
+
     // OPTIMIZATION: Convert ALL URLs in parallel (not sequential)
     const urlsToConvert: string[] = [
       ...referenceImageUrls,
@@ -298,6 +321,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Log URL verification
+    console.log('========================================');
+    console.log('[API Route] URL Conversion (for Replicate)');
+    console.log('========================================');
+    console.log('Original URLs (from Media Drawer):');
+    console.log('  Seed Image (purple):', originalSeedImage ? `${originalSeedImage.substring(0, 80)}...` : 'none');
+    if (originalReferenceUrls.length > 0) {
+      console.log('  Reference Images (yellow):');
+      originalReferenceUrls.forEach((url, idx) => {
+        console.log(`    [${idx}]: ${url.substring(0, 80)}...`);
+      });
+    }
+    console.log('  Seed Frame:', originalSeedFrame ? `${originalSeedFrame.substring(0, 80)}...` : 'none');
+    console.log('');
+    console.log('Converted URLs (for Replicate API):');
+    console.log('  Seed Image:', seedImage ? (seedImage.startsWith('data:') ? `[base64 data, ${(seedImage.length / 1024).toFixed(2)} KB]` : `${seedImage.substring(0, 80)}...`) : 'none');
+    if (referenceImageUrls.length > 0) {
+      console.log('  Reference Images:');
+      referenceImageUrls.forEach((url, idx) => {
+        const displayUrl = url.startsWith('data:') ? `[base64 data, ${(url.length / 1024).toFixed(2)} KB]` : `${url.substring(0, 80)}...`;
+        console.log(`    [${idx}]: ${displayUrl}`);
+      });
+    }
+    console.log('  Seed Frame:', seedFrameUrl ? (seedFrameUrl.startsWith('data:') ? `[base64 data, ${(seedFrameUrl.length / 1024).toFixed(2)} KB]` : `${seedFrameUrl.substring(0, 80)}...`) : 'none');
+    console.log('========================================');
+    
     const allUrlsPublic = referenceImageUrls.every(url => 
       url.startsWith('http://') || url.startsWith('https://')
     );
@@ -308,33 +356,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Prompt adjustment strategy based on runtime config
-    // Get prompt adjustment mode from request body (sent from client) or use default
-    const promptAdjustmentMode: PromptAdjustmentMode = body.promptAdjustmentMode || DEFAULT_RUNTIME_CONFIG.promptAdjustmentMode || 'scene-specific';
-    
-    // Apply prompt adjustment based on mode
-    if (referenceImageUrls.length > 0) {
-      if (promptAdjustmentMode === 'disabled') {
-        // No adjustment - use full prompt
-        console.log(`[Image Generation API] Scene ${sceneIndex}: Prompt adjustment disabled - using full prompt`);
-      } else if (promptAdjustmentMode === 'scene-specific') {
-        // Scene-specific: Scene 1 uses full prompt (for dynamic shots), others use adjusted prompt
-        if (sceneIndex === 1) {
-          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - Scene 1 uses full prompt for dynamic shots`);
-          // Keep full prompt for Scene 1
-        } else {
-          prompt = adjustPromptForReferenceImage(prompt);
-          console.log(`[Image Generation API] Scene ${sceneIndex}: Scene-specific mode - using prompt adjustment`);
-          console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
-          console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
-        }
-      } else if (promptAdjustmentMode === 'less-aggressive') {
-        // Less aggressive: Only replace object type mentions, keep all scene details
-        prompt = adjustPromptForReferenceImage(prompt);
-        console.log(`[Image Generation API] Scene ${sceneIndex}: Using less-aggressive prompt adjustment`);
-        console.log(`[Image Generation API] Original prompt: ${body.prompt.substring(0, 100)}...`);
-        console.log(`[Image Generation API] Adjusted prompt: ${prompt.substring(0, 100)}...`);
-      }
-    }
+    // Pass raw prompt to the API without modification
+    console.log(`[Image Generation API] Scene ${sceneIndex}: Using raw prompt (no modification)`);
+    console.log(`[Image Generation API] Prompt: ${prompt.substring(0, 100)}...`);
 
     // Strategy: Use seed image for image-to-image generation
     // For Scene 0: Seed image will be the reference image (if available)

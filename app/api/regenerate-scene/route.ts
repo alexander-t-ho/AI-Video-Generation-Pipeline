@@ -11,16 +11,18 @@ Your task is to rewrite a single scene from a storyboard. The scene description 
 The description must be a SHORT phrase like:
 "driver close-up", "wide car approach", "interior cockpit", "engine roar", "hero product shot"
 
-For the imagePrompt field, provide detailed visual guidance for image generation including shot type, subject, action, style, lighting, composition, camera movement, and any audio cues that can be implied visually.
+For the imagePrompt field, provide detailed visual guidance for image generation including shot type, subject, style, lighting, composition.
+For the videoPrompt field, provide detailed guidance for video generation describing motion, action, camera movement, and dynamic elements.
 
 Output strictly valid JSON in this format:
 {
   "description": "Short 3-6 word phrase describing the scene",
-  "imagePrompt": "Detailed prompt for image generation that matches the description, including shot type, subject, action, style, lighting, composition, camera movement, and any audio cues that can be implied visually.",
+  "imagePrompt": "Detailed prompt for image generation that matches the description, including shot type, subject, style, lighting, composition.",
+  "videoPrompt": "Detailed prompt for video generation describing motion, action, camera movement, and dynamic elements.",
   "duration": 3
 }
 
-Keep image prompts specific, visual, and production-ready. The description field should be short and punchy, while imagePrompt contains all the detail.`;
+Keep image prompts specific, visual, and production-ready. Keep video prompts focused on motion, action, and dynamic elements. The description field should be short and punchy, while imagePrompt and videoPrompt contain all the detail.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -101,6 +103,7 @@ Generate a new version of this scene that fits the storyboard. Keep the descript
       scene: {
         description: sceneData.description.trim(),
         imagePrompt: sceneData.imagePrompt.trim(),
+        videoPrompt: sceneData.videoPrompt?.trim() || sceneData.imagePrompt.trim(), // Fallback to imagePrompt if not provided
         suggestedDuration: duration,
       },
     });

@@ -209,7 +209,7 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     supportedInputs: ['prompt', 'image', 'negative_prompt', 'strength', 'guidance_scale', 'num_outputs', 'seed'],
   },
   {
-    id: 'google/nano-banana',
+    id: 'google/nano-banana-pro',
     name: 'Nano Banana',
     provider: 'Google',
     description: 'Specialized for precise recoloring and color changes',
@@ -281,11 +281,18 @@ export const AVAILABLE_VIDEO_MODELS: ModelOption[] = [
     description: 'Next-gen cinematic quality',
   },
   {
+    id: 'google/veo-3.1',
+    name: 'Google Veo 3.1',
+    provider: 'Google',
+    description: 'Premium quality $0.40/s (default)',
+    supportedInputs: ['image', 'prompt', 'last_frame', 'aspect_ratio', 'duration', 'seed', 'reference_images'],
+  },
+  {
     id: 'google/veo-3.1-fast',
     name: 'Google Veo 3.1 Fast',
     provider: 'Google',
     description: '$0.10/s no audio',
-    supportedInputs: ['image', 'prompt', 'last_frame', 'aspect_ratio', 'duration', 'seed'],
+    supportedInputs: ['image', 'prompt', 'last_frame', 'aspect_ratio', 'duration', 'seed', 'reference_images'],
   },
   {
     id: 'runwayml/gen4-turbo',
@@ -300,13 +307,6 @@ export const AVAILABLE_VIDEO_MODELS: ModelOption[] = [
     provider: 'Runway',
     description: 'Video editing & transformation $0.18/s',
     supportedInputs: ['video', 'prompt', 'aspect_ratio', 'reference_image', 'seed'],
-  },
-  {
-    id: 'google/veo-3.1',
-    name: 'Google Veo 3.1',
-    provider: 'Google',
-    description: 'Premium quality $0.40/s',
-    supportedInputs: ['image', 'prompt', 'last_frame', 'aspect_ratio', 'duration', 'seed'],
   },
   {
     id: 'runway/gen-3-alpha-turbo',
@@ -360,8 +360,8 @@ export const IMAGE_CONFIG = {
  */
 function resolveVideoModel(envModel?: string): string {
   if (!envModel) {
-    // Default: WAN 2.2 for fast, cost-effective generation
-    return 'wan-video/wan-2.2-i2v-fast';
+    // Default: Google Veo 3.1 for high quality generation
+    return 'google/veo-3.1';
   }
 
   // Handle short aliases
@@ -440,22 +440,32 @@ export const MODEL_INFO = {
   },
   video: {
     name: getVideoModelName(VIDEO_CONFIG.model),
-    provider: 'Replicate',
+    provider: getVideoModelProvider(VIDEO_CONFIG.model),
     type: 'image-to-video',
     description: 'Image-to-video generation with motion',
   },
 } as const;
 
+function getVideoModelProvider(model: string): string {
+  if (model.includes('veo') || model.includes('google')) return 'Google';
+  if (model.includes('gen4') || model.includes('runway')) return 'Runway';
+  if (model.includes('wan')) return 'WAN Video';
+  if (model.includes('luma') || model.includes('ray')) return 'Luma AI';
+  if (model.includes('kling')) return 'Kuaishou';
+  if (model.includes('hailuo') || model.includes('minimax')) return 'MiniMax';
+  if (model.includes('sora') || model.includes('openai')) return 'OpenAI';
+  return 'Replicate';
+}
+
 function getVideoModelName(model: string): string {
-  if (model.includes('gen4-aleph')) return 'Runway Gen-4 Aleph';
-  if (model.includes('gen4-turbo')) return 'Runway Gen-4 Turbo';
-  if (model.includes('gen4')) return 'Runway Gen-4';
-  if (model.includes('wan-2.5')) return 'WAN 2.5 (i2v-fast)';
-  if (model.includes('wan-2.2')) return 'WAN 2.2 (i2v-fast)';
+  // Check specific versions first, then fall back to generic matches
   if (model.includes('veo-3.1-fast')) return 'Google Veo 3.1 Fast';
   if (model.includes('veo') || model.includes('google')) return 'Google Veo 3.1';
+  if (model.includes('gen4-aleph')) return 'Runway Gen-4 Aleph';
   if (model.includes('gen4-turbo')) return 'Runway Gen-4 Turbo';
-  if (model.includes('gen4-aleph') || model.includes('runway')) return 'Runway Gen-4 Aleph';
+  if (model.includes('gen4') || model.includes('runway')) return 'Runway Gen-4';
+  if (model.includes('wan-2.5')) return 'WAN 2.5 (i2v-fast)';
+  if (model.includes('wan-2.2')) return 'WAN 2.2 (i2v-fast)';
   if (model.includes('luma') || model.includes('ray')) return 'Luma Ray';
   if (model.includes('kling')) return 'Kling V2.5 Turbo Proto';
   if (model.includes('hailuo')) return 'Hailuo 2.3 Fast';
@@ -474,16 +484,16 @@ function getVideoModelName(model: string): string {
  * - REPLICATE_IMAGE_MODEL: Full model identifier (default: black-forest-labs/flux-1.1-pro)
  *
  * Video Generation:
- * - REPLICATE_VIDEO_MODEL: Model identifier or alias (default: wan2.2)
- *   Aliases: wan2.5, wan2.2, veo, veo-fast, luma, ray, gen4, gen4-turbo, sora
- * - VIDEO_DURATION: Duration in seconds (default: 5, supports 5 or 10 for WAN)
+ * - REPLICATE_VIDEO_MODEL: Model identifier or alias (default: google/veo-3.1)
+ *   Aliases: veo, veo-3.1, veo-fast, wan2.5, wan2.2, luma, ray, gen4, gen4-turbo, sora
+ * - VIDEO_DURATION: Duration in seconds (default: 8 for Veo, 5 for others; Veo accepts only 4, 6, or 8)
  * - VIDEO_RESOLUTION: Resolution (default: 720p, supports 720p, 1080p, 4K)
  *
  * Example .env.local:
  * ```
  * REPLICATE_IMAGE_MODEL=black-forest-labs/flux-1.1-pro
- * REPLICATE_VIDEO_MODEL=wan2.2
- * VIDEO_DURATION=5
+ * REPLICATE_VIDEO_MODEL=google/veo-3.1
+ * VIDEO_DURATION=8
  * VIDEO_RESOLUTION=720p
  * ```
  */

@@ -232,6 +232,7 @@ export async function saveUploadedImage(
     try {
       s3Key = await uploadImageToS3(localPath, projectId, filename);
       url = getS3Url(s3Key);
+      console.log('[ImageStorage] Successfully uploaded to S3:', { s3Key, url });
     } catch (error) {
       console.warn('[ImageStorage] S3 upload failed, using local storage:', error);
       // Continue with local storage if S3 fails

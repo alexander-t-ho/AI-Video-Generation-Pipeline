@@ -2,7 +2,7 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
-import { Image as ImageIcon, Video, Download, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Image as ImageIcon, Video, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 
@@ -18,6 +18,12 @@ interface MediaItem {
 
 // Helper to add thumbnail query param to image URLs
 function getThumbnailUrl(url: string, size: 'small' | 'medium' | 'large' = 'small'): string {
+  // For S3 URLs, proxy through serve-image API for thumbnail generation
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    // S3 URL - proxy through serve-image for thumbnail
+    return `/api/serve-image?url=${encodeURIComponent(url)}&thumb=${size}`;
+  }
+
   // Only add thumbnail param to serve-image API URLs
   if (url.includes('/api/serve-image')) {
     const separator = url.includes('?') ? '&' : '?';
@@ -33,6 +39,7 @@ export default function MediaDrawer() {
     mediaDrawer, 
     setMediaFilter: setFilter,
     setMediaSearchQuery: setSearchQuery,
+    toggleMediaItem: toggleItem,
     selectMediaItem: selectItem,
     setCurrentSceneIndex,
     setViewMode,
@@ -238,6 +245,14 @@ export default function MediaDrawer() {
 
     if (project?.uploadedImages) {
       project.uploadedImages.forEach((uploadedImage, imgIndex) => {
+        console.log('[MediaDrawer] Processing uploaded image:', {
+          id: uploadedImage.id,
+          url: uploadedImage.url,
+          localPath: uploadedImage.localPath,
+          s3Key: uploadedImage.s3Key,
+          hasProcessedVersions: !!uploadedImage.processedVersions?.length
+        });
+        
         // Add original image
         // For S3 URLs, use them directly; for local paths, serve through API
         let imageUrl: string;
@@ -251,6 +266,8 @@ export default function MediaDrawer() {
         } else {
           imageUrl = `/api/serve-image?path=${encodeURIComponent(uploadedImage.url)}`;
         }
+        
+        console.log('[MediaDrawer] Resolved image URL:', imageUrl);
 
         allMedia.push({
           id: uploadedImage.id,
@@ -377,8 +394,8 @@ export default function MediaDrawer() {
   };
 
   const handleMediaClick = (item: MediaItem) => {
-    // Select media item
-    selectItem(item.id);
+    // Toggle selection (Cycle: Unselected -> Reference -> Seed -> Unselected)
+    toggleItem(item.id);
     
     // If it's from a scene, switch to that scene in editor view
     if (item.sceneIndex !== undefined) {
@@ -404,17 +421,10 @@ export default function MediaDrawer() {
     }
   };
 
-  const handleDownload = (url: string, filename: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   const renderMediaThumbnail = (item: MediaItem) => {
     const isSelected = mediaDrawer.selectedItems.includes(item.id);
+    const isSeed = mediaDrawer.seedImageId === item.id;
     const hasVideoError = videoErrors[item.id] || false;
     const isVisible = visibleItems.has(item.id);
 
@@ -466,9 +476,11 @@ export default function MediaDrawer() {
         onDragStart={(e) => handleDragStart(e, item.id, item.type)}
         onDragEnd={handleDragEnd}
         className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-          isSelected
-            ? 'border-white/40 ring-2 ring-white/20'
-            : 'border-white/20 hover:border-white/30'
+          isSeed
+            ? 'border-violet-500 ring-2 ring-violet-500/30 shadow-lg shadow-violet-500/20'
+            : isSelected
+              ? 'border-yellow-400 ring-2 ring-yellow-400/20'
+              : 'border-white/20 hover:border-white/30'
         }`}
         onClick={handleClick}
       >
@@ -544,20 +556,6 @@ export default function MediaDrawer() {
             <Video className="w-8 h-8 text-white/40" />
           </div>
         )}
-
-        {/* Overlay on Hover */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDownload(item.url, `media-${item.id}.${item.type === 'video' ? 'mp4' : 'png'}`);
-            }}
-            className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors border border-white/20"
-            aria-label="Download"
-          >
-            <Download className="w-4 h-4 text-white" />
-          </button>
-        </div>
 
         {/* Scene Badge */}
         {item.sceneIndex !== undefined && (
@@ -707,6 +705,18 @@ export default function MediaDrawer() {
         </div>
       </div>
 
+      {/* Selection Legend */}
+      <div className="px-3 pt-3 pb-3 border-b border-white/20 flex items-center gap-4 text-xs text-white/60">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded border-2 border-violet-500 bg-violet-500/20 shadow-[0_0_8px_rgba(139,92,246,0.4)]" />
+          <span>Seed</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded border-2 border-yellow-400 bg-yellow-400/20" />
+          <span>Reference</span>
+        </div>
+      </div>
+
       {/* Media Sections */}
       <div className="flex-1 overflow-y-auto px-3 py-3">
         {/* Character References */}
@@ -764,15 +774,6 @@ export default function MediaDrawer() {
             <div className="relative rounded-lg overflow-hidden border-2 border-white/40">
               <div className="aspect-video bg-white/5 flex items-center justify-center">
                 <Video className="w-8 h-8 text-white/40" />
-              </div>
-              <div className="absolute top-2 right-2">
-                <button
-                  onClick={() => handleDownload(finalVideo, 'final-video.mp4')}
-                  className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors border border-white/20"
-                  aria-label="Download final video"
-                >
-                  <Download className="w-4 h-4 text-white" />
-                </button>
               </div>
             </div>
           </div>

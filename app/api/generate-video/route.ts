@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration, referenceImageUrls } = body;
+    const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration, referenceImageUrls, modelParameters } = body;
 
     // Validate required fields
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -112,31 +112,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Scene-based model selection
-    // Scene 0 → Scene 1: Use Gen-4 Turbo for maximum consistency with cleaned reference image
     // Note: Gen-4 Aleph requires video input, so it cannot be used for Scene 0 (image-to-video)
-    // Scenes 1-4: Use faster model (continuity already established via seed frames)
     let selectedModel = runtimeVideoModel;
-    
-    // Only apply overrides if no model was explicitly selected
-    if (!selectedModel) {
-      // For Scene 0, use Gen-4 Turbo for maximum consistency
-      if (sceneIndex === 0) {
-        selectedModel = 'runwayml/gen4-turbo';
-        console.log('[Video Generation API] Scene 0 → Scene 1: Using Gen-4 Turbo for maximum consistency (image-to-video)');
-      } else {
-        // Scenes 1-4: Use faster model (WAN 2.5) since continuity is already established
-        // Seed frames from previous scenes provide the continuity
-        selectedModel = 'wan-video/wan-2.5-i2v-fast:5be8b80ffe74f3d3a731693ddd98e7ee94100a0f4ae704bd58e93565977670f9';
-        console.log(`[Video Generation API] Scene ${sceneIndex}: Using WAN 2.5 for faster generation (continuity via seed frames)`);
-      }
+
+    // Only override if Gen-4 Aleph is selected for Scene 0 (it requires video input, not image)
+    if (selectedModel && sceneIndex === 0 && selectedModel.includes('gen4-aleph')) {
+      console.log('[Video Generation API] Scene 0: Overriding Gen-4 Aleph to Gen-4 Turbo (Aleph requires video input, not image)');
+      selectedModel = 'runwayml/gen4-turbo';
+    } else if (selectedModel) {
+      console.log(`[Video Generation API] Scene ${sceneIndex}: Using selected model: ${selectedModel}`);
     } else {
-      // Model was explicitly selected - only override Gen-4 Aleph for Scene 0 (it requires video input)
-      if (sceneIndex === 0 && selectedModel.includes('gen4-aleph')) {
-        console.log('[Video Generation API] Scene 0: Overriding Gen-4 Aleph to Gen-4 Turbo (Aleph requires video input, not image)');
-        selectedModel = 'runwayml/gen4-turbo';
-      } else {
-        console.log(`[Video Generation API] Scene ${sceneIndex}: Using selected model: ${selectedModel}`);
-      }
+      // No override - use default from config (now Google Veo 3.1)
+      console.log(`[Video Generation API] Scene ${sceneIndex}: Using default model from config`);
     }
 
     // Apply the selected model
@@ -167,8 +154,8 @@ export async function POST(request: NextRequest) {
     console.log('[Video Generation API] ========================================');
     console.log('[Video Generation API] Request received');
     console.log('[Video Generation API] Timestamp:', timestamp);
-    console.log('[Video Generation API] Selected Model:', selectedModel || runtimeVideoModel || 'default');
-    console.log('[Video Generation API] Model Selection Strategy:', sceneIndex === 0 ? 'Gen-4 for Scene 0→1 (max consistency)' : 'WAN 2.5 for Scenes 1-4 (speed + continuity)');
+    console.log('[Video Generation API] Selected Model:', selectedModel || runtimeVideoModel || 'default (Google Veo 3.1)');
+    console.log('[Video Generation API] Model Selection Strategy:', 'Using Veo 3.1 for all scenes (reference_images + last_frame parameters)');
     console.log('[Video Generation API] Project ID:', projectId);
     console.log('[Video Generation API] Scene Index:', sceneIndex);
     console.log('[Video Generation API] Prompt:', prompt);
@@ -198,12 +185,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create video prediction (returns prediction ID for polling)
+    // Pass modelParameters if provided
     const predictionId = await createVideoPredictionWithRetry(
       imageUrl,
       prompt,
       seedFrameUrl,
       videoDuration,
-      refImageUrls
+      refImageUrls,
+      modelParameters // Pass model-specific parameters
     );
 
     return NextResponse.json({

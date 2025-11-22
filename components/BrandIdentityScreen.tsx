@@ -19,6 +19,7 @@ export default function BrandIdentityScreen() {
   const [carDatabase, setCarDatabase] = useState<CarDatabase | null>(null);
   const [isLoadingCars, setIsLoadingCars] = useState(true);
   const [isWaitingForProject, setIsWaitingForProject] = useState(false);
+  const [selectedAssetHistory, setSelectedAssetHistory] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -151,10 +152,56 @@ export default function BrandIdentityScreen() {
 
   const handleCarSelect = (car: CarVariant | CustomAsset) => {
     setSelectedCar(car);
-
-    // Auto-select all assets when a car is selected
-    const allAssetIds = new Set(car.referenceImages.map(img => img.id));
-    setSelectedAssetIds(allAssetIds);
+    
+    // Check if this is a CustomAsset being selected for the first time
+    const isCustomAsset = 'baseCarId' in car;
+    const isFirstTimeSelection = !selectedAssetHistory.has(car.id);
+    
+    if (isCustomAsset && isFirstTimeSelection && carDatabase) {
+      // Find the base asset
+      const baseAsset = carDatabase.variants.find(v => v.id === car.baseCarId);
+      
+      if (baseAsset && baseAsset.id === selectedCar?.id) {
+        // Base asset is currently selected, inherit its selections
+        const baseSelectedImages = baseAsset.referenceImages.filter(img => 
+          selectedAssetIds.has(img.id)
+        );
+        
+        // Match by type to find corresponding images in custom asset
+        const matchingCustomAssetIds = new Set<string>();
+        baseSelectedImages.forEach(baseImg => {
+          const matchingCustomImg = car.referenceImages.find(customImg => 
+            customImg.type === baseImg.type
+          );
+          if (matchingCustomImg) {
+            matchingCustomAssetIds.add(matchingCustomImg.id);
+          }
+        });
+        
+        // If we found matches, use them; otherwise select all
+        if (matchingCustomAssetIds.size > 0) {
+          setSelectedAssetIds(matchingCustomAssetIds);
+        } else {
+          // No matching types found, select all as fallback
+          const allAssetIds = new Set(car.referenceImages.map(img => img.id));
+          setSelectedAssetIds(allAssetIds);
+        }
+      } else {
+        // Base asset not currently selected, select all as before
+        const allAssetIds = new Set(car.referenceImages.map(img => img.id));
+        setSelectedAssetIds(allAssetIds);
+      }
+      
+      // Mark this custom asset as having been selected
+      setSelectedAssetHistory(prev => new Set(prev).add(car.id));
+    } else {
+      // Default behavior: auto-select all assets
+      const allAssetIds = new Set(car.referenceImages.map(img => img.id));
+      setSelectedAssetIds(allAssetIds);
+      
+      // Track selection for regular assets too
+      setSelectedAssetHistory(prev => new Set(prev).add(car.id));
+    }
 
     // Extract and store asset description in project state
     const { setAssetDescription } = useProjectStore.getState();

@@ -49,7 +49,8 @@ For each scene:
 - Duration: 10 seconds
 - Clear visual focus and logical progression from the previous scene
 - Keep the scene description SHORT and CONCISE - 3-6 words maximum
-- Provide a detailed imagePrompt for visual generation
+- Provide a detailed imagePrompt for visual generation (static image description)
+- Provide a detailed videoPrompt for video generation (motion/action description)
 
 Scene description examples:
 "driver close-up", "wide car approach", "interior cockpit"
@@ -64,14 +65,15 @@ Output strictly valid JSON in this format:
     {
       "order": 0,
       "description": "Short 3-6 word phrase describing the scene",
-      "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
+      "imagePrompt": "Detailed prompt for image generation including shot type, subject, style, lighting, composition.",
+      "videoPrompt": "Detailed prompt for video generation describing motion, action, camera movement, and dynamic elements.",
       "duration": 10
     },
     ...
   ]
 }
 
-Keep image prompts specific, visual, and production-ready.`;
+Keep image prompts specific, visual, and production-ready. Keep video prompts focused on motion, action, and dynamic elements.`;
 
 // ============================================================================
 // Types
@@ -115,6 +117,7 @@ interface RawStoryboardResponse {
     order: number;
     description: string;
     imagePrompt: string;
+    videoPrompt: string;
     duration: number;
   }>;
 }
@@ -362,6 +365,9 @@ function validateStoryboardResponse(
     if (typeof scene.imagePrompt !== 'string' || scene.imagePrompt.trim() === '') {
       throw new Error(`Scene ${index}: missing or invalid imagePrompt field`);
     }
+    if (typeof scene.videoPrompt !== 'string' || scene.videoPrompt.trim() === '') {
+      throw new Error(`Scene ${index}: missing or invalid videoPrompt field`);
+    }
     if (typeof scene.duration !== 'number' || scene.duration < 1 || scene.duration > 10) {
       throw new Error(`Scene ${index}: invalid duration (must be 1-10 seconds)`);
     }
@@ -379,6 +385,7 @@ function validateStoryboardResponse(
       order: index,
       description: scene.description.trim(),
       imagePrompt: scene.imagePrompt.trim(),
+      videoPrompt: scene.videoPrompt.trim(),
       suggestedDuration: scene.duration,
     };
   });

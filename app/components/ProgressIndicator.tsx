@@ -1,7 +1,7 @@
 // app/components/ProgressIndicator.tsx
 'use client';
 
-import { useProjectStore } from '@/lib/store';
+import { useProjectStore } from '@/lib/state/project-store';
 
 const steps = [
   { id: 'storyboard', label: 'Generating Storyboard', description: 'Creating 5-scene narrative' },

@@ -5,7 +5,7 @@
  * Supports uploading final video files to S3 for sharing and storage.
  */
 
-import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -496,6 +496,34 @@ export async function uploadProcessedImageToS3(
   }
 }
 
+/**
+ * Delete a file from S3
+ * @param s3Key - The S3 key of the file to delete
+ * @returns Promise that resolves when deletion is complete
+ */
+export async function deleteFromS3(s3Key: string): Promise<void> {
+  if (!s3Key) {
+    throw new Error('S3 key is required');
+  }
+
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+    });
+
+    await client.send(command);
+    console.log(`[S3] Successfully deleted file: ${s3Key}`);
+  } catch (error: any) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[S3] Failed to delete file ${s3Key}:`, errorMessage);
+    throw new Error(`Failed to delete file from S3: ${errorMessage}`);
+  }
+}
+
 // ============================================================================
 // Export
 // ============================================================================
@@ -505,5 +533,6 @@ export default {
   getS3Url,
   findBackgroundRemovedVersion,
   uploadProcessedImageToS3,
+  deleteFromS3,
 };
 

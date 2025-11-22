@@ -508,8 +508,8 @@ export const IMAGE_TO_IMAGE_SCHEMAS: Record<string, ModelSchema> = {
     limitations: []
   },
 
-  'google/nano-banana': {
-    id: 'google/nano-banana',
+  'google/nano-banana-pro': {
+    id: 'google/nano-banana-pro',
     name: 'Nano Banana',
     provider: 'Google',
     type: 'image-to-image',
@@ -806,15 +806,21 @@ export const VIDEO_SCHEMAS: Record<string, ModelSchema> = {
     notes: ['Cost: $0.45 per video', 'High cinematic quality', 'Supports guided motion with last frame']
   },
 
-  'google/veo-3.1-fast': {
-    id: 'google/veo-3.1-fast',
-    name: 'Google Veo 3.1 Fast',
+  'google/veo-3.1': {
+    id: 'google/veo-3.1',
+    name: 'Google Veo 3.1',
     provider: 'Google',
     type: 'image-to-video',
     input: {
       parameters: {
         image: COMMON_PARAMETERS.image,
         prompt: COMMON_PARAMETERS.prompt,
+        reference_images: {
+          name: 'reference_images',
+          type: 'array' as const,
+          required: false,
+          description: 'Array of reference image URLs for character/object consistency'
+        },
         last_frame: {
           name: 'last_frame',
           type: 'string' as const,
@@ -826,14 +832,14 @@ export const VIDEO_SCHEMAS: Record<string, ModelSchema> = {
           name: 'duration',
           type: 'number' as const,
           required: false,
-          default: 5,
-          description: 'Video duration in seconds',
-          validation: { min: 2, max: 8 }
+          default: 8,
+          description: 'Video duration in seconds (valid values: 4, 6, or 8)',
+          validation: { min: 4, max: 8 }
         },
         seed: COMMON_PARAMETERS.seed
       },
       requiredParameters: ['image', 'prompt'],
-      optionalParameters: ['last_frame', 'aspect_ratio', 'duration', 'seed']
+      optionalParameters: ['reference_images', 'last_frame', 'aspect_ratio', 'duration', 'seed']
     },
     output: {
       type: 'video',
@@ -842,9 +848,56 @@ export const VIDEO_SCHEMAS: Record<string, ModelSchema> = {
         type: 'string'
       }
     },
-    capabilities: ['fast', 'flexible-duration', 'last-frame-control'],
+    capabilities: ['premium-quality', 'flexible-duration', 'last-frame-control', 'reference-images'],
     limitations: ['no-audio'],
-    notes: ['Cost: $0.10 per second', 'No audio generation']
+    notes: ['Cost: $0.40 per second', 'No audio generation', 'Premium quality', 'Supports reference images for object consistency', 'Duration must be 4, 6, or 8 seconds']
+  },
+
+  'google/veo-3.1-fast': {
+    id: 'google/veo-3.1-fast',
+    name: 'Google Veo 3.1 Fast',
+    provider: 'Google',
+    type: 'image-to-video',
+    input: {
+      parameters: {
+        image: COMMON_PARAMETERS.image,
+        prompt: COMMON_PARAMETERS.prompt,
+        reference_images: {
+          name: 'reference_images',
+          type: 'array' as const,
+          required: false,
+          description: 'Array of reference image URLs for character/object consistency'
+        },
+        last_frame: {
+          name: 'last_frame',
+          type: 'string' as const,
+          required: false,
+          description: 'URL of the last frame for guided motion'
+        },
+        aspect_ratio: COMMON_PARAMETERS.aspect_ratio,
+        duration: {
+          name: 'duration',
+          type: 'number' as const,
+          required: false,
+          default: 8,
+          description: 'Video duration in seconds (valid values: 4, 6, or 8)',
+          validation: { min: 4, max: 8 }
+        },
+        seed: COMMON_PARAMETERS.seed
+      },
+      requiredParameters: ['image', 'prompt'],
+      optionalParameters: ['reference_images', 'last_frame', 'aspect_ratio', 'duration', 'seed']
+    },
+    output: {
+      type: 'video',
+      format: 'mp4',
+      structure: {
+        type: 'string'
+      }
+    },
+    capabilities: ['fast', 'flexible-duration', 'last-frame-control', 'reference-images'],
+    limitations: ['no-audio'],
+    notes: ['Cost: $0.10 per second', 'No audio generation', 'Fast generation', 'Supports reference images for object consistency', 'Duration must be 4, 6, or 8 seconds']
   },
 
   'minimax/hailuo-2.3-fast': {

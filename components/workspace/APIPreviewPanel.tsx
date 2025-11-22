@@ -21,7 +21,7 @@ interface PayloadField {
 }
 
 export default function APIPreviewPanel({ sceneIndex, generationType }: APIPreviemPanelProps) {
-  const { project, scenes, currentSceneIndex } = useProjectStore();
+  const { project, scenes, currentSceneIndex, mediaDrawer } = useProjectStore();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [displayType, setDisplayType] = useState<'image' | 'video'>(generationType || 'image');
   const activeSceneIndex = sceneIndex ?? currentSceneIndex;
@@ -39,7 +39,53 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         ? sceneState.generatedImages?.find((img: any) => img.id === sceneState.selectedImageId)
         : sceneState?.generatedImages?.[0];
 
-      const referenceImages = project.referenceImageUrls || [];
+      const allReferenceImages = project.referenceImageUrls || [];
+      const referenceImages = allReferenceImages.slice(0, 3);
+      const wasTruncated = allReferenceImages.length > 3;
+
+      // Check if seed image usage is enabled (from model parameters)
+      const useSeedImage = scene.modelParameters?.useSeedImage !== false; // Default to true
+
+      // Get seed image from media drawer (purple selection) if available
+      let effectiveSeedImage = null;
+      if (useSeedImage && mediaDrawer.seedImageId) {
+        // Search for seed image across all scenes and media sources
+        for (const scn of scenes) {
+          // Check generated images
+          const foundImg = scn.generatedImages?.find((img: any) => img.id === mediaDrawer.seedImageId);
+          if (foundImg) {
+            effectiveSeedImage = foundImg;
+            break;
+          }
+          // Check seed frames
+          const foundFrame = scn.seedFrames?.find((frame: any) => frame.id === mediaDrawer.seedImageId);
+          if (foundFrame) {
+            effectiveSeedImage = foundFrame;
+            break;
+          }
+        }
+        // Check uploaded images
+        if (!effectiveSeedImage && project.uploadedImages) {
+          const foundUpload = project.uploadedImages.find((img: any) => img.id === mediaDrawer.seedImageId);
+          if (foundUpload) {
+            effectiveSeedImage = foundUpload;
+          }
+          // Also check processed versions
+          if (!effectiveSeedImage) {
+            for (const uploadedImage of project.uploadedImages) {
+              const foundProcessed = uploadedImage.processedVersions?.find((pv: any) => pv.id === mediaDrawer.seedImageId);
+              if (foundProcessed) {
+                effectiveSeedImage = foundProcessed;
+                break;
+              }
+            }
+          }
+        }
+      }
+      // Fall back to selected image if no seed image is set
+      if (!effectiveSeedImage && useSeedImage) {
+        effectiveSeedImage = selectedImage;
+      }
 
       const fields: PayloadField[] = [
         {
@@ -60,17 +106,33 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         {
           key: 'seedImage',
           label: 'Seed Image (I2I)',
-          value: selectedImage?.url || 'None',
+          value: effectiveSeedImage?.url || (useSeedImage ? 'None' : 'Disabled'),
           type: 'url',
-          description: 'Reference image for image-to-image generation',
-          imageUrl: selectedImage?.localPath ? `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}` : undefined,
+          description: `${useSeedImage ? 'Reference image for image-to-image generation' : 'Seed image disabled - using pure text-to-image'}`,
+          imageUrl: effectiveSeedImage ? (() => {
+            // Prefer localPath, fall back to url
+            let imgUrl = effectiveSeedImage.localPath || effectiveSeedImage.url;
+            if (!imgUrl) return undefined;
+
+            // If it's already an API URL or HTTP/HTTPS, use it directly
+            if (imgUrl.startsWith('/api') || imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+              return imgUrl;
+            }
+
+            // Otherwise, serve through API
+            return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
+          })() : undefined,
         },
         {
           key: 'referenceImages',
           label: 'Reference Images',
-          value: referenceImages.length > 0 ? `${referenceImages.length} image(s)` : 'None',
+          value: referenceImages.length > 0
+            ? `${referenceImages.length} image(s)${wasTruncated ? ` (${allReferenceImages.length} total, limited to 3)` : ''}`
+            : 'None',
           type: 'array',
-          description: 'Images for consistency/IP-Adapter',
+          description: wasTruncated
+            ? 'Images for consistency/IP-Adapter (limited to first 3)'
+            : 'Images for consistency/IP-Adapter',
           imageUrls: referenceImages.length > 0 ? referenceImages : [],
         },
         {
@@ -106,26 +168,43 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         ? sceneState.seedFrames?.[sceneState.selectedSeedFrameIndex]
         : null;
 
-      // Get reference images dragged into the storyboard prompt
-      const referenceImages = project.referenceImageUrls || [];
+      // Use seed frame as base image if available, otherwise use selected image
+      const baseImage = seedFrame || selectedImage;
+
+      // Format the base image URL properly
+      const baseImageUrl = baseImage ? (() => {
+        let imgUrl = baseImage.localPath || baseImage.url;
+        if (!imgUrl) return 'NOT SELECTED';
+        if (imgUrl.startsWith('/api') || imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+          return imgUrl;
+        }
+        return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
+      })() : 'NOT SELECTED';
+
+      // Get reference images dragged into the storyboard prompt (limit to 3)
+      const allReferenceImagesVideo = project.referenceImageUrls || [];
+      const referenceImages = allReferenceImagesVideo.slice(0, 3);
+      const wasTruncatedVideo = allReferenceImagesVideo.length > 3;
 
       const fields: PayloadField[] = [
         {
           key: 'image',
-          label: 'Base Image',
-          value: selectedImage?.url || 'NOT SELECTED',
+          label: seedFrame ? 'Base Image (Seed Frame)' : 'Base Image',
+          value: baseImageUrl,
           type: 'url',
           required: true,
-          description: 'The base image for video generation',
-          imageUrl: selectedImage?.localPath ? `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}` : undefined,
+          description: seedFrame
+            ? 'Using seed frame from previous scene for continuity'
+            : 'The base image for video generation',
+          imageUrl: baseImageUrl !== 'NOT SELECTED' ? baseImageUrl : undefined,
         },
         {
           key: 'prompt',
-          label: 'Prompt',
-          value: scene.imagePrompt,
+          label: 'Video Prompt',
+          value: scene.videoPrompt || scene.imagePrompt, // Fallback to imagePrompt for backward compatibility
           type: 'string',
           required: true,
-          description: 'Motion and scene description',
+          description: 'Motion and scene description for video generation',
         },
         {
           key: 'duration',
@@ -134,14 +213,6 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
           type: 'number',
           required: true,
           description: 'Video duration in seconds',
-        },
-        {
-          key: 'seedFrame',
-          label: 'Seed Frame',
-          value: seedFrame?.url || 'None',
-          type: 'url',
-          description: 'First frame for continuity (Scene 1-4 only)',
-          imageUrl: seedFrame?.url ? seedFrame.url : undefined,
         },
         // Add individual reference image fields (dragged into storyboard)
         ...referenceImages.map((imgUrl, idx) => ({
@@ -156,9 +227,11 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         ...(referenceImages.length > 0 ? [{
           key: 'reference_images',
           label: 'Reference Images (Array)',
-          value: `${referenceImages.length} image(s)`,
+          value: `${referenceImages.length} image(s)${wasTruncatedVideo ? ` (${allReferenceImagesVideo.length} total, limited to 3)` : ''}`,
           type: 'array' as const,
-          description: 'Reference images sent to API for Google Veo',
+          description: wasTruncatedVideo
+            ? 'Reference images sent to API for Google Veo (limited to first 3)'
+            : 'Reference images sent to API for Google Veo',
           imageUrls: referenceImages,
         }] : []),
       ];
@@ -171,7 +244,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
     }
 
     return null;
-  }, [project, scenes, activeSceneIndex, displayType]);
+  }, [project, scenes, activeSceneIndex, displayType, mediaDrawer.seedImageId]);
 
   const handleCopy = () => {
     if (!previewData) return;
@@ -344,13 +417,28 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         </button>
 
         {/* Warnings */}
-        {previewData.type === 'image' && previewData.fields.find(f => f.key === 'seedImage')?.value === 'None' && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2">
-            <p className="text-xs text-yellow-300">
-              ⚠️ No seed image - using pure text-to-image
-            </p>
-          </div>
-        )}
+        {previewData.type === 'image' && (() => {
+          const seedImageField = previewData.fields.find(f => f.key === 'seedImage');
+          if (seedImageField?.value === 'Disabled') {
+            return (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2">
+                <p className="text-xs text-blue-300">
+                  ℹ️ Seed image disabled - using pure text-to-image
+                </p>
+              </div>
+            );
+          }
+          if (seedImageField?.value === 'None') {
+            return (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2">
+                <p className="text-xs text-yellow-300">
+                  ⚠️ No seed image - using pure text-to-image
+                </p>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {previewData.type === 'video' && previewData.fields.find(f => f.key === 'image')?.value === 'NOT SELECTED' && (
           <div className="bg-red-500/10 border border-red-500/30 rounded p-2">

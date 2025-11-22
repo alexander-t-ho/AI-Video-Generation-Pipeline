@@ -198,11 +198,13 @@ model Scene {
   sceneTitle       String      // Title of the scene
   sceneSummary     String      @db.Text // Summary/description
   imagePrompt      String      @db.Text // Prompt for image generation
+  videoPrompt      String      @db.Text // Prompt for video generation
   suggestedDuration Float      // Suggested duration in seconds
   negativePrompt   String?     @db.Text
   customDuration   Float?      // User-overridden duration
   customImageInput String?     // Custom image URL
   useSeedFrame     Boolean     @default(false)
+  modelParameters  Json?       // Model-specific parameters for video generation (e.g., aspect_ratio, resolution, seed, etc.)
   status           SceneStatus @default(PENDING)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
