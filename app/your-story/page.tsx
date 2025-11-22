@@ -8,7 +8,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove, sortableKeyboa
 import { Scene } from '@/lib/types';
 import { useProjectStore } from '@/lib/state/project-store';
 import { createProject } from '@/lib/api-client';
-import { Loader2, ArrowRight, Sparkles } from 'lucide-react';
+import { Loader2, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
 
 // Wrapper component that uses useSearchParams
 function YourStoryContent() {
@@ -402,13 +402,25 @@ function YourStoryContent() {
         </h1>
       </div>
 
-      {/* Back Button */}
-      <button
-        onClick={() => router.push('/style')}
-        className="fixed top-6 right-6 z-40 px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
-      >
-        Back
-      </button>
+      {/* Back and Continue Buttons - Bottom Right */}
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+        <button
+          onClick={() => router.push('/style')}
+          className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
+        {storyboardScenes && (
+          <button
+            onClick={handleContinue}
+            className="group relative px-10 py-5 bg-white text-black rounded-full text-lg font-medium hover:bg-white/90 transition-all flex items-center gap-3 shadow-2xl shadow-white/20"
+          >
+            <span>Continue</span>
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </button>
+        )}
+      </div>
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 mt-20 mb-6">
         {/* Header */}
@@ -603,19 +615,6 @@ function YourStoryContent() {
                 </DragOverlay>
               </DndContext>
             </div>
-          </div>
-        )}
-
-        {/* Continue Button */}
-        {storyboardScenes && (
-          <div className="flex items-center justify-center pt-8">
-            <button
-              onClick={handleContinue}
-              className="group relative px-10 py-5 bg-white text-black rounded-full text-lg font-medium hover:bg-white/90 transition-all flex items-center gap-3 shadow-2xl shadow-white/20"
-            >
-              <span>Continue to Brand Identity</span>
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
           </div>
         )}
       </div>

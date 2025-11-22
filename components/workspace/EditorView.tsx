@@ -1072,266 +1072,244 @@ export default function EditorView() {
             <h3 className="text-lg font-semibold text-white">
               Scene {currentSceneIndex + 1}: {currentScene.description}
             </h3>
-            <div className="mt-2">
-              <div className="flex items-start gap-2">
-                <div className="flex items-start gap-2 flex-1 min-w-0">
-                  {isPromptExpanded ? (
-                    <>
-                      <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
-                      </span>
-                      <div className="flex-1 flex flex-col gap-3">
-                      {/* Image Prompt (Required) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Image Prompt <span className="text-white/60">*</span>
-                        </label>
-                        <textarea
-                          value={editedPrompt}
-                          onChange={(e) => setEditedPrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
-                          rows={6}
-                          placeholder="Enter image prompt (required)..."
-                          required
-                        />
-                      </div>
-
-                      {/* Video Prompt (Required) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Video Prompt <span className="text-white/60">*</span>
-                        </label>
-                        <textarea
-                          value={editedVideoPrompt}
-                          onChange={(e) => setEditedVideoPrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
-                          rows={6}
-                          placeholder="Enter video prompt describing motion/action (required)..."
-                          required
-                        />
-                      </div>
-
-                      {/* Negative Prompt (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Negative Prompt <span className="text-white/60 text-xs">(optional)</span>
-                        </label>
-                        <textarea
-                          value={editedNegativePrompt}
-                          onChange={(e) => setEditedNegativePrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-y min-h-[2.5rem] backdrop-blur-sm"
-                          rows={1}
-                          placeholder="What to avoid in the image (optional)..."
-                          style={{ height: 'auto' }}
-                          onInput={(e) => {
-                            const target = e.currentTarget;
-                            target.style.height = 'auto';
-                            target.style.height = `${target.scrollHeight}px`;
-                          }}
-                        />
-                      </div>
-
-                      {/* Duration (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
-                        </label>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="1"
-                              max="10"
-                              step="0.1"
-                              value={editedDuration}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setEditedDuration(val === '' ? '' : Number(val));
-                              }}
-                              className="w-24 px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
-                              placeholder="8"
-                            />
-                            <span className="text-xs text-white/60">seconds</span>
-                          </div>
-                          
-                          {/* Use Seed Frame Toggle */}
-                          {currentSceneIndex > 0 && (() => {
-                            const previousScene = scenes[currentSceneIndex - 1];
-                            const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
-                            const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
-                            const seedFrameUrl = seedFrame?.url 
-                              ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
-                                  ? seedFrame.url
-                                  : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
-                              : null;
-                            
-                            return (
-                              <div className="flex items-center gap-2">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={editedUseSeedFrame}
-                                    onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
-                                    className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
-                                  />
-                                  <span className="text-xs font-medium text-white/80">
-                                    Enable for longer scenes that will be stitched together
-                                  </span>
-                                </label>
-                                {editedUseSeedFrame && seedFrameUrl && (
-                                  <div 
-                                    className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                                    onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
-                                    title="Double-click to enlarge"
-                                  >
-                                    <img
-                                      src={seedFrameUrl}
-                                      alt="Seed frame preview"
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* Image Input (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Image Input <span className="text-white/60 text-xs">(optional, up to 3 images)</span>
-                        </label>
-                        <div className="space-y-2">
-                          {/* Display uploaded images */}
-                          {customImagePreviews.length > 0 && (
-                            <div className="grid grid-cols-3 gap-2">
-                              {customImagePreviews.map((preview, index) => (
-                                <div key={`preview-${index}-${preview.url.substring(0, 20)}`} className="relative">
-                                  <div className="w-full h-24 rounded-lg border border-white/20 bg-white/5 overflow-hidden relative">
-                                    <img
-                                      src={preview.url}
-                                      alt={`Preview ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                      loading="lazy"
-                                      onError={(e) => {
-                                        console.error(`[EditorView] Failed to load image preview ${index + 1}:`, preview.url);
-                                        // Show a placeholder on error
-                                        const target = e.target as HTMLImageElement;
-                                        target.style.display = 'none';
-                                        const parent = target.parentElement;
-                                        if (parent && !parent.querySelector('.error-placeholder')) {
-                                          const placeholder = document.createElement('div');
-                                          placeholder.className = 'error-placeholder w-full h-full flex items-center justify-center text-white/40 text-xs';
-                                          placeholder.textContent = 'Failed to load';
-                                          parent.appendChild(placeholder);
-                                        }
-                                      }}
-                                      onLoad={(e) => {
-                                        // Ensure image is visible on successful load
-                                        const target = e.target as HTMLImageElement;
-                                        if (target) {
-                                          target.style.display = 'block';
-                                          // Remove any error placeholders
-                                          const parent = target.parentElement;
-                                          const errorPlaceholder = parent?.querySelector('.error-placeholder');
-                                          if (errorPlaceholder) {
-                                            errorPlaceholder.remove();
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                  <button
-                                    onClick={() => handleRemoveImage(index)}
-                                    className="absolute -top-2 -right-2 p-1 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors border border-white/20 z-10"
-                                    type="button"
-                                    title="Remove image"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 rounded-b-lg text-center">
-                                    {index + 1}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Upload area - show if less than 3 images */}
-                          {customImagePreviews.length < 3 && (
-                            <label
-                              onDragOver={handleFileDragOver}
-                              onDragLeave={handleFileDragLeave}
-                              onDrop={handleDropZone}
-                              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                                isOverDropZone
-                                  ? 'border-white/40 bg-white/10'
-                                  : 'border-white/20 hover:bg-white/5'
-                              }`}
-                            >
-                              <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-white/80' : 'text-white/40'}`} />
-                              <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-white/80 font-medium' : 'text-white/60'}`}>
-                                {isOverDropZone 
-                                  ? 'Drop images here' 
-                                  : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
-                              </span>
-                              <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={handleImageFileSelect}
-                                className="hidden"
-                              />
-                            </label>
-                          )}
-
-                          {/* Model limitation note */}
-                          {customImagePreviews.length > 0 && (
-                            <p className="text-xs text-white/60 italic">
-                              Note: Depending on the selected model, only the first {customImagePreviews.length > 1 ? 'few' : 'image'} may be used. FLUX models typically support up to 5 images via IP-Adapter, while Gen-4 Image models support 1-3 reference images.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Collapse Button */}
-                      <div className="pt-3 border-t border-white/10">
-                        <button
-                          onClick={handleTogglePromptExpansion}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                          title="Collapse prompt"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                          <span>Collapse Prompt</span>
-                        </button>
-                      </div>
-                    </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
-                      </span>
-                      <p className="text-sm text-white/60 flex-1">
-                        {currentScene.imagePrompt}
-                      </p>
-                    </>
-                  )}
+            <div className="mt-2 space-y-3">
+              {/* Collapsible Prompt Header */}
+              <button
+                onClick={handleTogglePromptExpansion}
+                className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-white">Scene Prompts</span>
+                  <span className="text-xs text-white/60">
+                    ({currentScene.customDuration || currentScene.suggestedDuration}s)
+                  </span>
                 </div>
-                {!isPromptExpanded && (
-                  <div className="flex-shrink-0 pl-2">
-                    <button
-                      onClick={handleTogglePromptExpansion}
-                      className="p-1 text-white/60 hover:text-white rounded hover:bg-white/10 transition-colors"
-                      title="Expand to edit prompt and settings"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
+                {isPromptExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-white/60" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-white/60" />
                 )}
-              </div>
+              </button>
+
+              {/* Collapsible Content */}
+              {isPromptExpanded && (
+                <div className="flex flex-col gap-3">
+                  {/* Image Prompt (Required) */}
+                  <div>
+                    <label className="block text-xs font-medium text-white mb-1">
+                      Image Prompt <span className="text-white/60">*</span>
+                    </label>
+                    <textarea
+                      value={editedPrompt}
+                      onChange={(e) => setEditedPrompt(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
+                      rows={6}
+                      placeholder="Enter image prompt (required)..."
+                      required
+                    />
+                  </div>
+
+                  {/* Video Prompt (Required) */}
+                  <div>
+                    <label className="block text-xs font-medium text-white mb-1">
+                      Video Prompt <span className="text-white/60">*</span>
+                    </label>
+                    <textarea
+                      value={editedVideoPrompt}
+                      onChange={(e) => setEditedVideoPrompt(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
+                      rows={6}
+                      placeholder="Enter video prompt describing motion/action (required)..."
+                      required
+                    />
+                  </div>
+
+                  {/* Negative Prompt (Optional) */}
+                  <div>
+                    <label className="block text-xs font-medium text-white mb-1">
+                      Negative Prompt <span className="text-white/60 text-xs">(optional)</span>
+                    </label>
+                    <textarea
+                      value={editedNegativePrompt}
+                      onChange={(e) => setEditedNegativePrompt(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-y min-h-[2.5rem] backdrop-blur-sm"
+                      rows={1}
+                      placeholder="What to avoid in the image (optional)..."
+                      style={{ height: 'auto' }}
+                      onInput={(e) => {
+                        const target = e.currentTarget;
+                        target.style.height = 'auto';
+                        target.style.height = `${target.scrollHeight}px`;
+                      }}
+                    />
+                  </div>
+
+                  {/* Duration (Optional) */}
+                  <div>
+                    <label className="block text-xs font-medium text-white mb-1">
+                      Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.1"
+                          value={editedDuration}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditedDuration(val === '' ? '' : Number(val));
+                          }}
+                          className="w-24 px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
+                          placeholder="8"
+                        />
+                        <span className="text-xs text-white/60">seconds</span>
+                      </div>
+
+                      {/* Use Seed Frame Toggle */}
+                      {currentSceneIndex > 0 && (() => {
+                        const previousScene = scenes[currentSceneIndex - 1];
+                        const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
+                        const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
+                        const seedFrameUrl = seedFrame?.url
+                          ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
+                              ? seedFrame.url
+                              : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
+                          : null;
+
+                        return (
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editedUseSeedFrame}
+                                onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
+                                className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
+                              />
+                              <span className="text-xs font-medium text-white/80">
+                                Enable for longer scenes that will be stitched together
+                              </span>
+                            </label>
+                            {editedUseSeedFrame && seedFrameUrl && (
+                              <div
+                                className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
+                                title="Double-click to enlarge"
+                              >
+                                <img
+                                  src={seedFrameUrl}
+                                  alt="Seed frame preview"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Image Input (Optional) */}
+                  <div>
+                    <label className="block text-xs font-medium text-white mb-1">
+                      Image Input <span className="text-white/60 text-xs">(optional, up to 3 images)</span>
+                    </label>
+                    <div className="space-y-2">
+                      {/* Display uploaded images */}
+                      {customImagePreviews.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                          {customImagePreviews.map((preview, index) => (
+                            <div key={`preview-${index}-${preview.url.substring(0, 20)}`} className="relative">
+                              <div className="w-full h-24 rounded-lg border border-white/20 bg-white/5 overflow-hidden relative">
+                                <img
+                                  src={preview.url}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    console.error(`[EditorView] Failed to load image preview ${index + 1}:`, preview.url);
+                                    // Show a placeholder on error
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const parent = target.parentElement;
+                                    if (parent && !parent.querySelector('.error-placeholder')) {
+                                      const placeholder = document.createElement('div');
+                                      placeholder.className = 'error-placeholder w-full h-full flex items-center justify-center text-white/40 text-xs';
+                                      placeholder.textContent = 'Failed to load';
+                                      parent.appendChild(placeholder);
+                                    }
+                                  }}
+                                  onLoad={(e) => {
+                                    // Ensure image is visible on successful load
+                                    const target = e.target as HTMLImageElement;
+                                    if (target) {
+                                      target.style.display = 'block';
+                                      // Remove any error placeholders
+                                      const parent = target.parentElement;
+                                      const errorPlaceholder = parent?.querySelector('.error-placeholder');
+                                      if (errorPlaceholder) {
+                                        errorPlaceholder.remove();
+                                      }
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <button
+                                onClick={() => handleRemoveImage(index)}
+                                className="absolute -top-2 -right-2 p-1 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors border border-white/20 z-10"
+                                type="button"
+                                title="Remove image"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 rounded-b-lg text-center">
+                                {index + 1}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Upload area - show if less than 3 images */}
+                      {customImagePreviews.length < 3 && (
+                        <label
+                          onDragOver={handleFileDragOver}
+                          onDragLeave={handleFileDragLeave}
+                          onDrop={handleDropZone}
+                          className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                            isOverDropZone
+                              ? 'border-white/40 bg-white/10'
+                              : 'border-white/20 hover:bg-white/5'
+                          }`}
+                        >
+                          <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-white/80' : 'text-white/40'}`} />
+                          <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-white/80 font-medium' : 'text-white/60'}`}>
+                            {isOverDropZone
+                              ? 'Drop images here'
+                              : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
+                          </span>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleImageFileSelect}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+
+                      {/* Model limitation note */}
+                      {customImagePreviews.length > 0 && (
+                        <p className="text-xs text-white/60 italic">
+                          Note: Depending on the selected model, only the first {customImagePreviews.length > 1 ? 'few' : 'image'} may be used. FLUX models typically support up to 5 images via IP-Adapter, while Gen-4 Image models support 1-3 reference images.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

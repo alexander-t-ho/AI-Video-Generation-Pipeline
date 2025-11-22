@@ -2,7 +2,7 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
-import { Image as ImageIcon, Video, Search, Filter, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Image as ImageIcon, Video, Search, Filter, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 import { getPublicBackgrounds, publicBackgroundToUploadedImage, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
@@ -63,6 +63,7 @@ export default function MediaDrawer() {
   const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
   const videoHoverTimeoutsMap = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Load public backgrounds on mount
   useEffect(() => {
@@ -516,17 +517,17 @@ export default function MediaDrawer() {
   const handleMediaClick = (item: MediaItem) => {
     // Toggle selection (Cycle: Unselected -> Reference -> Seed -> Unselected)
     toggleItem(item.id);
-    
+
     // If it's from a scene, switch to that scene in editor view
     if (item.sceneIndex !== undefined) {
       setCurrentSceneIndex(item.sceneIndex);
       setViewMode('editor');
-      
+
       // If it's an image, select it for the scene
       if (item.type === 'image') {
         selectImage(item.sceneIndex, item.id);
       }
-      
+
       // If it's a video, toggle selection (deselect if already selected)
       if (item.type === 'video' && item.sceneIndex !== undefined) {
         const scene = scenes[item.sceneIndex];
@@ -539,6 +540,85 @@ export default function MediaDrawer() {
         }
       }
     }
+  };
+
+  const handleUpload = async (files: File[], type: 'brand' | 'background') => {
+    if (!project || files.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      // Create FormData
+      const formData = new FormData();
+      formData.append('projectId', project.id);
+      files.forEach((file) => {
+        formData.append('images', file);
+      });
+
+      // Upload images
+      const response = await fetch('/api/upload-images', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Upload failed');
+      }
+
+      // Update project store based on upload type
+      if (type === 'brand') {
+        // Add to existing uploaded images
+        const existingImages = project.uploadedImages || [];
+        const { setUploadedImages } = useProjectStore.getState();
+        setUploadedImages([...existingImages, ...result.images]);
+        console.log('[MediaDrawer] Uploaded', result.images.length, 'brand asset(s)');
+      } else {
+        // Add to background images
+        const existingBackgrounds = project.backgroundImages || [];
+        useProjectStore.setState((state) => {
+          if (!state.project) return state;
+          return {
+            project: {
+              ...state.project,
+              backgroundImages: [...existingBackgrounds, ...result.images],
+            },
+          };
+        });
+        console.log('[MediaDrawer] Uploaded', result.images.length, 'background(s)');
+      }
+
+      // Show success message if there were any warnings
+      if (result.errors && result.errors.length > 0) {
+        alert(`Upload completed with warnings:\n${result.errors.join('\n')}`);
+      }
+    } catch (error: any) {
+      console.error('[MediaDrawer] Upload failed:', error);
+      alert(`Upload failed: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileDrop = async (e: React.DragEvent, type: 'brand' | 'background') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const files = Array.from(e.dataTransfer.files).filter((file) =>
+      file.type.startsWith('image/')
+    );
+
+    if (files.length === 0) {
+      alert('Please drop image files only');
+      return;
+    }
+
+    await handleUpload(files, type);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
 
@@ -721,9 +801,11 @@ export default function MediaDrawer() {
     sectionKey: string,
     items: MediaItem[],
     icon: React.ReactNode,
-    emptyMessage: string
+    emptyMessage: string,
+    allowUpload?: { type: 'brand' | 'background' }
   ) => {
     const isExpanded = expandedSections[sectionKey];
+    const [isDragOver, setIsDragOver] = useState(false);
     const filteredItems = items.filter((item) => {
       if (mediaDrawer.searchQuery) {
         const query = mediaDrawer.searchQuery.toLowerCase();
@@ -740,36 +822,95 @@ export default function MediaDrawer() {
       return true;
     });
 
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0 && allowUpload) {
+        await handleUpload(files, allowUpload.type);
+      }
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    };
+
     return (
       <div className="mb-4">
-        <button
-          onClick={() => toggleSection(sectionKey)}
-          className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-white hover:bg-white/10 rounded-lg transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-white/60" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-white/60" />
-            )}
-            <span className="text-white/60">{icon}</span>
-            <span>{title}</span>
-            {filteredItems.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 text-xs bg-white/10 text-white/80 rounded-full border border-white/20">
-                {filteredItems.length}
-              </span>
-            )}
-          </div>
-        </button>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => toggleSection(sectionKey)}
+            className="flex-1 flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-white hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4 text-white/60" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-white/60" />
+              )}
+              <span className="text-white/60">{icon}</span>
+              <span>{title}</span>
+              {filteredItems.length > 0 && (
+                <span className="ml-2 px-2 py-0.5 text-xs bg-white/10 text-white/80 rounded-full border border-white/20">
+                  {filteredItems.length}
+                </span>
+              )}
+            </div>
+          </button>
+
+          {allowUpload && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="ml-2 p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-50"
+                title={`Upload ${allowUpload.type === 'brand' ? 'brand asset' : 'background'}`}
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
 
         {isExpanded && (
-          <div className="mt-2">
-            {filteredItems.length === 0 ? (
-              <p className="text-xs text-white/60 px-2 py-4 text-center">
-                {emptyMessage}
-              </p>
+          <div
+            className="mt-2"
+            onDrop={allowUpload ? (e) => {
+              handleFileDrop(e, allowUpload.type);
+              setIsDragOver(false);
+            } : undefined}
+            onDragOver={allowUpload ? (e) => {
+              handleDragOver(e);
+              setIsDragOver(true);
+            } : undefined}
+            onDragLeave={allowUpload ? () => setIsDragOver(false) : undefined}
+          >
+            {filteredItems.length === 0 && !isDragOver ? (
+              <div className={`text-xs px-2 py-4 text-center border-2 border-dashed rounded-lg transition-colors ${
+                allowUpload
+                  ? 'border-white/20 bg-white/5 hover:border-white/30 hover:bg-white/10'
+                  : 'border-transparent'
+              }`}>
+                <p className="text-white/60">{emptyMessage}</p>
+                {allowUpload && (
+                  <p className="text-white/40 mt-1">Drop images here or click <Upload className="inline w-3 h-3" /> to upload</p>
+                )}
+              </div>
+            ) : isDragOver ? (
+              <div className="border-2 border-dashed border-white/40 bg-white/10 rounded-lg px-2 py-8 text-center">
+                <Upload className="w-8 h-8 text-white/60 mx-auto mb-2" />
+                <p className="text-sm text-white/80">Drop images to upload</p>
+              </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid grid-cols-2 gap-2 ${allowUpload ? 'min-h-[100px] border-2 border-dashed border-transparent hover:border-white/20 rounded-lg p-2 transition-colors' : ''}`}>
                 {filteredItems.map(renderMediaThumbnail)}
               </div>
             )}
@@ -881,7 +1022,8 @@ export default function MediaDrawer() {
           'uploaded',
           brandAssets,
           <ImageIcon className="w-4 h-4" />,
-          'No brand assets selected'
+          'No brand assets selected',
+          { type: 'brand' }
         )}
 
         {/* Backgrounds */}
@@ -890,7 +1032,8 @@ export default function MediaDrawer() {
           'backgrounds',
           backgroundImages,
           <ImageIcon className="w-4 h-4" />,
-          'No backgrounds uploaded'
+          'No backgrounds uploaded',
+          { type: 'background' }
         )}
 
         {/* Final Output */}

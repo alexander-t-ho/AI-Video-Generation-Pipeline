@@ -589,7 +589,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
               <button
                 onClick={handleGenerateBackground}
                 disabled={isGeneratingBackground || !backgroundPrompt.trim()}
-                className="px-4 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 text-xs font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isGeneratingBackground ? (
                   <>

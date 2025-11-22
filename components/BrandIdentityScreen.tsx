@@ -150,6 +150,18 @@ export default function BrandIdentityScreen() {
     }
   }, []); // Run once on mount
 
+  // Add keyboard event listener for Enter key
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && selectedAssetIds.size > 0 && !isWaitingForProject) {
+        handleContinue();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [selectedAssetIds.size, isWaitingForProject]);
+
   const handleCarSelect = (car: CarVariant | CustomAsset) => {
     setSelectedCar(car);
     
@@ -582,8 +594,12 @@ export default function BrandIdentityScreen() {
         </button>
         <button
           onClick={handleContinue}
-          disabled={isWaitingForProject}
-          className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-wait flex items-center gap-2"
+          disabled={isWaitingForProject || selectedAssetIds.size === 0}
+          className={`px-6 py-2 rounded-lg border backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
+            selectedAssetIds.size > 0 && !isWaitingForProject
+              ? 'bg-white text-black border-white hover:bg-white/90'
+              : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
+          }`}
         >
           {isWaitingForProject ? (
             <>

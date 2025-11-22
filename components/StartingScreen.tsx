@@ -464,10 +464,16 @@ export default function StartingScreen({
             <button
               onClick={handleInitialPrompt}
               disabled={!prompt.trim() || externalLoading}
-              className="group relative px-10 py-5 bg-white text-black rounded-full text-lg font-medium hover:bg-white/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-3 shadow-2xl shadow-white/20"
+              className={`group relative px-10 py-5 rounded-full text-lg font-medium transition-all flex items-center gap-3 shadow-2xl ${
+                prompt.trim() && !externalLoading
+                  ? 'bg-white text-black hover:bg-white/90 shadow-white/20 cursor-pointer'
+                  : 'bg-white/10 text-white/40 border border-white/20 backdrop-blur-sm opacity-50 cursor-not-allowed'
+              }`}
             >
               <span>Continue</span>
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              {prompt.trim() && !externalLoading && (
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              )}
             </button>
           </div>
         </div>

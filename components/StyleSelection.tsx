@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
@@ -47,6 +47,18 @@ export default function StyleSelection() {
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const storyboardGenerationRef = useRef<Promise<void> | null>(null);
+
+  // Add keyboard event listener for Enter key
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && localSelectedStyle) {
+        handleContinue();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [localSelectedStyle]);
 
   const handleStyleSelect = (style: StyleOption) => {
     setLocalSelectedStyle(style.id);
