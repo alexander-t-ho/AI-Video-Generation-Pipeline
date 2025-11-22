@@ -130,6 +130,23 @@ export interface ProjectState {
   assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
   selectedColor?: string; // Hex color code of last selected color
   currentReferenceImageUrl?: string; // URL of currently displayed reference image in AssetViewer
+
+  // Additional media (user-uploaded images, videos, audio for custom use)
+  additionalMedia?: AdditionalMediaItem[];
+}
+
+// Additional media item (for user-uploaded custom media)
+export interface AdditionalMediaItem {
+  id: string;
+  type: 'image' | 'video' | 'audio';
+  url: string;
+  localPath?: string;
+  s3Key?: string;
+  originalName?: string;
+  createdAt: string;
+  fileSize?: number;
+  duration?: number; // For video/audio
+  thumbnailUrl?: string; // For video
 }
 
 // Extended Scene type for project state (includes generation state)
@@ -184,36 +201,95 @@ export interface SeedFrame {
 
 /**
  * Represents a clip on the timeline that can be edited
+ * Can be either a video clip or an image clip
  */
 export interface TimelineClip {
   id: string;                // UUID v4
-  sceneIndex: number;        // Original scene index this clip came from
-  sceneId: string;           // Original scene ID
+  type: 'video' | 'image';   // Type of clip
+  sceneIndex: number;        // Original scene index this clip came from (or -1 for added images)
+  sceneId: string;           // Original scene ID (or generated ID for images)
   title: string;             // Clip title (usually scene description)
-  videoId: string;           // Reference to GeneratedVideo ID
-  videoLocalPath: string;    // Local path to the source video file
+
+  // Video clip properties
+  videoId?: string;          // Reference to GeneratedVideo ID (for video clips)
+  videoLocalPath?: string;   // Local path to the source video file (for video clips)
+
+  // Image clip properties
+  imageUrl?: string;         // URL to image file (for image clips)
+  imageLocalPath?: string;   // Local path to image file (for image clips)
+  animation?: 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'fade'; // Animation for image clips
+
   startTime: number;         // Start time in the timeline (seconds)
   duration: number;          // Duration of this clip (seconds)
-  
+
   // Editing properties
   trimStart?: number;        // Trim start point in source video (seconds, default: 0)
   trimEnd?: number;          // Trim end point in source video (seconds, default: full duration)
   isSplit?: boolean;         // Whether this clip was created by splitting
   originalClipId?: string;   // If split, reference to original clip ID
-  
+
   // Computed properties
   endTime: number;           // End time in timeline (startTime + duration)
-  sourceDuration: number;   // Original source video duration before trimming
+  sourceDuration: number;   // Original source video/image duration before trimming
 }
 
 /**
  * Timeline editing operations
  */
-export type TimelineEditOperation = 
+export type TimelineEditOperation =
   | { type: 'split'; clipId: string; splitTime: number }      // Split clip at time
   | { type: 'delete'; clipId: string }                        // Delete clip
   | { type: 'crop'; clipId: string; trimStart: number; trimEnd: number }  // Crop/trim clip
   | { type: 'move'; clipId: string; newStartTime: number };   // Move clip position
+
+// ============================================================================
+// Audio Track Types
+// ============================================================================
+
+/**
+ * Represents an audio track on the timeline
+ */
+export interface AudioTrack {
+  id: string;                // UUID v4
+  title: string;             // Track name/title
+  audioUrl: string;          // URL to audio file
+  audioLocalPath?: string;   // Local path to audio file
+  s3Key?: string;            // S3 storage key
+  startTime: number;         // Start time in timeline (seconds)
+  duration: number;          // Duration of audio (seconds)
+  volume: number;            // Volume level (0-100)
+  fadeIn?: number;           // Fade in duration (seconds)
+  fadeOut?: number;          // Fade out duration (seconds)
+  trimStart?: number;        // Trim start point in source audio (seconds)
+  trimEnd?: number;          // Trim end point in source audio (seconds)
+
+  // Computed properties
+  endTime: number;           // End time in timeline (startTime + duration)
+  sourceDuration: number;    // Original source audio duration before trimming
+}
+
+// ============================================================================
+// Image Track Types
+// ============================================================================
+
+/**
+ * Represents an image track on the timeline
+ */
+export interface ImageTrack {
+  id: string;                // UUID v4
+  title: string;             // Track name/title
+  imageUrl: string;          // URL to image file
+  imageLocalPath?: string;   // Local path to image file
+  s3Key?: string;            // S3 storage key
+  startTime: number;         // Start time in timeline (seconds)
+  duration: number;          // Duration to display image (seconds)
+
+  // Animation properties
+  animation?: 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'fade'; // Ken Burns effect
+
+  // Computed properties
+  endTime: number;           // End time in timeline (startTime + duration)
+}
 
 // ============================================================================
 // Error Types

@@ -1,4 +1,4 @@
-import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip, AudioTrack, ImageTrack } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { UploadedImage } from '@/lib/storage/image-storage';
 
@@ -49,6 +49,10 @@ export interface ProjectCoreSlice {
 
   // Style
   setSelectedStyle: (style: 'whimsical' | 'luxury' | 'offroad', prompt: string) => void;
+
+  // Additional media management
+  addAdditionalMedia: (mediaItem: import('@/lib/types').AdditionalMediaItem) => void;
+  removeAdditionalMedia: (mediaId: string) => void;
 
   reset: () => void;
 }
@@ -111,8 +115,17 @@ export interface TimelineSlice {
   timelineFuture: TimelineClip[][];
   selectedClipId: string | null;
 
+  // Audio tracks
+  audioTracks: AudioTrack[];
+  selectedAudioTrackId: string | null;
+
+  // Image tracks
+  imageTracks: ImageTrack[];
+  selectedImageTrackId: string | null;
+
   setSelectedClipId: (clipId: string | null) => void;
   initializeTimelineClips: () => void;
+  addImageClip: (imageUrl: string, duration: number, title?: string, insertAtTime?: number) => void;
   splitClip: (clipId: string, splitTime: number) => void;
   splitAtPlayhead: (time: number) => void;
   deleteClip: (clipId: string) => void;
@@ -121,6 +134,18 @@ export interface TimelineSlice {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
+
+  // Audio track management
+  addAudioTrack: (audioUrl: string, title?: string, duration?: number) => void;
+  deleteAudioTrack: (trackId: string) => void;
+  updateAudioTrack: (trackId: string, updates: Partial<AudioTrack>) => void;
+  setSelectedAudioTrackId: (trackId: string | null) => void;
+
+  // Image track management
+  addImageTrack: (imageUrl: string, duration: number, title?: string) => void;
+  deleteImageTrack: (trackId: string) => void;
+  updateImageTrack: (trackId: string, updates: Partial<ImageTrack>) => void;
+  setSelectedImageTrackId: (trackId: string | null) => void;
 }
 
 export interface UISlice {

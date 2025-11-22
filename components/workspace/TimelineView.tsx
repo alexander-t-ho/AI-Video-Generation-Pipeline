@@ -4,7 +4,9 @@ import { useProjectStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import TimelineClip from './TimelineClip';
 import TimelineToolbar from './TimelineToolbar';
-import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X } from 'lucide-react';
+import AudioTrackItem from './AudioTrackItem';
+import ImageTrackItem from './ImageTrackItem';
+import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { stitchVideos, applyClipEdits, generatePreview } from '@/lib/api-client';
 
@@ -21,6 +23,22 @@ export default function TimelineView() {
     addChatMessage,
     selectedClipId,
     setSelectedClipId,
+    // Audio tracks
+    audioTracks,
+    selectedAudioTrackId,
+    addAudioTrack,
+    deleteAudioTrack,
+    updateAudioTrack,
+    setSelectedAudioTrackId,
+    // Image clips
+    addImageClip,
+    // Image tracks
+    imageTracks,
+    selectedImageTrackId,
+    addImageTrack,
+    deleteImageTrack,
+    updateImageTrack,
+    setSelectedImageTrackId,
   } = useProjectStore();
 
   const [isStitching, setIsStitching] = useState(false);
@@ -33,6 +51,13 @@ export default function TimelineView() {
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [actualVideoDuration, setActualVideoDuration] = useState<number | null>(null);
   const [showCropDialog, setShowCropDialog] = useState(false);
+  const [showAddAudioDialog, setShowAddAudioDialog] = useState(false);
+  const [showAddImageDialog, setShowAddImageDialog] = useState(false);
+  const [newAudioUrl, setNewAudioUrl] = useState('');
+  const [newAudioTitle, setNewAudioTitle] = useState('');
+  const [newImageUrl, setNewImageUrl] = useState('');
+  const [newImageTitle, setNewImageTitle] = useState('');
+  const [newImageDuration, setNewImageDuration] = useState(5);
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
   const preservedTimeRef = useRef<number | null>(null); // Track position to preserve after preview regeneration
@@ -89,10 +114,13 @@ export default function TimelineView() {
           type: 'status',
         });
 
+        // Only include video clips for preview generation (not image clips)
+        const videoClips = timelineClips.filter(clip => clip.type === 'video' && clip.videoLocalPath);
+
         const previewPath = await generatePreview(
-          timelineClips.map(clip => ({
+          videoClips.map(clip => ({
             id: clip.id,
-            videoLocalPath: clip.videoLocalPath,
+            videoLocalPath: clip.videoLocalPath!,
             trimStart: clip.trimStart,
             trimEnd: clip.trimEnd,
             sourceDuration: clip.sourceDuration,
@@ -367,7 +395,10 @@ export default function TimelineView() {
   // Get video paths for stitching
   const getVideoPathsForStitching = () => {
     if (timelineClips.length > 0) {
-      return timelineClips.map(clip => clip.videoLocalPath);
+      // Only include video clips, not image clips
+      return timelineClips
+        .filter(clip => clip.type === 'video' && clip.videoLocalPath)
+        .map(clip => clip.videoLocalPath!);
     }
     return scenes
       .map(s => {
@@ -431,15 +462,25 @@ export default function TimelineView() {
         type: 'status',
       });
 
-      // If clips have been edited, apply edits first
+      // If clips have been edited, apply edits first (only for video clips)
       let pathsToStitch = videoPaths;
-      if (timelineClips.length > 0 && timelineClips.some(c => c.trimStart || c.trimEnd)) {
+      const videoClips = timelineClips.filter(c => c.type === 'video' && c.videoLocalPath);
+      if (videoClips.length > 0 && videoClips.some(c => c.trimStart || c.trimEnd)) {
         addChatMessage({
           role: 'agent',
           content: 'Applying clip edits...',
           type: 'status',
         });
-        pathsToStitch = await applyClipEdits(timelineClips, project.id);
+        pathsToStitch = await applyClipEdits(
+          videoClips.map(c => ({
+            id: c.id,
+            videoLocalPath: c.videoLocalPath!,
+            trimStart: c.trimStart,
+            trimEnd: c.trimEnd,
+            sourceDuration: c.sourceDuration,
+          })),
+          project.id
+        );
       }
 
       const response = await stitchVideos(pathsToStitch, project.id);
@@ -509,6 +550,44 @@ export default function TimelineView() {
         type: 'status',
       });
     }
+  };
+
+  // Audio track handlers
+  const handleAddAudio = () => {
+    if (!newAudioUrl) return;
+    addAudioTrack(newAudioUrl, newAudioTitle || 'Audio Track');
+    setNewAudioUrl('');
+    setNewAudioTitle('');
+    setShowAddAudioDialog(false);
+    addChatMessage({
+      role: 'agent',
+      content: 'Audio track added to timeline',
+      type: 'status',
+    });
+  };
+
+  const handleDeleteAudio = (trackId: string) => {
+    deleteAudioTrack(trackId);
+    addChatMessage({
+      role: 'agent',
+      content: 'Audio track deleted',
+      type: 'status',
+    });
+  };
+
+  // Image clip handlers
+  const handleAddImageClip = () => {
+    if (!newImageUrl || newImageDuration <= 0) return;
+    addImageClip(newImageUrl, newImageDuration, newImageTitle || 'Image Clip');
+    setNewImageUrl('');
+    setNewImageTitle('');
+    setNewImageDuration(5);
+    setShowAddImageDialog(false);
+    addChatMessage({
+      role: 'agent',
+      content: 'Image clip added to timeline',
+      type: 'status',
+    });
   };
 
   // Handle click on timeline to seek
@@ -752,10 +831,19 @@ export default function TimelineView() {
         <div className="flex-1 flex flex-col overflow-hidden px-6 py-4">
           {/* Toolbar */}
           <div className="mb-3 flex items-center justify-between">
-            <TimelineToolbar
-              currentTime={mappedTimelineTime}
-              onCropClick={handleCropFromToolbar}
-            />
+            <div className="flex items-center gap-3">
+              <TimelineToolbar
+                currentTime={mappedTimelineTime}
+                onCropClick={handleCropFromToolbar}
+              />
+              <button
+                onClick={() => setShowAddImageDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded border border-purple-500/30 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Image Clip
+              </button>
+            </div>
             <div className="flex items-center gap-4">
               {/* Play/Pause Button */}
               <button
@@ -917,6 +1005,56 @@ export default function TimelineView() {
                 </div>
               </div>
             </div>
+
+            {/* Audio Track Section */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-white/80 flex items-center gap-2">
+                  <Music className="w-4 h-4 text-green-400" />
+                  Audio Tracks
+                </h3>
+                <button
+                  onClick={() => setShowAddAudioDialog(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded border border-green-500/30 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add Audio
+                </button>
+              </div>
+              <div className="relative bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+                <div className="overflow-x-auto overflow-y-hidden custom-scrollbar">
+                  <div
+                    className="relative"
+                    style={{
+                      width: `${Math.max(100, zoomLevel * 100)}%`,
+                      minWidth: '100%'
+                    }}
+                  >
+                    <div className="relative h-20 bg-gradient-to-b from-green-900/10 to-green-950/5">
+                      {audioTracks.length > 0 ? (
+                        audioTracks.map((track) => (
+                          <AudioTrackItem
+                            key={track.id}
+                            track={track}
+                            totalDuration={totalDuration}
+                            zoomLevel={zoomLevel}
+                            onDelete={handleDeleteAudio}
+                            onUpdate={updateAudioTrack}
+                            onSelect={() => setSelectedAudioTrackId(track.id)}
+                            isSelected={selectedAudioTrackId === track.id}
+                          />
+                        ))
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-white/30 text-sm">
+                          No audio tracks. Click "Add Audio" to add music or sound effects.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* Selected Clip Info */}
@@ -1100,6 +1238,174 @@ export default function TimelineView() {
                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
                 >
                   Apply Crop
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Audio Dialog */}
+      {showAddAudioDialog && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddAudioDialog(false);
+            }
+          }}
+        >
+          <div
+            className="bg-gray-900 border border-white/20 rounded-lg p-6 w-96 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Music className="w-5 h-5 text-green-400" />
+                Add Audio Track
+              </h3>
+              <button
+                onClick={() => setShowAddAudioDialog(false)}
+                className="text-white/60 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Audio URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://example.com/audio.mp3"
+                  value={newAudioUrl}
+                  onChange={(e) => setNewAudioUrl(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Track Name (optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Background Music"
+                  value={newAudioTitle}
+                  onChange={(e) => setNewAudioTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  onClick={() => setShowAddAudioDialog(false)}
+                  className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddAudio}
+                  disabled={!newAudioUrl}
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Audio
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Image Dialog */}
+      {showAddImageDialog && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddImageDialog(false);
+            }
+          }}
+        >
+          <div
+            className="bg-gray-900 border border-white/20 rounded-lg p-6 w-96 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-purple-400" />
+                Add Image Clip
+              </h3>
+              <button
+                onClick={() => setShowAddImageDialog(false)}
+                className="text-white/60 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Image URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://example.com/image.jpg"
+                  value={newImageUrl}
+                  onChange={(e) => setNewImageUrl(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Duration (seconds)
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  placeholder="5.0"
+                  value={newImageDuration}
+                  onChange={(e) => setNewImageDuration(parseFloat(e.target.value) || 5)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Clip Name (optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Still Image"
+                  value={newImageTitle}
+                  onChange={(e) => setNewImageTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="text-xs text-white/60 bg-purple-500/10 p-3 rounded border border-purple-500/20">
+                <p className="mb-1 font-semibold">Note:</p>
+                <p>The image clip will be added to the end of your timeline. You can reorder clips by adjusting their positions.</p>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  onClick={() => setShowAddImageDialog(false)}
+                  className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddImageClip}
+                  disabled={!newImageUrl || newImageDuration <= 0}
+                  className="px-4 py-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Image Clip
                 </button>
               </div>
             </div>

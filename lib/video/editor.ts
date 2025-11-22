@@ -129,6 +129,11 @@ async function processClipEdit(
   clip: TimelineClip,
   outputDir: string
 ): Promise<string> {
+  // Guard: Only process video clips
+  if (clip.type !== 'video' || !clip.videoLocalPath) {
+    throw new Error(`Cannot process non-video clip: ${clip.id}`);
+  }
+
   const outputPath = path.join(outputDir, `clip-${clip.id}.mp4`);
   const clipHash = generateClipHash(clip);
   const cacheKey = `${clip.id}`;

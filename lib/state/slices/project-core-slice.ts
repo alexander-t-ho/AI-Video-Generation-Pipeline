@@ -313,6 +313,32 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     });
   },
 
+  addAdditionalMedia: (mediaItem) => {
+    set((state) => {
+      if (!state.project) return {};
+
+      return {
+        project: {
+          ...state.project,
+          additionalMedia: [...(state.project.additionalMedia || []), mediaItem],
+        },
+      };
+    });
+  },
+
+  removeAdditionalMedia: (mediaId) => {
+    set((state) => {
+      if (!state.project) return {};
+
+      return {
+        project: {
+          ...state.project,
+          additionalMedia: (state.project.additionalMedia || []).filter(m => m.id !== mediaId),
+        },
+      };
+    });
+  },
+
   reset: () => {
     // This should ideally reset other slices too. 
     // Since all slices share `set`, we can pass the global initial state here if we had it,
