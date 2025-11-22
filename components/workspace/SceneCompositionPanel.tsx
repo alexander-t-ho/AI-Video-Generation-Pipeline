@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, X, Loader2 } from 'lucide-react';
+import { Upload, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage } from '@/lib/types';
 import { generateComposite, generateImage, pollImageStatus } from '@/lib/api-client';
@@ -112,6 +112,8 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
   const [backgroundPrompt, setBackgroundPrompt] = useState('');
   const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isBoxesCollapsed, setIsBoxesCollapsed] = useState(false);
 
   // Load public backgrounds on mount
   useEffect(() => {
@@ -145,10 +147,9 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   const scene = project?.storyboard[sceneIndex];
   const sceneState = scenes[sceneIndex];
 
-  if (!scene || !project) return null;
-
   // Get reference image
   const getReferenceImage = () => {
+    if (!scene || !project) return null;
     if (!scene.referenceImageId) return null;
 
     // Check uploaded images
@@ -173,6 +174,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
   // Get background image
   const getBackgroundImage = () => {
+    if (!scene || !project) return null;
     if (!scene.backgroundImageId) return null;
 
     // Check public backgrounds first
@@ -199,8 +201,9 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
   // Get composite image
   const getCompositeImage = () => {
+    if (!scene || !sceneState) return null;
     if (!scene.compositeImageId) return null;
-    const img = sceneState?.generatedImages?.find((i: GeneratedImage) => i.id === scene.compositeImageId);
+    const img = sceneState.generatedImages?.find((i: GeneratedImage) => i.id === scene.compositeImageId);
     return img || null;
   };
 
@@ -426,9 +429,42 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     }
   };
 
+  // Early return if scene or project is not available
+  if (!scene || !project) return null;
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
+      >
+        <span className="text-sm font-medium text-white">Scene Composition</span>
+        {isCollapsed ? (
+          <ChevronDown className="w-4 h-4 text-white/60" />
+        ) : (
+          <ChevronUp className="w-4 h-4 text-white/60" />
+        )}
+      </button>
+
+      {/* Collapsible Content */}
+      {!isCollapsed && (
+        <>
+          {/* Boxes Section - Separately Collapsible */}
+          <button
+            onClick={() => setIsBoxesCollapsed(!isBoxesCollapsed)}
+            className="w-full flex items-center justify-between px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10"
+          >
+            <span className="text-xs font-medium text-white/70">Reference, Background & Composite</span>
+            {isBoxesCollapsed ? (
+              <ChevronDown className="w-3.5 h-3.5 text-white/50" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5 text-white/50" />
+            )}
+          </button>
+
+          {!isBoxesCollapsed && (
+            <div className="grid grid-cols-3 gap-3">
         {/* Reference Box */}
         <div className="space-y-1">
           <label className="text-xs font-medium text-white/80">Reference</label>
@@ -542,6 +578,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
           </div>
         </div>
       </div>
+          )}
 
       {/* Background Generation */}
       <div className="space-y-2">
@@ -587,7 +624,10 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
           {isGeneratingComposite ? 'Generating Composite...' : 'Generate Composite'}
         </button>
       )}
+        </>
+      )}
 
+      {/* Modals - outside collapsible section */}
       {/* Reference Selection Modal */}
       <ImageSelectionModal
         isOpen={showReferenceModal}

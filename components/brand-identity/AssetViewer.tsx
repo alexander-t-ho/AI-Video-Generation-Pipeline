@@ -51,6 +51,8 @@ export default function AssetViewer({
   const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
   const [angleGenerationProgress, setAngleGenerationProgress] = useState<{ current: number; total: number; angle: string } | null>(null);
   const [angleGenerationError, setAngleGenerationError] = useState<string | null>(null);
+  const [isCleaningEdges, setIsCleaningEdges] = useState(false);
+  const [edgeCleanupError, setEdgeCleanupError] = useState<string | null>(null);
 
   const images = selectedCar?.referenceImages || [];
   const currentImage = images[currentImageIndex];
