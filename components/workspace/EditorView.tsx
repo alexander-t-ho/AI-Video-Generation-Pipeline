@@ -3,7 +3,6 @@
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import SceneCompositionPanel from './SceneCompositionPanel';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages, deleteGeneratedImage } from '@/lib/api-client';
