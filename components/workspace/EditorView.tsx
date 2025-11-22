@@ -117,7 +117,13 @@ export default function EditorView() {
   // Get actual scene state
   const sceneState = scenes[currentSceneIndex];
   const sceneImages = sceneState?.generatedImages || [];
-  const sceneHasImage = sceneImages.length > 0;
+  // Only count images that aren't used for composition (background, composite, reference)
+  const regularImages = sceneImages.filter((img: GeneratedImage) => {
+    return img.id !== currentScene.backgroundImageId &&
+           img.id !== currentScene.compositeImageId &&
+           img.id !== currentScene.referenceImageId;
+  });
+  const sceneHasImage = regularImages.length > 0;
   const selectedImage = sceneImages.find(img => img.id === (selectedImageId || sceneState?.selectedImageId));
   const sceneHasVideo = !!sceneState?.videoLocalPath;
   const seedFrames = sceneState?.seedFrames || [];
@@ -1027,7 +1033,18 @@ export default function EditorView() {
   };
 
   // Combine generated images with currently generating ones
-  const allImages = [...sceneImages];
+  // Filter out images used for scene composition (background, composite, reference)
+  const filteredSceneImages = sceneImages.filter((img: GeneratedImage) => {
+    // Exclude background images
+    if (currentScene.backgroundImageId === img.id) return false;
+    // Exclude composite images
+    if (currentScene.compositeImageId === img.id) return false;
+    // Exclude reference images
+    if (currentScene.referenceImageId === img.id) return false;
+    return true;
+  });
+
+  const allImages = [...filteredSceneImages];
   generatingImages.forEach((genImg, index) => {
     if (genImg.image) {
       // Image is already in sceneImages, skip
