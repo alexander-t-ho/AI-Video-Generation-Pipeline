@@ -131,6 +131,20 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       console.log('[SceneComposition] Reference dropped:', itemId, itemType);
       updateSceneSettings(sceneIndex, { referenceImageId: itemId });
     },
+    onFilesDrop: async (files) => {
+      if (!project) return;
+      console.log('[SceneComposition] Files dropped on reference:', files);
+      const { uploadImages } = await import('@/lib/api-client');
+      try {
+        const result = await uploadImages(files, project.id, false);
+        if (result.images && result.images.length > 0) {
+          updateSceneSettings(sceneIndex, { referenceImageId: result.images[0].id });
+        }
+      } catch (error) {
+        console.error('Failed to upload reference image:', error);
+      }
+    },
+    maxFiles: 1,
   });
 
   // Drag-drop for background box
@@ -141,6 +155,20 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       console.log('[SceneComposition] Background dropped:', itemId, itemType);
       updateSceneSettings(sceneIndex, { backgroundImageId: itemId });
     },
+    onFilesDrop: async (files) => {
+      if (!project) return;
+      console.log('[SceneComposition] Files dropped on background:', files);
+      const { uploadImages } = await import('@/lib/api-client');
+      try {
+        const result = await uploadImages(files, project.id, false);
+        if (result.images && result.images.length > 0) {
+          updateSceneSettings(sceneIndex, { backgroundImageId: result.images[0].id });
+        }
+      } catch (error) {
+        console.error('Failed to upload background image:', error);
+      }
+    },
+    maxFiles: 1,
   });
 
   const scene = project?.storyboard[sceneIndex];
@@ -453,6 +481,29 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       {/* Collapsible Content */}
       {!isCollapsed && (
         <>
+          {/* Use Seed Frame Toggle (only for scenes > 0) */}
+          {sceneIndex > 0 && scenes[sceneIndex - 1]?.seedFrames && scenes[sceneIndex - 1].seedFrames!.length > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-lg border border-white/10">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-white cursor-pointer" htmlFor={`use-seed-frame-${sceneIndex}`}>
+                  Use last frame from previous scene
+                </label>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Enable to use the last frame of Scene {sceneIndex} as the starting point
+                </p>
+              </div>
+              <input
+                id={`use-seed-frame-${sceneIndex}`}
+                type="checkbox"
+                checked={scene?.useSeedFrame ?? false}
+                onChange={(e) => {
+                  updateSceneSettings(sceneIndex, { useSeedFrame: e.target.checked });
+                }}
+                className="w-5 h-5 rounded border-white/20 bg-white/10 text-blue-500 focus:ring-2 focus:ring-blue-400/30 cursor-pointer"
+              />
+            </div>
+          )}
+
           {/* Reference, Background & Composite */}
           <div className="grid grid-cols-3 gap-3">
             {/* Reference Box */}

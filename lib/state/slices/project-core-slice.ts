@@ -21,7 +21,7 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
       prompt,
       targetDuration,
       characterDescription,
-      status: 'storyboard',
+      status: 'STORYBOARD',
       createdAt: new Date().toISOString(),
       storyboard: [],
       currentSceneIndex: 0,
@@ -97,7 +97,7 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
         project: {
           ...state.project,
           storyboard: scenes,
-          status: 'scene_generation',
+          status: 'SCENE_GENERATION',
         },
         scenes: scenesWithState,
       };
@@ -174,7 +174,7 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
           prompt: backendProject.prompt,
           targetDuration: backendProject.targetDuration,
           characterDescription: backendProject.characterDescription,
-          status: backendProject.status || 'storyboard',
+          status: backendProject.status || 'STORYBOARD',
           createdAt: backendProject.createdAt,
           storyboard: backendProject.scenes || [],
           currentSceneIndex: 0,

@@ -4,10 +4,10 @@
 import { useProjectStore } from '@/lib/state/project-store';
 
 const steps = [
-  { id: 'storyboard', label: 'Generating Storyboard', description: 'Creating 5-scene narrative' },
-  { id: 'scene_generation', label: 'Generating Scenes', description: 'Creating images and videos' },
-  { id: 'stitching', label: 'Stitching Video', description: 'Combining all clips' },
-  { id: 'completed', label: 'Complete', description: 'Video ready!' },
+  { id: 'STORYBOARD', label: 'Generating Storyboard', description: 'Creating 5-scene narrative' },
+  { id: 'SCENE_GENERATION', label: 'Generating Scenes', description: 'Creating images and videos' },
+  { id: 'STITCHING', label: 'Stitching Video', description: 'Combining all clips' },
+  { id: 'COMPLETED', label: 'Complete', description: 'Video ready!' },
 ];
 
 export default function ProgressIndicator() {
@@ -71,7 +71,7 @@ export default function ProgressIndicator() {
       </div>
 
       {/* Current Scene (if in scene generation) */}
-      {project.status === 'scene_generation' && (
+      {project.status === 'SCENE_GENERATION' && (
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="font-medium">Scene Progress</span>

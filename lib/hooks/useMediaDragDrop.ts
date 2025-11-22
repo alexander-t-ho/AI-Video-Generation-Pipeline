@@ -9,8 +9,11 @@ import { DragDropState } from '@/lib/types/components';
 
 interface UseMediaDragDropOptions {
   onDrop?: (itemId: string, itemType: 'image' | 'video' | 'frame', targetSceneIndex?: number) => void;
+  onFilesDrop?: (files: File[]) => void | Promise<void>;
   dropZoneId?: string;
   acceptedTypes?: ('image' | 'video' | 'frame')[];
+  maxFiles?: number;
+  maxSizeMB?: number;
 }
 
 interface UseMediaDragDropReturn {
@@ -34,7 +37,7 @@ interface UseMediaDragDropReturn {
 export function useMediaDragDrop(
   options: UseMediaDragDropOptions = {}
 ): UseMediaDragDropReturn {
-  const { onDrop, dropZoneId, acceptedTypes } = options;
+  const { onDrop, onFilesDrop, dropZoneId, acceptedTypes, maxFiles = 3, maxSizeMB = 10 } = options;
   const { dragDrop, updateDragDrop } = useProjectStore();
   const [isOverDropZone, setIsOverDropZone] = useState(false);
 
@@ -172,12 +175,46 @@ export function useMediaDragDrop(
   }, []);
 
   const handleDrop = useCallback(
-    (e: DragEvent, targetSceneIndex?: number) => {
+    async (e: DragEvent, targetSceneIndex?: number) => {
       e.preventDefault();
       e.stopPropagation();
       setIsOverDropZone(false);
 
       try {
+        // Check if dropping files from computer
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0 && onFilesDrop) {
+          // Validate file count
+          if (files.length > maxFiles) {
+            console.error(`Maximum ${maxFiles} files allowed`);
+            return;
+          }
+
+          // Validate file size and type
+          const validFiles: File[] = [];
+          for (const file of files) {
+            if (!file.type.startsWith('image/')) {
+              console.warn(`File ${file.name} is not an image`);
+              continue;
+            }
+
+            const maxSizeBytes = maxSizeMB * 1024 * 1024;
+            if (file.size > maxSizeBytes) {
+              console.warn(`File ${file.name} exceeds ${maxSizeMB}MB limit`);
+              continue;
+            }
+
+            validFiles.push(file);
+          }
+
+          if (validFiles.length > 0) {
+            await onFilesDrop(validFiles);
+          }
+          handleDragEnd();
+          return;
+        }
+
+        // Check if dropping media item from drawer
         const data = e.dataTransfer.getData('application/json');
         if (!data) {
           // Fallback: try to get from dragDrop state
@@ -186,6 +223,7 @@ export function useMediaDragDrop(
               onDrop(dragDrop.draggedItemId, dragDrop.draggedItemType, targetSceneIndex);
             }
           }
+          handleDragEnd();
           return;
         }
 
@@ -194,6 +232,7 @@ export function useMediaDragDrop(
         // Validate item type
         if (acceptedTypes && !acceptedTypes.includes(itemType)) {
           console.warn(`Item type ${itemType} not accepted in this drop zone`);
+          handleDragEnd();
           return;
         }
 
@@ -207,7 +246,7 @@ export function useMediaDragDrop(
         handleDragEnd();
       }
     },
-    [onDrop, acceptedTypes, dragDrop, handleDragEnd]
+    [onDrop, onFilesDrop, acceptedTypes, dragDrop, handleDragEnd, maxFiles, maxSizeMB]
   );
 
   return {

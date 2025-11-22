@@ -35,46 +35,34 @@ export default function SeedFrameSelector({
   if (!frames || frames.length === 0) {
     return (
       <div className={`text-center text-white/60 ${className}`}>
-        <p className="text-sm">No seed frames available</p>
-        <p className="text-xs mt-1">Generate a video to extract seed frames</p>
+        <p className="text-sm">No seed frame available</p>
+        <p className="text-xs mt-1">Generate a video to extract the last frame</p>
       </div>
     );
   }
 
+  // Only show the first frame (since we now only extract one)
+  const frame = frames[0];
+
   return (
     <div className={className}>
       <h4 className="text-sm font-semibold text-white mb-3">
-        Select Seed Frame for Next Scene
+        Last Frame from Previous Scene
       </h4>
-      <div className="grid grid-cols-5 gap-2">
-        {frames.map((frame, index) => (
-          <button
-            key={frame.id}
-            onClick={() => onSelectFrame(index)}
-            className={`relative aspect-video rounded-lg overflow-hidden border-2 transition-all duration-200 ${
-              selectedFrameIndex === index
-                ? 'border-white/40 ring-2 ring-white/20'
-                : 'border-white/20 hover:border-white/30'
-            }`}
-          >
-            <img
-              src={getFrameUrl(frame)}
-              alt={`Seed frame at ${frame.timestamp}s`}
-              className="w-full h-full object-cover"
-            />
-            {selectedFrameIndex === index && (
-              <div className="absolute inset-0 bg-white/10 flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-white" />
-              </div>
-            )}
-            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 text-center">
-              {frame.timestamp.toFixed(1)}s
-            </div>
-          </button>
-        ))}
+      <div className="w-full max-w-xs">
+        <div className="relative aspect-video rounded-lg overflow-hidden border-2 border-white/20">
+          <img
+            src={getFrameUrl(frame)}
+            alt="Last frame from previous scene"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-2 py-1 text-center">
+            Last Frame
+          </div>
+        </div>
       </div>
       <p className="text-xs text-white/60 mt-2">
-        Click a frame to use it as the seed for the next scene
+        This frame will be used as the seed for the next scene
       </p>
     </div>
   );

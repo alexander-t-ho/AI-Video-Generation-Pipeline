@@ -5,20 +5,20 @@ import fs from 'fs/promises';
 
 /**
  * POST /api/extract-frames
- * Extracts 5 seed frames from the last 1 second of a video
- * 
+ * Extracts the last frame from a video for use as a seed frame
+ *
  * Request Body:
  * {
  *   videoPath: string;      // Required: Local path to video file
  *   projectId: string;      // Required: Project ID
  *   sceneIndex: number;     // Required: Scene index (0-4)
  * }
- * 
+ *
  * Response:
  * {
  *   success: boolean;
  *   data?: {
- *     frames: SeedFrame[];
+ *     frames: SeedFrame[];  // Array with a single frame
  *   };
  *   error?: string;
  * }
@@ -69,10 +69,10 @@ export async function POST(request: NextRequest) {
     // Extract frames
     const frames = await extractFrames(absoluteVideoPath, projectId, sceneIndex);
 
-    // Verify we got exactly 5 frames
-    if (!frames || frames.length !== 5) {
+    // Verify we got exactly 1 frame
+    if (!frames || frames.length !== 1) {
       return NextResponse.json(
-        { success: false, error: `Expected 5 frames, got ${frames?.length || 0}` },
+        { success: false, error: `Expected 1 frame, got ${frames?.length || 0}` },
         { status: 500 }
       );
     }

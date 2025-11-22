@@ -170,17 +170,13 @@ export async function createVideoPrediction(
   const isVeo = REPLICATE_MODEL.includes('veo-3.1') || REPLICATE_MODEL.includes('veo') || REPLICATE_MODEL.includes('google/veo');
 
   console.log(`${logPrefix} Inputs:`);
-  console.log(`${logPrefix}   - Image URL: ${imageUrl}`);
   if (seedFrame) {
-    if (isVeo) {
-      console.log(`${logPrefix}   - Last Frame (Veo): ${seedFrame}`);
-      console.log(`${logPrefix}   - Mode: image-to-video with last_frame parameter`);
-    } else {
-      console.log(`${logPrefix}   - Seed Frame: ${seedFrame}`);
-      console.log(`${logPrefix}   - Mode: image-to-video with seed frame`);
-    }
+    console.log(`${logPrefix}   - Using Seed Frame as Starting Image: ${seedFrame}`);
+    console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl}`);
+    console.log(`${logPrefix}   - Mode: Seed frame from previous scene → video`);
   } else {
-    console.log(`${logPrefix}   - Mode: image-to-video (Scene 0)`);
+    console.log(`${logPrefix}   - Using Generated Image as Starting Image: ${imageUrl}`);
+    console.log(`${logPrefix}   - Mode: Generated image → video (Scene 0)`);
   }
   if (referenceImages && referenceImages.length > 0) {
     if (isVeo) {
@@ -204,10 +200,13 @@ export async function createVideoPrediction(
   const replicate = createReplicateClient();
 
   // Build input parameters
-  // For Veo models: Always use imageUrl as main image, seedFrame goes to last_frame parameter
+  // For Veo models:
+  //   - If seedFrame exists (scenes > 0): use seedFrame as 'image' (first frame)
+  //   - If no seedFrame (scene 0): use imageUrl as 'image'
+  //   - We do NOT use last_frame (that's for interpolation between two images)
   // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
   const isVeoModel = isVeo; // Already defined above for duration
-  const inputImageUrl = isVeoModel ? imageUrl : (seedFrame || imageUrl);
+  const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image
 
   // Model-specific parameter handling
   const isGen4 = REPLICATE_MODEL.includes('gen4');
@@ -236,8 +235,9 @@ export async function createVideoPrediction(
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // Add reference images for Google Veo models if provided
     ...(isVeoModel && referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
-    // Add last_frame for Veo models (seed frame from previous scene)
-    ...(isVeoModel && seedFrame ? { last_frame: seedFrame } : {}),
+    // NOTE: We do NOT use last_frame for Veo. The last_frame parameter is for interpolation
+    // between two images (creating a transition). We want video generation from a single
+    // starting frame (either seed frame from previous scene or generated image for scene 0).
     // Model-specific parameters
     ...(isVeoModel ? {
       // Google Veo 3.1 parameters

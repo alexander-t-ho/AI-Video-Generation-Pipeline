@@ -71,7 +71,7 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
         lastStatusRef.current = statusKey;
         
         // Stop polling if project is completed (Phase 10.1.1)
-        if (status.status === 'completed' || project.status === 'completed') {
+        if (status.status === 'COMPLETED' || project.status === 'COMPLETED') {
           shouldStopRef.current = true;
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
@@ -114,7 +114,7 @@ export function useGenerationStatus(options: UseGenerationStatusOptions) {
         }
 
         // Update final video if available
-        if (status.finalVideoUrl && status.status !== 'completed') {
+        if (status.finalVideoUrl && status.status !== 'COMPLETED') {
           setFinalVideo(status.finalVideoUrl, status.finalVideoS3Key);
           addChatMessage({
             role: 'agent',

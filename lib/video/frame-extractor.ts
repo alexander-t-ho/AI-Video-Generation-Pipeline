@@ -1,9 +1,8 @@
 /**
  * Frame Extractor - FFmpeg Integration
- * 
+ *
  * This module handles extracting seed frames from video files using FFmpeg.
- * Extracts 5 frames from the last 1 second of a video for use as seed frames
- * in the next scene's video generation.
+ * Extracts the last frame of a video for use as seed frame in the next scene's generation.
  */
 
 import { exec } from 'child_process';
@@ -20,11 +19,10 @@ const execAsync = promisify(exec);
 // Constants
 // ============================================================================
 
-const FRAME_COUNT = 5;
-const FRAME_DURATION = 1.0; // seconds from end (last 1 second)
+const FRAME_COUNT = 1;
 const FRAME_QUALITY = 2; // High quality (1-31, lower is better)
 const MAX_RETRIES = 1;
-const FRAME_TIMESTAMPS = [0.2, 0.4, 0.6, 0.8, 1.0]; // seconds from end (evenly spaced in last 1 second)
+const FRAME_TIMESTAMPS = [0.0]; // Last frame (0.0 seconds from end)
 
 // ============================================================================
 // Types
@@ -58,8 +56,8 @@ async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
     const height = parseInt(stream.height || '0', 10);
     const codec = stream.codec_name || 'unknown';
 
-    if (!duration || duration < FRAME_DURATION) {
-      throw new Error(`Video duration (${duration}s) is less than required frame extraction duration (${FRAME_DURATION}s)`);
+    if (!duration || duration <= 0) {
+      throw new Error(`Video duration (${duration}s) is invalid`);
     }
 
     return { duration, width, height, codec };
@@ -137,13 +135,13 @@ async function extractFramesWithFFmpeg(
 // ============================================================================
 
 /**
- * Extract 5 frames from the last 1 second of a video
- * 
+ * Extract the last frame from a video
+ *
  * @param videoPath - Path to the input video file
  * @param projectId - Project ID for organizing output files
  * @param sceneIndex - Scene index for organizing output files
- * @returns Array of SeedFrame objects with frame paths and timestamps
- * 
+ * @returns Array containing a single SeedFrame object with the last frame
+ *
  * @throws Error if video file doesn't exist, is invalid, or extraction fails
  */
 export async function extractFrames(
@@ -179,13 +177,12 @@ export async function extractFrames(
   const outputDir = path.join('/tmp', 'projects', projectId, 'frames', `scene-${sceneIndex}`);
   await fs.mkdir(outputDir, { recursive: true });
 
-  // Extract frames at specific timestamps (relative to end of video)
-  // FRAME_TIMESTAMPS are relative to the end: [0.2, 0.4, 0.6, 0.8, 1.0]
-  // This means: 0.2s before end, 0.4s before end, etc. (evenly spaced in last 1 second)
-  console.log(`[FrameExtractor] Extracting frames from video: ${videoPath}`);
+  // Extract the last frame from the video
+  // FRAME_TIMESTAMPS contains [0.0] which means extract the very last frame
+  console.log(`[FrameExtractor] Extracting last frame from video: ${videoPath}`);
   console.log(`[FrameExtractor] Video duration: ${videoInfo.duration}s`);
   console.log(`[FrameExtractor] Scene index: ${sceneIndex}`);
-  console.log(`[FrameExtractor] Frame timestamps (relative to end): ${FRAME_TIMESTAMPS.join(', ')}s`);
+  console.log(`[FrameExtractor] Frame timestamp (relative to end): ${FRAME_TIMESTAMPS[0]}s`);
   
   // Calculate and log absolute timestamps for verification
   const absoluteTimestamps = FRAME_TIMESTAMPS.map(ts => Math.max(0, videoInfo.duration - ts));
@@ -197,11 +194,10 @@ export async function extractFrames(
     throw new Error(`Cannot extract frames: Some timestamps (${invalidTimestamps.join(', ')}) are beyond video duration (${videoInfo.duration}s)`);
   }
   
-  // Verify we're extracting from the last 1 second
-  const earliestTimestamp = Math.min(...absoluteTimestamps);
-  const expectedEarliest = Math.max(0, videoInfo.duration - FRAME_DURATION);
-  if (Math.abs(earliestTimestamp - expectedEarliest) > 0.1) {
-    console.warn(`[FrameExtractor] Warning: Earliest timestamp (${earliestTimestamp.toFixed(2)}s) doesn't match expected (${expectedEarliest.toFixed(2)}s) for last ${FRAME_DURATION}s`);
+  // Verify we're extracting from the last frame
+  const latestTimestamp = Math.max(...absoluteTimestamps);
+  if (Math.abs(latestTimestamp - videoInfo.duration) > 0.1) {
+    console.warn(`[FrameExtractor] Warning: Latest timestamp (${latestTimestamp.toFixed(2)}s) doesn't match video end (${videoInfo.duration.toFixed(2)}s)`);
   }
   
   let framePaths: string[] = [];
@@ -231,7 +227,7 @@ export async function extractFrames(
     throw lastError || new Error('Frame extraction failed after retries');
   }
 
-  // Verify we got exactly 5 frames
+  // Verify we got exactly 1 frame
   if (framePaths.length !== FRAME_COUNT) {
     // Clean up partial frames
     for (const framePath of framePaths) {
@@ -241,7 +237,7 @@ export async function extractFrames(
         // Ignore cleanup errors
       }
     }
-    throw new Error(`Expected ${FRAME_COUNT} frames, got ${framePaths.length}`);
+    throw new Error(`Expected ${FRAME_COUNT} frame, got ${framePaths.length}`);
   }
 
   // Upload frames to S3 and create SeedFrame objects

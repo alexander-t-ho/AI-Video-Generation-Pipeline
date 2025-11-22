@@ -36,7 +36,7 @@ export function useProjectAutoSave() {
       await updateProjectMetadata({
         name: project.name,
         characterDescription: project.characterDescription,
-        status: project.status as 'storyboard' | 'scene_generation' | 'stitching' | 'completed',
+        status: project.status as 'STORYBOARD' | 'SCENE_GENERATION' | 'STITCHING' | 'COMPLETED',
         finalVideoUrl: project.finalVideoUrl,
         finalVideoS3Key: project.finalVideoS3Key,
       });

@@ -24,7 +24,7 @@ export interface ProjectCoreSlice {
   updateProjectMetadata: (updates: {
     name?: string;
     characterDescription?: string;
-    status?: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';
+    status?: 'STORYBOARD' | 'SCENE_GENERATION' | 'STITCHING' | 'COMPLETED';
     finalVideoUrl?: string;
     finalVideoS3Key?: string;
   }) => Promise<void>;

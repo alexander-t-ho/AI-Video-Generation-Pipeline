@@ -61,7 +61,7 @@ export const TestHelpers = {
       id: 'test-project-' + Date.now(),
       prompt: 'Luxury watch advertisement with golden hour lighting',
       targetDuration: 15,
-      status: 'scene_generation',
+      status: 'SCENE_GENERATION',
       createdAt: new Date().toISOString(),
       storyboard: defaultScenes,
       currentSceneIndex: 0,

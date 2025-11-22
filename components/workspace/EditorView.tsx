@@ -89,7 +89,7 @@ export default function EditorView() {
   const [editedDuration, setEditedDuration] = useState<number | ''>('');
   const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(false);
   const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
-  const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' } | null>>([]);
+  const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' | 'url' } | null>>([]);
   const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +185,45 @@ export default function EditorView() {
       setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
     }
   }, [currentSceneIndex, currentScene?.imagePrompt, currentScene?.videoPrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame]);
+
+  // Auto-populate seed image (slot 0) when useSeedFrame is checked and we have a previous scene
+  useEffect(() => {
+    if (currentSceneIndex > 0 && currentScene?.useSeedFrame) {
+      const previousScene = scenes[currentSceneIndex - 1];
+      const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
+      const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
+
+      if (seedFrame) {
+        const seedFrameUrl = seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
+          ? seedFrame.url
+          : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`;
+
+        // Only auto-populate if slot 0 is empty or was auto-populated before
+        setCustomImagePreviews(prev => {
+          const newPreviews = [...prev];
+          // Auto-populate if empty or if it's a URL (likely auto-populated before)
+          if (!newPreviews[0] || newPreviews[0].source === 'url') {
+            newPreviews[0] = {
+              url: seedFrameUrl,
+              source: 'url' as const
+            };
+            console.log('[EditorView] Auto-populated seed image from previous scene on scene change');
+          }
+          return newPreviews;
+        });
+      }
+    } else if (currentSceneIndex === 0 || !currentScene?.useSeedFrame) {
+      // Clear auto-populated seed image for scene 0 or when useSeedFrame is false
+      setCustomImagePreviews(prev => {
+        const newPreviews = [...prev];
+        if (newPreviews[0]?.source === 'url') {
+          newPreviews[0] = null;
+          console.log('[EditorView] Cleared auto-populated seed image');
+        }
+        return newPreviews;
+      });
+    }
+  }, [currentSceneIndex, currentScene?.useSeedFrame, scenes]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -520,9 +559,58 @@ export default function EditorView() {
         console.log('[EditorView] Uploaded image to S3:', s3Url.substring(0, 80) + '...');
       }
 
+      // Handle last frame (slot index 4) if provided
+      let lastFrameUrl: string | undefined;
+      const lastFramePreview = customImagePreviews[4]; // Slot 4 is the last frame
+      if (lastFramePreview) {
+        // Upload last frame to S3 if it's a local file
+        try {
+          if (lastFramePreview.source === 'file') {
+            // Find the file for slot 4
+            let fileIndex = 0;
+            for (let i = 0; i < 4; i++) {
+              if (customImagePreviews[i]?.source === 'file') {
+                fileIndex++;
+              }
+            }
+            const lastFrameFile = customImageFiles[fileIndex];
+            if (lastFrameFile) {
+              // Upload the file using uploadImages
+              const uploadResult = await uploadImages([lastFrameFile], project.id, false);
+              if (uploadResult.images && uploadResult.images.length > 0) {
+                lastFrameUrl = uploadResult.images[0].url;
+                console.log('[EditorView] Uploaded last frame to S3:', lastFrameUrl.substring(0, 80) + '...');
+              }
+            }
+          } else if (lastFramePreview.url.startsWith('http://') || lastFramePreview.url.startsWith('https://')) {
+            lastFrameUrl = lastFramePreview.url;
+          } else if (lastFramePreview.url.startsWith('/api/serve-image')) {
+            // Extract the local path and upload it
+            const localPath = decodeURIComponent(lastFramePreview.url.split('path=')[1]);
+            const uploadResult = await uploadImageToS3(localPath, project.id);
+            lastFrameUrl = uploadResult.s3Url;
+            console.log('[EditorView] Uploaded last frame (from local path) to S3:', lastFrameUrl.substring(0, 80) + '...');
+          }
+        } catch (error) {
+          console.error('Error uploading last frame:', error);
+          // Don't throw - continue without last frame
+        }
+      }
+
       // Generate video
-      // Get model parameters from current scene
-      const modelParameters = currentScene.modelParameters;
+      // Get model parameters from current scene and add last_frame if provided
+      const modelParameters = {
+        ...(currentScene.modelParameters || {}),
+        ...(lastFrameUrl ? { last_frame: lastFrameUrl } : {}),
+      };
+
+      console.log('[EditorView] Video generation parameters:', {
+        baseImage: s3Url,
+        seedFrame: seedFrameUrl,
+        lastFrame: lastFrameUrl,
+        hasLastFrame: !!lastFrameUrl,
+      });
+
       const videoResponse = await generateVideo(
         s3Url, // Base image (seed frame if available, otherwise generated image)
         currentScene.videoPrompt || currentScene.imagePrompt, // Fallback to imagePrompt for backward compatibility
@@ -531,7 +619,7 @@ export default function EditorView() {
         seedFrameUrl, // Pass seed frame URL for reference
         currentScene.customDuration, // Pass custom duration if set
         undefined, // subsceneIndex not used
-        modelParameters // Pass model-specific parameters
+        modelParameters // Pass model-specific parameters (including last_frame if provided)
       );
 
       // Poll for video completion (pass projectId and sceneIndex to trigger download)
@@ -642,9 +730,10 @@ export default function EditorView() {
       return;
     }
 
-    // Move to next scene (seed frames already extracted after video generation)
+    // Move to next scene and switch to images tab (seed frames already extracted after video generation)
     const nextSceneIndex = currentSceneIndex + 1;
     setCurrentSceneIndex(nextSceneIndex);
+    setViewMode('images'); // Switch to images tab for next scene
   };
 
   const handleSelectSeedFrame = (frameIndex: number) => {
@@ -1277,7 +1366,29 @@ export default function EditorView() {
                       <input
                         type="checkbox"
                         checked={editedUseSeedFrame}
-                        onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
+                        onChange={(e) => {
+                          const isChecked = e.target.checked;
+                          setEditedUseSeedFrame(isChecked);
+
+                          // Auto-populate seed image (slot 0) when checkbox is checked
+                          if (isChecked && seedFrameUrl) {
+                            const newPreviews = [...customImagePreviews];
+                            newPreviews[0] = {
+                              url: seedFrameUrl,
+                              source: 'url' as const
+                            };
+                            setCustomImagePreviews(newPreviews);
+                            console.log('[EditorView] Auto-populated seed image from previous scene seed frame');
+                          } else if (!isChecked) {
+                            // Clear seed image slot when unchecked (only if auto-populated)
+                            const newPreviews = [...customImagePreviews];
+                            if (newPreviews[0]?.source === 'url') {
+                              newPreviews[0] = null;
+                              setCustomImagePreviews(newPreviews);
+                              console.log('[EditorView] Cleared auto-populated seed image slot');
+                            }
+                          }
+                        }}
                         className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
                       />
                       <span className="text-xs font-medium text-white/80">
@@ -1302,111 +1413,277 @@ export default function EditorView() {
               })()}
             </div>
 
-            {/* Image Input - 4 Slots (1 Seed + 3 Reference) */}
-            <div>
-              <label className="block text-xs font-medium text-white mb-2">
-                Image Input <span className="text-white/60 text-xs">(1 seed image + up to 3 reference images)</span>
-              </label>
-              <div className="grid grid-cols-4 gap-3">
-                {[0, 1, 2, 3].map((slotIndex) => {
+            {/* Image Input - Seed, Reference, and Last Frame in same row */}
+            <div className="space-y-2">
+              {/* Labels Row */}
+              <div className="grid grid-cols-5 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-white">
+                    Seed Image <span className="text-white/60 text-xs">(First frame)</span>
+                  </label>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs font-medium text-white">
+                    Reference Images <span className="text-white/60 text-xs">(Up to 3 references)</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white">
+                    Last Frame <span className="text-white/60 text-xs">(Ending image)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Images Row */}
+              <div className="grid grid-cols-5 gap-3">
+                {/* Seed Image - Column 1 */}
+                <div>
+                  {(() => {
+                    const slotIndex = 0;
+                    const preview = customImagePreviews[slotIndex];
+
+                    return (
+                      <div className="relative">
+                        <label
+                          onDragOver={handleFileDragOver}
+                          onDragLeave={handleFileDragLeave}
+                          onDrop={handleDropZone}
+                          className={`block w-full aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
+                            isOverDropZone
+                              ? 'border-blue-400 bg-blue-500/10'
+                              : 'border-blue-400/40 hover:border-blue-400/60 bg-blue-500/5'
+                          }`}
+                        >
+                          {preview ? (
+                            <>
+                              <img
+                                src={preview.url}
+                                alt="Seed image"
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleRemoveImage(slotIndex);
+                                }}
+                                className="absolute -top-2 -right-2 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-colors border border-red-400/50 z-10"
+                                type="button"
+                                title="Remove image"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                              <Upload className="w-6 h-6 text-blue-400/50 mb-1" />
+                              <span className="text-xs text-blue-400/70 text-center">Drop or click to upload</span>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert(`${file.name} is too large (max 10MB).`);
+                                  return;
+                                }
+                                const previewUrl = URL.createObjectURL(file);
+                                const newPreviews = [...customImagePreviews];
+                                const newFiles = [...customImageFiles];
+
+                                let fileIndex = 0;
+                                for (let i = 0; i < slotIndex; i++) {
+                                  if (customImagePreviews[i]?.source === 'file') {
+                                    fileIndex++;
+                                  }
+                                }
+
+                                newPreviews[slotIndex] = { url: previewUrl, source: 'file' };
+                                newFiles.splice(fileIndex, 0, file);
+
+                                setCustomImagePreviews(newPreviews);
+                                setCustomImageFiles(newFiles);
+                              }
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Reference Images - Columns 2-4 */}
+                {[1, 2, 3].map((slotIndex) => {
                   const preview = customImagePreviews[slotIndex];
-                  const isSeedSlot = slotIndex === 0;
 
                   return (
                     <div key={`slot-${slotIndex}`} className="relative">
-                      <label
-                        onDragOver={handleFileDragOver}
-                        onDragLeave={handleFileDragLeave}
-                        onDrop={handleDropZone}
-                        className={`block w-full aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
-                          isOverDropZone
-                            ? 'border-white/40 bg-white/10'
-                            : 'border-white/20 hover:border-white/30 bg-white/5'
-                        }`}
-                      >
-                        {preview ? (
-                          <>
-                            <img
-                              src={preview.url}
-                              alt={`${isSeedSlot ? 'Seed' : 'Reference'} image ${slotIndex + 1}`}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleRemoveImage(slotIndex);
-                              }}
-                              className="absolute -top-2 -right-2 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-colors border border-red-400/50 z-10"
-                              type="button"
-                              title="Remove image"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center p-2">
-                            <Upload className="w-6 h-6 text-white/30 mb-1" />
-                            <span className="text-xs text-white/40 text-center">
-                              {isSeedSlot ? 'Seed' : `Ref ${slotIndex}`}
-                            </span>
-                          </div>
-                        )}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              // Handle single file upload for specific slot
-                              if (file.size > 10 * 1024 * 1024) {
-                                alert(`${file.name} is too large (max 10MB).`);
-                                return;
-                              }
-                              const previewUrl = URL.createObjectURL(file);
-                              const newPreviews = [...customImagePreviews];
-                              const newFiles = [...customImageFiles];
-
-                              // Calculate file index for this slot
-                              let fileIndex = 0;
-                              for (let i = 0; i < slotIndex; i++) {
-                                if (customImagePreviews[i]?.source === 'file') {
-                                  fileIndex++;
+                        <label
+                          onDragOver={handleFileDragOver}
+                          onDragLeave={handleFileDragLeave}
+                          onDrop={handleDropZone}
+                          className={`block w-full aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
+                            isOverDropZone
+                              ? 'border-white/40 bg-white/10'
+                              : 'border-white/20 hover:border-white/30 bg-white/5'
+                          }`}
+                        >
+                          {preview ? (
+                            <>
+                              <img
+                                src={preview.url}
+                                alt={`Reference image ${slotIndex}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleRemoveImage(slotIndex);
+                                }}
+                                className="absolute -top-2 -right-2 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-colors border border-red-400/50 z-10"
+                                type="button"
+                                title="Remove image"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                              <Upload className="w-6 h-6 text-white/30 mb-1" />
+                              <span className="text-xs text-white/40 text-center">Ref {slotIndex}</span>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert(`${file.name} is too large (max 10MB).`);
+                                  return;
                                 }
+                                const previewUrl = URL.createObjectURL(file);
+                                const newPreviews = [...customImagePreviews];
+                                const newFiles = [...customImageFiles];
+
+                                let fileIndex = 0;
+                                for (let i = 0; i < slotIndex; i++) {
+                                  if (customImagePreviews[i]?.source === 'file') {
+                                    fileIndex++;
+                                  }
+                                }
+
+                                newPreviews[slotIndex] = { url: previewUrl, source: 'file' };
+                                newFiles.splice(fileIndex, 0, file);
+
+                                setCustomImagePreviews(newPreviews);
+                                setCustomImageFiles(newFiles);
                               }
-
-                              newPreviews[slotIndex] = { url: previewUrl, source: 'file' };
-                              newFiles.splice(fileIndex, 0, file);
-
-                              setCustomImagePreviews(newPreviews);
-                              setCustomImageFiles(newFiles);
-                            }
-                            e.target.value = '';
-                          }}
-                          className="hidden"
-                        />
-                      </label>
-                      <div className="absolute bottom-1 left-1 right-1 text-center">
-                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          isSeedSlot
-                            ? 'bg-blue-500/80 text-white'
-                            : 'bg-white/10 text-white/60'
-                        }`}>
-                          {isSeedSlot ? 'Seed' : `Ref ${slotIndex}`}
-                        </span>
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                        <div className="absolute bottom-1 left-1 right-1 text-center">
+                          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-white/10 text-white/60">
+                            Ref {slotIndex}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-white/40 mt-2">
-                First image is used as seed for video generation. Other 3 are reference images.
-              </p>
-            </div>
-          </div>
-        </div>
+                    );
+                  })}
 
-        {/* Video Generation Area */}
+                {/* Last Frame - Column 5 */}
+                <div>
+                  {(() => {
+                    const slotIndex = 4;
+                    const preview = customImagePreviews[slotIndex];
+
+                    return (
+                      <div className="relative">
+                        <label
+                          onDragOver={handleFileDragOver}
+                          onDragLeave={handleFileDragLeave}
+                          onDrop={handleDropZone}
+                          className={`block w-full aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
+                            isOverDropZone
+                              ? 'border-purple-400 bg-purple-500/10'
+                              : 'border-purple-400/40 hover:border-purple-400/60 bg-purple-500/5'
+                          }`}
+                        >
+                          {preview ? (
+                            <>
+                              <img
+                                src={preview.url}
+                                alt="Last frame"
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleRemoveImage(slotIndex);
+                                }}
+                                className="absolute -top-2 -right-2 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-colors border border-red-400/50 z-10"
+                                type="button"
+                                title="Remove image"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                              <Upload className="w-6 h-6 text-purple-400/50 mb-1" />
+                              <span className="text-xs text-purple-400/70 text-center">Last frame</span>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert(`${file.name} is too large (max 10MB).`);
+                                  return;
+                                }
+                                const previewUrl = URL.createObjectURL(file);
+                                const newPreviews = [...customImagePreviews];
+                                const newFiles = [...customImageFiles];
+
+                                let fileIndex = 0;
+                                for (let i = 0; i < slotIndex; i++) {
+                                  if (customImagePreviews[i]?.source === 'file') {
+                                    fileIndex++;
+                                  }
+                                }
+
+                                newPreviews[slotIndex] = { url: previewUrl, source: 'file' };
+                                newFiles.splice(fileIndex, 0, file);
+
+                                setCustomImagePreviews(newPreviews);
+                                setCustomImageFiles(newFiles);
+                              }
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+          {/* Video Generation Area */}
         <div className="space-y-4">
           {/* Generate Video Button */}
           {!sceneHasVideo && (
@@ -1472,7 +1749,7 @@ export default function EditorView() {
                 </div>
               )}
 
-              {/* Approve & Continue */}
+              {/* Continue Button */}
               <button
                 onClick={handleApproveAndContinue}
                 disabled={isExtractingFrames}
@@ -1486,18 +1763,20 @@ export default function EditorView() {
                 ) : currentSceneIndex >= 4 ? (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
-                    Approve & View Final Video
+                    View Final Video
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
-                    Approve & Continue to Next Scene
+                    Continue to Next Scene
                   </>
                 )}
               </button>
             </>
           )}
         </div>
+      </div>
+      </div>
       </div>
 
       {/* Image Preview Modal */}

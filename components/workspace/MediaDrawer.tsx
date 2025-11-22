@@ -247,36 +247,38 @@ export default function MediaDrawer() {
 
   const seedFrames = useMemo(() => {
     const allFrames: MediaItem[] = [];
-    scenes.forEach((scene, sceneIndex) => {
-      scene.seedFrames?.forEach((frame) => {
-        // Always serve through API using localPath for consistent access
-        let frameUrl: string;
-        if (frame.localPath) {
-          frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.localPath)}`;
-        } else if (frame.url.startsWith('/api')) {
-          frameUrl = frame.url;
-        } else if (!frame.url.startsWith('http://') && !frame.url.startsWith('https://')) {
-          frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.url)}`;
-        } else {
-          // For S3 URLs, use localPath if available
-          frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.localPath || frame.url)}`;
-        }
+    // Only show seed frames for the current scene
+    const currentScene = scenes[currentSceneIndex];
 
-        allFrames.push({
-          id: frame.id,
-          type: 'frame' as const,
-          url: frameUrl,
-          sceneIndex,
-          timestamp: frame.timestamp.toString(),
-          metadata: {
-            // Store full URL for preview modal
-            fullUrl: frameUrl,
-          },
-        });
+    currentScene?.seedFrames?.forEach((frame) => {
+      // Always serve through API using localPath for consistent access
+      let frameUrl: string;
+      if (frame.localPath) {
+        frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.localPath)}`;
+      } else if (frame.url.startsWith('/api')) {
+        frameUrl = frame.url;
+      } else if (!frame.url.startsWith('http://') && !frame.url.startsWith('https://')) {
+        frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.url)}`;
+      } else {
+        // For S3 URLs, use localPath if available
+        frameUrl = `/api/serve-image?path=${encodeURIComponent(frame.localPath || frame.url)}`;
+      }
+
+      allFrames.push({
+        id: frame.id,
+        type: 'frame' as const,
+        url: frameUrl,
+        sceneIndex: currentSceneIndex,
+        timestamp: frame.timestamp.toString(),
+        metadata: {
+          // Store full URL for preview modal
+          fullUrl: frameUrl,
+        },
       });
     });
+
     return allFrames;
-  }, [scenes]);
+  }, [scenes, currentSceneIndex]);
 
   // Brand assets (uploaded/selected reference images)
   const brandAssets = useMemo(() => {

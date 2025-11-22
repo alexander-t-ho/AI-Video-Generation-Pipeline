@@ -268,13 +268,39 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
   setSeedFrames: (sceneIndex, frames) => {
     set((state) => {
       const updatedScenes = [...state.scenes];
+      const updatedStoryboard = state.project ? [...state.project.storyboard] : [];
+
       if (updatedScenes[sceneIndex]) {
         updatedScenes[sceneIndex] = {
           ...updatedScenes[sceneIndex],
           seedFrames: frames,
+          selectedSeedFrameIndex: frames.length > 0 ? 0 : undefined, // Auto-select the first (only) frame
         };
       }
-      return { scenes: updatedScenes };
+
+      // Auto-enable useSeedFrame for the next scene if it exists
+      const nextSceneIndex = sceneIndex + 1;
+      if (frames.length > 0 && nextSceneIndex < updatedScenes.length && updatedStoryboard[nextSceneIndex]) {
+        updatedStoryboard[nextSceneIndex] = {
+          ...updatedStoryboard[nextSceneIndex],
+          useSeedFrame: true, // Auto-enable for next scene
+        };
+
+        if (updatedScenes[nextSceneIndex]) {
+          updatedScenes[nextSceneIndex] = {
+            ...updatedScenes[nextSceneIndex],
+            useSeedFrame: true,
+          };
+        }
+      }
+
+      return {
+        scenes: updatedScenes,
+        project: state.project ? {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        } : state.project,
+      };
     });
   },
   
@@ -300,7 +326,7 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
           ...state.project,
           finalVideoUrl: url,
           finalVideoS3Key: s3Key,
-          status: 'completed',
+          status: 'COMPLETED',
         },
       };
     });

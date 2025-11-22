@@ -111,7 +111,7 @@ export interface ProjectState {
   name?: string;
   prompt: string;
   targetDuration: number; // 15, 30, or 60 seconds
-  status: 'storyboard' | 'scene_generation' | 'stitching' | 'completed';
+  status: 'STORYBOARD' | 'SCENE_GENERATION' | 'STITCHING' | 'COMPLETED';
   createdAt: string;
   
   storyboard: Scene[];
@@ -192,7 +192,7 @@ export interface SeedFrame {
   url: string;              // S3 URL or public HTTP/HTTPS URL (for video generation)
   localPath?: string;       // Optional: Local file path (for reference/fallback)
   s3Key?: string;           // Optional: S3 storage key
-  timestamp: number;        // 0.1s, 0.2s, 0.3s, 0.4s, 0.5s from end
+  timestamp: number;        // 0.0s (last frame from video)
 }
 
 // ============================================================================
