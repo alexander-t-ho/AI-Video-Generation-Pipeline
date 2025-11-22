@@ -146,7 +146,8 @@ interface ProjectStore {
   setSelectedColor: (color: string) => void;
   setCurrentReferenceImageUrl: (url: string) => void;
   setAssetDescription: (description: string) => void;
-  
+  setCarVariantId: (variantId: string) => void;
+
   // Style selection management
   setSelectedStyle: (style: 'whimsical' | 'luxury' | 'offroad', prompt: string) => void;
   
@@ -1012,7 +1013,20 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     });
   },
-  
+
+  setCarVariantId: (variantId: string) => {
+    set((state) => {
+      if (!state.project) return state;
+      console.log(`[ProjectStore] Setting car variant ID: ${variantId}`);
+      return {
+        project: {
+          ...state.project,
+          carVariantId: variantId,
+        },
+      };
+    });
+  },
+
   // Style selection management
   setSelectedStyle: (style: 'whimsical' | 'luxury' | 'offroad', prompt: string) => {
     set({

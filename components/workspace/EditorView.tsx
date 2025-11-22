@@ -50,6 +50,39 @@ interface GeneratingImage {
   image?: GeneratedImage;
 }
 
+/**
+ * Detects driving direction from image prompt for driving scenes
+ */
+function detectDrivingDirection(prompt: string): 'forward' | 'backward' | 'turning' | 'none' {
+  const lowerPrompt = prompt.toLowerCase();
+
+  // Check for backward/reverse motion
+  if (lowerPrompt.includes('backward') || lowerPrompt.includes('reversing') ||
+      lowerPrompt.includes('backing up') || lowerPrompt.includes('reverse')) {
+    return 'backward';
+  }
+
+  // Check for turning
+  if (lowerPrompt.includes('turning') || lowerPrompt.includes('turn left') ||
+      lowerPrompt.includes('turn right') || lowerPrompt.includes('cornering')) {
+    return 'turning';
+  }
+
+  // Check for forward motion (default for any driving motion)
+  if (lowerPrompt.includes('driving forward') || lowerPrompt.includes('moving forward') ||
+      lowerPrompt.includes('acceleration') || lowerPrompt.includes('accelerating')) {
+    return 'forward';
+  }
+
+  // Generic driving keywords default to forward
+  if (lowerPrompt.includes('driving') || lowerPrompt.includes('moving') ||
+      lowerPrompt.includes('wheels rotating')) {
+    return 'forward';
+  }
+
+  return 'none';
+}
+
 export default function EditorView() {
   const {
     project,
@@ -201,8 +234,50 @@ export default function EditorView() {
       // Update scene status
       setSceneStatus(currentSceneIndex, 'generating_image');
 
-      // Get reference images from project (uploaded images for object consistency)
-      let referenceImageUrls = project.referenceImageUrls || [];
+      // ENHANCEMENT: ALWAYS fetch and use brand assets for vehicle consistency
+      // Determine scene type and fetch appropriate brand assets
+      const { isInteriorScene, fetchBrandAssets } = await import('@/lib/api/interior-assets');
+      const isInterior = isInteriorScene(activePrompt);
+      let referenceImageUrls: string[] = [];
+
+      if (project.carVariantId) {
+        // Fetch brand assets based on scene type
+        const assetType = isInterior ? 'INTERIOR' : 'EXTERIOR';
+        console.log(`[EditorView] Scene ${currentSceneIndex}: ${isInterior ? 'Interior' : 'Exterior'} scene detected - fetching ${assetType} brand assets for car variant ${project.carVariantId}`);
+
+        const brandAssets = await fetchBrandAssets({
+          variantId: project.carVariantId,
+          type: assetType
+        });
+
+        if (brandAssets.length > 0) {
+          // Use brand assets as primary reference images for vehicle consistency
+          referenceImageUrls = brandAssets.map(asset => asset.url);
+          console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${brandAssets.length} ${assetType.toLowerCase()} brand asset(s) for vehicle consistency`);
+          console.log(`[EditorView] Brand assets:`, referenceImageUrls.map(url => url.substring(0, 80) + '...'));
+        } else {
+          console.warn(`[EditorView] Scene ${currentSceneIndex}: No ${assetType.toLowerCase()} assets found for variant ${project.carVariantId} - falling back to project reference images`);
+          // Fallback to project reference images if no brand assets found
+          referenceImageUrls = project.referenceImageUrls || [];
+        }
+      } else {
+        console.warn(`[EditorView] Scene ${currentSceneIndex}: No carVariantId set - using project reference images (vehicle consistency may vary)`);
+        // Fallback to project reference images if no car variant set
+        referenceImageUrls = project.referenceImageUrls || [];
+      }
+
+      // Log final reference image count
+      if (referenceImageUrls.length > 0) {
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Final reference images count: ${referenceImageUrls.length} (for vehicle consistency via IP-Adapter)`);
+      } else {
+        console.warn(`[EditorView] Scene ${currentSceneIndex}: WARNING - No reference images available! Vehicle consistency cannot be guaranteed.`);
+      }
+
+      // Detect driving direction for motion scenes
+      const drivingDirection = detectDrivingDirection(activePrompt);
+      if (drivingDirection !== 'none') {
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Detected ${drivingDirection} driving motion - will optimize image for motion direction`);
+      }
 
       // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
       let seedImageUrl: string | undefined = undefined;
@@ -243,8 +318,12 @@ export default function EditorView() {
           console.log(`[EditorView] Scene ${currentSceneIndex}: Using ${validatedCustomImages.length} custom image(s) as reference images via IP-Adapter`);
         }
       } else if (currentSceneIndex > 0) {
-        // Only use seed frame if explicitly enabled via checkbox
-        const useSeedFrame = currentScene.useSeedFrame === true;
+        // For whimsical style, don't use seed frame continuity (allow creative independence)
+        const isWhimsical = project.selectedStyle === 'whimsical';
+
+        // Only use seed frame if explicitly enabled via checkbox (and not whimsical)
+        // Interior scenes should use reference images, so don't override with seed frame
+        const useSeedFrame = currentScene.useSeedFrame === true && !isWhimsical && !isInterior;
         if (useSeedFrame) {
           const previousScene = scenes[currentSceneIndex - 1];
           if (previousScene?.seedFrames && previousScene.seedFrames.length > 0) {
@@ -268,12 +347,25 @@ export default function EditorView() {
             }
           }
         } else {
-          console.log(`[EditorView] Scene ${currentSceneIndex}: Seed frame checkbox is disabled, not using seed frame`);
+          // CRITICAL FIX: For scenes 1+, ALWAYS use brand asset as seed image for vehicle consistency
+          // This ensures image-to-image generation (not just IP-Adapter) for maximum consistency
+          if (referenceImageUrls.length > 0) {
+            seedImageUrl = referenceImageUrls[0];
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Using brand asset as seed image for vehicle consistency:`, seedImageUrl!.substring(0, 80) + '...');
+          }
+
+          if (isWhimsical) {
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Whimsical style - using brand asset seed (not seed frame)`);
+          } else if (isInterior) {
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Interior scene - using brand asset seed for consistency`);
+          } else {
+            console.log(`[EditorView] Scene ${currentSceneIndex}: Using brand asset seed for vehicle consistency`);
+          }
         }
       } else if (referenceImageUrls.length > 0) {
         // For Scene 0: Use reference image as seed image if available
         seedImageUrl = referenceImageUrls[0];
-        console.log(`[EditorView] Scene ${currentSceneIndex}: Using reference image as seed image:`, seedImageUrl!.substring(0, 80) + '...');
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using brand asset as seed image:`, seedImageUrl!.substring(0, 80) + '...');
       }
 
       // Generate images in parallel

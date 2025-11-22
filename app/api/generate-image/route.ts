@@ -271,6 +271,7 @@ export async function POST(request: NextRequest) {
     let referenceImageUrls = body.referenceImageUrls || [];
     const seedFrame = body.seedFrame?.trim();
     let seedImage = body.seedImage?.trim();
+    const negativePrompt = body.negativePrompt?.trim();
 
     // OPTIMIZATION: Convert ALL URLs in parallel (not sequential)
     const urlsToConvert: string[] = [
@@ -383,29 +384,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Detect style and scene type from prompt for style-specific adjustments
+    const isWhimsical = prompt.toLowerCase().includes('wes anderson') || prompt.toLowerCase().includes('whimsical');
+    const { isInteriorScene } = await import('@/lib/api/interior-assets');
+    const isInterior = isInteriorScene(prompt);
+
+    // Switch to Nano Banana for whimsical style (multi-image fusion + text for better artistic control)
+    if (isWhimsical && !selectedModel) {
+      // Allow switching to Nano Banana Pro for premium artistic output via environment variable
+      const useNanoBananaPro = process.env.WHIMSICAL_USE_NANO_BANANA_PRO === 'true';
+      selectedModel = useNanoBananaPro ? 'google/nano-banana-pro' : 'google/nano-banana';
+      setRuntimeImageModel(selectedModel);
+      const modelName = useNanoBananaPro ? 'Nano Banana Pro' : 'Nano Banana';
+      console.log(`[Image Generation API] Scene ${sceneIndex}: Whimsical style detected - switching to ${modelName} for multi-image fusion + text generation`);
+    }
+
+    // Interior scenes: Enforce reference image usage for spatial consistency
+    if (isInterior) {
+      if (referenceImageUrls.length === 0) {
+        console.log(`[Image Generation API] Scene ${sceneIndex}: Interior scene detected but NO reference images provided - consider seeding with interior photo`);
+      } else {
+        console.log(`[Image Generation API] Scene ${sceneIndex}: Interior scene detected - will use ${referenceImageUrls.length} reference image(s) for spatial/spatial consistency`);
+      }
+    }
+
+    // Enhance whimsical prompts with cinematography guidance
+    if (isWhimsical) {
+      const { enhanceWhimsicalPrompt } = await import('@/lib/utils/prompt-optimizer');
+      prompt = enhanceWhimsicalPrompt(prompt);
+      console.log(`[Image Generation API] Scene ${sceneIndex}: Whimsical style detected - enhanced prompt with cinematography terms`);
+    }
+
     // Build IP-Adapter images array: reference image (primary) + seed frame (for continuity in scenes 1-4)
-    // IP-Adapter scale: 1.0 for maximum reference image influence (let reference image define the object)
-    const ipAdapterScale = 1.0;
+    // IP-Adapter scale: style-specific (whimsical: 0.75 for creative freedom, others: 1.0 for consistency)
+    let ipAdapterScale = 1.0; // Default: maximum reference image influence
+
+    if (isWhimsical) {
+      ipAdapterScale = 0.75; // Whimsical: lower scale allows more creative interpretation
+      console.log(`[Image Generation API] Scene ${sceneIndex}: Whimsical style detected - using lower IP-Adapter scale (${ipAdapterScale}) for creative freedom`);
+    }
+
     const ipAdapterImages: string[] = [];
-    
+
     // Always include reference images for object consistency (primary driver)
     if (referenceImageUrls.length > 0) {
       ipAdapterImages.push(...referenceImageUrls);
     }
-    
+
     // For Scenes 1-4: Add seed frame for visual continuity (secondary)
     if (sceneIndex > 0 && seedFrameUrl) {
       ipAdapterImages.push(seedFrameUrl);
       console.log(`[Image Generation API] Scene ${sceneIndex}: Using seed frame via IP-Adapter for visual continuity`);
     }
-    
+
     const useIpAdapter = ipAdapterImages.length > 0;
-    
+
     const predictionId = await createImagePredictionWithRetry(
       prompt,
       seedImage, // Reference image as seed (PRIMARY driver for object consistency)
       useIpAdapter ? ipAdapterImages : undefined, // Reference image + seed frame via IP-Adapter
-      useIpAdapter ? ipAdapterScale : undefined
+      useIpAdapter ? ipAdapterScale : undefined,
+      undefined, // randomSeed (use default)
+      negativePrompt // Pass negative prompt to image generator
     );
 
     const duration = Date.now() - startTime;

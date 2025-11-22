@@ -48,6 +48,7 @@ interface ReplicatePrediction {
 
 interface ReplicateInput {
   prompt: string;
+  negative_prompt?: string; // Elements to avoid in generation
   num_outputs?: number;
   aspect_ratio?: string;
   output_format?: string;
@@ -103,7 +104,8 @@ export async function createImagePrediction(
   seedImage?: string,
   referenceImageUrls?: string[],
   ipAdapterScale?: number,
-  randomSeed?: number
+  randomSeed?: number,
+  negativePrompt?: string
 ): Promise<string> {
   // Validate inputs
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -164,6 +166,10 @@ export async function createImagePrediction(
     if (randomSeed !== undefined) {
       input.seed = randomSeed;
     }
+    // Add negative prompt if provided
+    if (negativePrompt) {
+      input.negative_prompt = negativePrompt;
+    }
     console.log(`${logPrefix} Using nano-banana with image_input: ${seedImage} + ${referenceImageUrls?.length || 0} reference images`);
   } else {
     // Standard parameters for other models
@@ -178,6 +184,11 @@ export async function createImagePrediction(
     // Add seed if provided
     if (randomSeed !== undefined) {
       input.seed = randomSeed;
+    }
+
+    // Add negative prompt if provided
+    if (negativePrompt) {
+      input.negative_prompt = negativePrompt;
     }
 
     // Add seed image for non-nano-banana models
@@ -285,9 +296,10 @@ export async function createImagePredictionWithRetry(
   seedImage?: string,
   referenceImageUrls?: string[],
   ipAdapterScale?: number,
-  randomSeed?: number
+  randomSeed?: number,
+  negativePrompt?: string
 ): Promise<string> {
-  return retryWithBackoff(() => createImagePrediction(prompt, seedImage, referenceImageUrls, ipAdapterScale, randomSeed));
+  return retryWithBackoff(() => createImagePrediction(prompt, seedImage, referenceImageUrls, ipAdapterScale, randomSeed, negativePrompt));
 }
 
 // ============================================================================

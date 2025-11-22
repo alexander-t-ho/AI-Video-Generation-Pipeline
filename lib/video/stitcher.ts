@@ -11,6 +11,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import { getStorageService, type StoredFile } from '@/lib/storage/storage-service';
+import { generateLogoScene } from './logo-scene-generator';
 
 const execAsync = promisify(exec);
 
@@ -562,19 +563,24 @@ async function stitchVideosWithTransitions(
 
 /**
  * Stitch multiple video clips into a single MP4 file with automatic smooth transitions
- * 
+ *
  * Automatically analyzes similarity between consecutive videos and applies appropriate
  * transitions (fade, crossfade, dissolve) based on visual similarity.
- * 
+ *
  * @param videoPaths - Array of paths to video files to stitch (in order)
  * @param projectId - Project ID for organizing output files
+ * @param options - Optional configuration
+ * @param options.companyLogoS3Key - S3 key for company logo to add final scene
  * @returns Path to the stitched output video file
- * 
+ *
  * @throws Error if video files don't exist, are invalid, or stitching fails
  */
 export async function stitchVideos(
   videoPaths: string[],
-  projectId: string
+  projectId: string,
+  options?: {
+    companyLogoS3Key?: string;
+  }
 ): Promise<{ localPath: string; s3Url: string; s3Key: string; storedFile: StoredFile }> {
   // Validate input
   if (!videoPaths || videoPaths.length === 0) {
@@ -599,22 +605,48 @@ export async function stitchVideos(
   await fs.mkdir(tempDir, { recursive: true });
 
   try {
+    // Step 1: Generate logo scene if company logo is provided
+    let videoPathsToStitch = [...videoPaths];
+    const logoScenePath = path.join(outputDir, 'logo_scene.mp4');
+
+    if (options?.companyLogoS3Key) {
+      console.log('[VideoStitcher] Generating final logo scene...');
+      try {
+        await generateLogoScene({
+          lastVideoPath: videoPaths[videoPaths.length - 1], // Last video in sequence
+          logoS3Key: options.companyLogoS3Key,
+          outputPath: logoScenePath,
+          videoWidth: 1920,
+          videoHeight: 1080,
+        });
+
+        // Add logo scene to the list of videos to stitch
+        videoPathsToStitch.push(logoScenePath);
+        console.log('[VideoStitcher] Logo scene generated and added to stitch sequence');
+      } catch (error: any) {
+        console.error('[VideoStitcher] Failed to generate logo scene:', error.message);
+        console.error('[VideoStitcher] Continuing without logo scene...');
+        // Continue without logo scene if generation fails
+      }
+    }
+
+  try {
     // Get video info (including durations and audio stream detection)
     console.log('[VideoStitcher] Analyzing videos...');
     const videoInfos = await Promise.all(
-      videoPaths.map((vp) => getVideoInfo(vp))
+      videoPathsToStitch.map((vp) => getVideoInfo(vp))
     );
     const videoDurations = videoInfos.map((info) => info.duration);
     const hasAudioStreams = videoInfos.map((info) => info.hasAudio);
-    
+
     console.log(`[VideoStitcher] Video durations: ${videoDurations.map((d, i) => `Video ${i}: ${d.toFixed(2)}s`).join(', ')}`);
     console.log(`[VideoStitcher] Total duration: ${videoDurations.reduce((a, b) => a + b, 0).toFixed(2)}s`);
-    console.log(`[VideoStitcher] Audio streams detected: ${hasAudioStreams.filter(h => h).length}/${videoPaths.length} videos have audio`);
+    console.log(`[VideoStitcher] Audio streams detected: ${hasAudioStreams.filter(h => h).length}/${videoPathsToStitch.length} videos have audio`);
 
     // Handle single video case (no transitions needed)
-    if (videoPaths.length === 1) {
+    if (videoPathsToStitch.length === 1) {
       console.log('[VideoStitcher] Single video, copying without transitions...');
-      const command = `ffmpeg -i "${videoPaths[0]}" -c copy -y "${outputPath}"`;
+      const command = `ffmpeg -i "${videoPathsToStitch[0]}" -c copy -y "${outputPath}"`;
       await execAsync(command);
     } else {
       // Analyze similarity between consecutive video pairs
@@ -622,10 +654,10 @@ export async function stitchVideos(
       const similarities: number[] = [];
       const transitions: TransitionConfig[] = [];
 
-      for (let i = 0; i < videoPaths.length - 1; i++) {
+      for (let i = 0; i < videoPathsToStitch.length - 1; i++) {
         const similarity = await analyzeVideoSimilarity(
-          videoPaths[i],
-          videoPaths[i + 1],
+          videoPathsToStitch[i],
+          videoPathsToStitch[i + 1],
           tempDir
         );
         similarities.push(similarity);
@@ -641,7 +673,7 @@ export async function stitchVideos(
       // Stitch videos with transitions
       console.log('[VideoStitcher] Stitching videos with smooth transitions...');
       await stitchVideosWithTransitions(
-        videoPaths,
+        videoPathsToStitch,
         outputPath,
         transitions,
         videoDurations,
@@ -665,6 +697,15 @@ export async function stitchVideos(
       await fs.rmdir(tempDir);
     } catch {
       // Ignore cleanup errors
+    }
+
+    // Clean up logo scene if it was generated
+    if (options?.companyLogoS3Key) {
+      try {
+        await fs.unlink(logoScenePath);
+      } catch {
+        // Ignore cleanup errors
+      }
     }
 
     // Upload to S3
@@ -705,6 +746,18 @@ export async function stitchVideos(
     } catch {
       // Ignore cleanup errors
     }
+    // Clean up logo scene if it was generated
+    if (options?.companyLogoS3Key) {
+      try {
+        await fs.unlink(logoScenePath).catch(() => {});
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    throw error;
+  }
+  } catch (error: any) {
+    // Clean up outer try/catch (for logo scene generation)
     throw error;
   }
 }

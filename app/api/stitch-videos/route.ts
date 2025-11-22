@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth/auth-options';
+import prisma from '@/lib/db/prisma';
 import { stitchVideos } from '@/lib/video/stitcher';
 import path from 'path';
 import fs from 'fs/promises';
@@ -27,6 +30,9 @@ import fs from 'fs/promises';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Get user session to access company information
+    const session = await getServerSession(authOptions);
+
     const body = await request.json();
     const { videoPaths, projectId, uploadToS3: shouldUploadToS3 = false } = body;
 
@@ -77,8 +83,39 @@ export async function POST(request: NextRequest) {
       absoluteVideoPaths.push(absolutePath);
     }
 
+    // Fetch company logo if user is logged in and has a company
+    let companyLogoS3Key: string | undefined;
+    if (session?.user?.companyId) {
+      try {
+        // Get the most recent logo for the company
+        const logoAsset = await prisma.companyAsset.findFirst({
+          where: {
+            companyId: session.user.companyId,
+            type: 'LOGO',
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
+
+        if (logoAsset?.s3Key) {
+          companyLogoS3Key = logoAsset.s3Key;
+          console.log('[API] Using company logo for final scene:', companyLogoS3Key);
+        } else {
+          console.log('[API] No company logo found, skipping final logo scene');
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch company logo:', error);
+        // Continue without logo if fetching fails
+      }
+    } else {
+      console.log('[API] No user session or company ID, skipping final logo scene');
+    }
+
     // Stitch videos (stitcher creates its own output path and uploads to S3)
-    const result = await stitchVideos(absoluteVideoPaths, projectId);
+    const result = await stitchVideos(absoluteVideoPaths, projectId, {
+      companyLogoS3Key,
+    });
 
     // Use absolute path for response (client will handle serving it)
     const response: any = {

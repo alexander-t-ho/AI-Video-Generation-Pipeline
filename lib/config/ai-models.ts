@@ -147,6 +147,20 @@ export const AVAILABLE_T2I_MODELS: ModelOption[] = [
     description: 'High-quality, fast text-to-image generation',
     supportedInputs: ['prompt', 'aspect_ratio', 'output_format', 'negative_prompt', 'seed'],
   },
+  {
+    id: 'bytedance/seedream-4',
+    name: 'SeedDream-4',
+    provider: 'Bytedance',
+    description: 'State-of-the-art quality, best prompt following and detail (SOTA)',
+    supportedInputs: ['prompt', 'negative_prompt', 'aspect_ratio', 'seed'],
+  },
+  {
+    id: 'google/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'Google',
+    description: 'Premium multi-image fusion for artistic/stylized output',
+    supportedInputs: ['prompt', 'image_input', 'aspect_ratio', 'output_format'],
+  },
 ];
 
 /**
@@ -214,6 +228,13 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     provider: 'Google',
     description: 'Specialized for precise recoloring and color changes',
     supportedInputs: ['prompt', 'image'],
+  },
+  {
+    id: 'google/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'Google',
+    description: 'Premium multi-image fusion for artistic/stylized output with references',
+    supportedInputs: ['prompt', 'image_input', 'aspect_ratio', 'output_format'],
   },
   {
     id: 'stability-ai/sd3-medium',

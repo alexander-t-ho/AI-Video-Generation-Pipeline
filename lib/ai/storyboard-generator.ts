@@ -54,9 +54,28 @@ For each scene:
 Scene description examples:
 "driver close-up", "wide car approach", "interior cockpit"
 
+IMPORTANT FOR DRIVING SCENES:
+- If the scene involves a car MOVING, EXPLICITLY state the direction: "driving FORWARD", "car moving BACKWARD", "turning LEFT", "turning RIGHT"
+- Include directional clarity in the imagePrompt: e.g., "wheels rotating forward", "reversing motion", "left turn trajectory"
+- For exterior driving shots: describe camera angle, road conditions, and visible wheels/motion
+- For interior/cockpit shots: describe steering, dashboard visibility, road/scenery ahead
+- For dynamic shots: specify if motion is forward acceleration, deceleration, reversing, or turning
+
+CRITICAL FOR INTERIOR/COCKPIT SCENES:
+- Environmental elements (mud, dirt, water, debris) should ONLY appear on the EXTERIOR (windshield outside, hood, exterior panels)
+- The INTERIOR of the car (dashboard, seats, steering wheel, door panels, center console) must remain CLEAN
+- NEVER show mud, dirt, water, or debris INSIDE the car or on interior surfaces
+- Example: "POV inside cockpit, driver gripping wheel, muddy terrain visible through windshield, clean interior" NOT "mud on dashboard"
+
 Unless the brief clearly specifies otherwise, assume:
 - The spot is shot on Arri Alexa with a high-end commercial finish
 - The goal is to showcase the product or vehicle in a bold, cinematic way
+
+CRITICAL: When reference images are provided:
+- The reference images define the ENVIRONMENT, SETTING, and VISUAL STYLE
+- ALL scenes must match the environment shown in the reference images
+- Do NOT create scenes in contradictory environments (e.g., forest trails when references show coastal roads)
+- The user's brief describes the ACTION and PACING, the reference images define the LOCATION and AESTHETIC
 
 Output strictly valid JSON in this format:
 {
@@ -64,14 +83,14 @@ Output strictly valid JSON in this format:
     {
       "order": 0,
       "description": "Short 3-6 word phrase describing the scene",
-      "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition.",
+      "imagePrompt": "Detailed prompt for image generation including shot type, subject, action, style, lighting, composition. For driving scenes: include wheel rotation direction, motion type (forward/backward/turning), and visible motion cues.",
       "duration": 10
     },
     ...
   ]
 }
 
-Keep image prompts specific, visual, and production-ready.`;
+Keep image prompts specific, visual, and production-ready. For automotive content, prioritize showing the vehicle clearly with proper motion physics and directional clarity.`;
 
 // ============================================================================
 // Types
@@ -161,8 +180,8 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
   // Add text prompt
   userMessageContent.push({
     type: 'text',
-    text: userPrompt + (referenceImageUrls && referenceImageUrls.length > 0 
-      ? `\n\nReference images have been provided. Use them to understand the visual style, color palette, composition, and overall aesthetic. Incorporate these visual elements into the storyboard scenes.`
+    text: userPrompt + (referenceImageUrls && referenceImageUrls.length > 0
+      ? `\n\nIMPORTANT: Reference images have been provided showing the actual vehicle and environment style. You MUST match the visual aesthetic, setting, and environment shown in these reference images. The imagePrompts should describe scenes that are CONSISTENT with the reference images' environment (urban/coastal/desert/forest/etc), NOT introduce contradictory settings. For example, if reference images show a coastal highway, do NOT create scenes with muddy forest trails.`
       : ''),
   });
 

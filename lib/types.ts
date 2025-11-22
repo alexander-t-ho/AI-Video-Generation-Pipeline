@@ -109,6 +109,7 @@ export interface ProjectState {
   assetDescription?: string; // Description of selected asset (e.g., "Porsche 911 Carrera (2010)")
   selectedColor?: string; // Hex color code of last selected color
   currentReferenceImageUrl?: string; // URL of currently displayed reference image in AssetViewer
+  carVariantId?: string; // Optional: ID of selected car variant for accessing interior/exterior assets
 }
 
 // Extended Scene type for project state (includes generation state)
