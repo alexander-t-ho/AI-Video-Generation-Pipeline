@@ -1,7 +1,7 @@
 'use client';
 
 import { TimelineClip as TimelineClipType } from '@/lib/types';
-import { Scissors, Trash2, Crop, X } from 'lucide-react';
+import { Scissors, Trash2, Crop, X, Image as ImageIcon, Film } from 'lucide-react';
 import { useState } from 'react';
 import { summarizeSceneDescription } from '@/lib/utils/text-utils';
 
@@ -54,14 +54,16 @@ export default function TimelineClip({
     setShowControls(false);
   };
 
+  const isImageClip = clip.type === 'image';
+  const badgeColor = isImageClip ? 'bg-purple-600/80' : 'bg-blue-600/80';
+  const borderColor = isImageClip
+    ? (isSelected ? 'border-purple-400 bg-purple-500/20 shadow-lg shadow-purple-500/30 ring-2 ring-purple-400/30' : 'border-white/20 bg-gradient-to-br from-purple-900/30 to-purple-950/20 hover:border-white/30 hover:from-purple-900/40 hover:to-purple-950/30')
+    : (isSelected ? 'border-blue-400 bg-blue-500/20 shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/30' : 'border-white/20 bg-gradient-to-br from-white/10 to-white/5 hover:border-white/30 hover:from-white/15 hover:to-white/10');
+
   return (
     <>
       <div
-        className={`absolute top-10 h-20 rounded-md border transition-all cursor-pointer group ${
-          isSelected
-            ? 'border-blue-400 bg-blue-500/20 shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/30'
-            : 'border-white/20 bg-gradient-to-br from-white/10 to-white/5 hover:border-white/30 hover:from-white/15 hover:to-white/10'
-        }`}
+        className={`absolute top-10 h-20 rounded-md border transition-all cursor-pointer group ${borderColor}`}
         style={{
           left: `${leftPercent}%`,
           width: `${Math.max(widthPercent, 2)}%`,
@@ -80,9 +82,19 @@ export default function TimelineClip({
             <div className="absolute top-0 left-0 right-0 h-1 bg-yellow-400/60" />
           )}
 
-          {/* Scene Number Badge */}
-          <div className="absolute top-1 left-1 bg-blue-600/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10">
-            Scene {clip.sceneIndex + 1}
+          {/* Clip Type Badge */}
+          <div className={`absolute top-1 left-1 ${badgeColor} text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10 flex items-center gap-1`}>
+            {isImageClip ? (
+              <>
+                <ImageIcon className="w-3 h-3" />
+                Image
+              </>
+            ) : (
+              <>
+                <Film className="w-3 h-3" />
+                Scene {clip.sceneIndex + 1}
+              </>
+            )}
           </div>
 
           {/* Clip Title */}

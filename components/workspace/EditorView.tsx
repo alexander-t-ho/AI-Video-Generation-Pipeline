@@ -3,7 +3,6 @@
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import SceneCompositionPanel from './SceneCompositionPanel';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages, deleteGeneratedImage } from '@/lib/api-client';
@@ -88,7 +87,7 @@ export default function EditorView() {
   const [editedDuration, setEditedDuration] = useState<number | ''>('');
   const [editedUseSeedFrame, setEditedUseSeedFrame] = useState<boolean>(false);
   const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
-  const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' }>>([]);
+  const [customImagePreviews, setCustomImagePreviews] = useState<Array<{ url: string; source: 'file' | 'media' } | null>>([]);
   const [droppedImageUrls, setDroppedImageUrls] = useState<string[]>([]); // Store original URLs from dropped media
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -692,30 +691,35 @@ export default function EditorView() {
 
   const handleRemoveImage = (index: number) => {
     const preview = customImagePreviews[index];
+    if (!preview) return;
 
     // Revoke blob URL if it's from a file
     if (preview.source === 'file' && preview.url.startsWith('blob:')) {
       URL.revokeObjectURL(preview.url);
     }
 
-    // Remove from previews
-    setCustomImagePreviews(prev => prev.filter((_, i) => i !== index));
-
     // If it was a file, remove from files array
     if (preview.source === 'file') {
       // Find the corresponding file index
       let fileIndex = 0;
       for (let i = 0; i < index; i++) {
-        if (customImagePreviews[i].source === 'file') {
+        if (customImagePreviews[i]?.source === 'file') {
           fileIndex++;
         }
       }
       setCustomImageFiles(prev => prev.filter((_, i) => i !== fileIndex));
     } else {
       // If it was from media drawer, remove from dropped URLs
-      const droppedIndex = customImagePreviews.slice(0, index).filter(p => p.source === 'media').length;
+      const droppedIndex = customImagePreviews.slice(0, index).filter(p => p?.source === 'media').length;
       setDroppedImageUrls(prev => prev.filter((_, i) => i !== droppedIndex));
     }
+
+    // Set slot to null instead of removing (maintains 4-slot structure)
+    setCustomImagePreviews(prev => {
+      const newPreviews = [...prev];
+      newPreviews[index] = null as any;
+      return newPreviews;
+    });
   };
 
   const handleDeleteGeneratedImage = async (image: GeneratedImage) => {
@@ -750,8 +754,8 @@ export default function EditorView() {
       if (scene.generatedImages) {
         const image = scene.generatedImages.find(img => img.id === itemId);
         if (image) {
-          // Return the URL - could be local path or S3 URL
-          return image.url || image.localPath || null;
+          // Prefer localPath over url for consistency
+          return image.localPath || image.url || null;
         }
       }
     }
@@ -761,18 +765,18 @@ export default function EditorView() {
       if (scene.seedFrames) {
         const frame = scene.seedFrames.find(f => f.id === itemId);
         if (frame) {
-          // Return the URL - could be S3 URL or local path
-          return frame.url || frame.localPath || null;
+          // Prefer localPath over url
+          return frame.localPath || frame.url || null;
         }
       }
     }
 
-    // Search in uploaded images
+    // Search in uploaded images (Brand Assets)
     if (project?.uploadedImages) {
       // Check original images
       const uploadedImage = project.uploadedImages.find(img => img.id === itemId);
       if (uploadedImage) {
-        return uploadedImage.url || uploadedImage.localPath || null;
+        return uploadedImage.localPath || uploadedImage.url || null;
       }
 
       // Check processed versions
@@ -780,7 +784,26 @@ export default function EditorView() {
         if (uploadedImage.processedVersions) {
           const processed = uploadedImage.processedVersions.find(p => p.id === itemId);
           if (processed) {
-            return processed.url || processed.localPath || null;
+            return processed.localPath || processed.url || null;
+          }
+        }
+      }
+    }
+
+    // Search in background images
+    if (project?.backgroundImages) {
+      // Check original background images
+      const backgroundImage = project.backgroundImages.find(img => img.id === itemId);
+      if (backgroundImage) {
+        return backgroundImage.localPath || backgroundImage.url || null;
+      }
+
+      // Check processed versions of backgrounds
+      for (const backgroundImage of project.backgroundImages) {
+        if (backgroundImage.processedVersions) {
+          const processed = backgroundImage.processedVersions.find(p => p.id === itemId);
+          if (processed) {
+            return processed.localPath || processed.url || null;
           }
         }
       }
@@ -791,30 +814,51 @@ export default function EditorView() {
 
   // Handle media drop from media drawer
   const handleMediaDropOnImageInput = (itemId: string, itemType: 'image' | 'video' | 'frame') => {
+    console.log('[EditorView] Media dropped:', { itemId, itemType });
+
     if (itemType === 'video') {
       alert('Videos cannot be used as image input. Please use an image or frame.');
       return;
     }
 
-    // Check if we've reached the limit
-    if (customImagePreviews.length >= 3) {
-      alert('You can only add up to 3 images.');
+    // Check if we've reached the limit (4 slots: 1 seed + 3 reference)
+    const filledSlots = customImagePreviews.filter(p => p !== null && p !== undefined).length;
+    if (filledSlots >= 4) {
+      alert('You can only add up to 4 images (1 seed + 3 reference).');
       return;
     }
 
     const imageUrl = findImageUrlFromItem(itemId, itemType);
+    console.log('[EditorView] Found image URL:', imageUrl);
+
     if (imageUrl) {
       // Store the original URL/path for saving
       setDroppedImageUrls(prev => [...prev, imageUrl]);
-      
+
       // Set as custom image preview
       // If it's a local path, convert to serveable URL for preview
       let previewUrl = imageUrl;
       if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('/api') && !imageUrl.startsWith('blob:')) {
         previewUrl = `/api/serve-image?path=${encodeURIComponent(imageUrl)}`;
       }
-      setCustomImagePreviews(prev => [...prev, { url: previewUrl, source: 'media' }]);
+
+      console.log('[EditorView] Preview URL:', previewUrl);
+
+      // Find first empty slot
+      const newPreviews = [...customImagePreviews];
+      for (let i = 0; i < 4; i++) {
+        if (!newPreviews[i]) {
+          newPreviews[i] = { url: previewUrl, source: 'media' };
+          console.log('[EditorView] Set preview in slot', i, newPreviews[i]);
+          setCustomImagePreviews(newPreviews);
+          return;
+        }
+      }
+
+      // If all slots are filled (shouldn't reach here due to check above)
+      alert('All image slots are filled. Remove an image first.');
     } else {
+      console.error('[EditorView] Could not find image with ID:', itemId);
       alert('Could not find the dropped image. Please try again.');
     }
   };
@@ -829,10 +873,10 @@ export default function EditorView() {
       return;
     }
 
-    // Check if adding these files would exceed the limit
-    const currentCount = customImagePreviews.length;
-    if (currentCount + files.length > 3) {
-      alert(`You can only add up to 3 images. Currently have ${currentCount}, trying to add ${files.length}.`);
+    // Check if adding these files would exceed the limit (4 slots)
+    const currentCount = customImagePreviews.filter(p => p !== null && p !== undefined).length;
+    if (currentCount + files.length > 4) {
+      alert(`You can only add up to 4 images (1 seed + 3 reference). Currently have ${currentCount}, trying to add ${files.length}.`);
       return;
     }
 
@@ -852,8 +896,21 @@ export default function EditorView() {
     });
 
     if (validFiles.length > 0) {
-      setCustomImageFiles(prev => [...prev, ...validFiles]);
-      setCustomImagePreviews(prev => [...prev, ...previews]);
+      // Find empty slots and fill them
+      const newPreviews = [...customImagePreviews];
+      const newFiles = [...customImageFiles];
+
+      let fileIdx = 0;
+      for (let slotIdx = 0; slotIdx < 4 && fileIdx < validFiles.length; slotIdx++) {
+        if (!newPreviews[slotIdx]) {
+          newPreviews[slotIdx] = previews[fileIdx];
+          newFiles.push(validFiles[fileIdx]);
+          fileIdx++;
+        }
+      }
+
+      setCustomImagePreviews(newPreviews);
+      setCustomImageFiles(newFiles);
     }
   };
 
@@ -883,7 +940,7 @@ export default function EditorView() {
   const handleDropZone = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Check if it's a file drop (has files)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileDrop(e);
@@ -918,7 +975,7 @@ export default function EditorView() {
       } else {
         // Get URLs from existing media previews
         customImagePreviews
-          .filter(p => p.source === 'media')
+          .filter((p): p is { url: string; source: 'file' | 'media' } => p !== null && p.source === 'media')
           .forEach(preview => {
             // Extract original URL from preview (remove /api/serve-image wrapper if present)
             const url = preview.url.startsWith('/api/serve-image?path=')
@@ -938,7 +995,7 @@ export default function EditorView() {
             fileUrls.push(...uploadResult.images.map(img => img.url));
             // Clean up preview URLs
             customImagePreviews.forEach(preview => {
-              if (preview.source === 'file' && preview.url.startsWith('blob:')) {
+              if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
                 URL.revokeObjectURL(preview.url);
               }
             });
@@ -1012,7 +1069,7 @@ export default function EditorView() {
     
     // Clean up blob URLs
     customImagePreviews.forEach(preview => {
-      if (preview.source === 'file' && preview.url.startsWith('blob:')) {
+      if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
         URL.revokeObjectURL(preview.url);
       }
     });
@@ -1064,415 +1121,246 @@ export default function EditorView() {
   });
 
   return (
-    <div className="h-full flex flex-col p-4 relative">
-      {/* Scene Header */}
-      <div className="mb-4 pb-4 border-b border-white/20">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 pr-12">
-            <h3 className="text-lg font-semibold text-white">
-              Scene {currentSceneIndex + 1}: {currentScene.description}
-            </h3>
-            <div className="mt-2">
-              <div className="flex items-start gap-2">
-                <div className="flex items-start gap-2 flex-1 min-w-0">
-                  {isPromptExpanded ? (
-                    <>
-                      <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
-                      </span>
-                      <div className="flex-1 flex flex-col gap-3">
-                      {/* Image Prompt (Required) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Image Prompt <span className="text-white/60">*</span>
-                        </label>
-                        <textarea
-                          value={editedPrompt}
-                          onChange={(e) => setEditedPrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
-                          rows={6}
-                          placeholder="Enter image prompt (required)..."
-                          required
-                        />
-                      </div>
-
-                      {/* Video Prompt (Required) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Video Prompt <span className="text-white/60">*</span>
-                        </label>
-                        <textarea
-                          value={editedVideoPrompt}
-                          onChange={(e) => setEditedVideoPrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
-                          rows={6}
-                          placeholder="Enter video prompt describing motion/action (required)..."
-                          required
-                        />
-                      </div>
-
-                      {/* Negative Prompt (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Negative Prompt <span className="text-white/60 text-xs">(optional)</span>
-                        </label>
-                        <textarea
-                          value={editedNegativePrompt}
-                          onChange={(e) => setEditedNegativePrompt(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-y min-h-[2.5rem] backdrop-blur-sm"
-                          rows={1}
-                          placeholder="What to avoid in the image (optional)..."
-                          style={{ height: 'auto' }}
-                          onInput={(e) => {
-                            const target = e.currentTarget;
-                            target.style.height = 'auto';
-                            target.style.height = `${target.scrollHeight}px`;
-                          }}
-                        />
-                      </div>
-
-                      {/* Duration (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
-                        </label>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="1"
-                              max="10"
-                              step="0.1"
-                              value={editedDuration}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setEditedDuration(val === '' ? '' : Number(val));
-                              }}
-                              className="w-24 px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
-                              placeholder="8"
-                            />
-                            <span className="text-xs text-white/60">seconds</span>
-                          </div>
-                          
-                          {/* Use Seed Frame Toggle */}
-                          {currentSceneIndex > 0 && (() => {
-                            const previousScene = scenes[currentSceneIndex - 1];
-                            const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
-                            const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
-                            const seedFrameUrl = seedFrame?.url 
-                              ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
-                                  ? seedFrame.url
-                                  : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
-                              : null;
-                            
-                            return (
-                              <div className="flex items-center gap-2">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={editedUseSeedFrame}
-                                    onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
-                                    className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
-                                  />
-                                  <span className="text-xs font-medium text-white/80">
-                                    Enable for longer scenes that will be stitched together
-                                  </span>
-                                </label>
-                                {editedUseSeedFrame && seedFrameUrl && (
-                                  <div 
-                                    className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                                    onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
-                                    title="Double-click to enlarge"
-                                  >
-                                    <img
-                                      src={seedFrameUrl}
-                                      alt="Seed frame preview"
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* Image Input (Optional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-white mb-1">
-                          Image Input <span className="text-white/60 text-xs">(optional, up to 3 images)</span>
-                        </label>
-                        <div className="space-y-2">
-                          {/* Display uploaded images */}
-                          {customImagePreviews.length > 0 && (
-                            <div className="grid grid-cols-3 gap-2">
-                              {customImagePreviews.map((preview, index) => (
-                                <div key={`preview-${index}-${preview.url.substring(0, 20)}`} className="relative">
-                                  <div className="w-full h-24 rounded-lg border border-white/20 bg-white/5 overflow-hidden relative">
-                                    <img
-                                      src={preview.url}
-                                      alt={`Preview ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                      loading="lazy"
-                                      onError={(e) => {
-                                        console.error(`[EditorView] Failed to load image preview ${index + 1}:`, preview.url);
-                                        // Show a placeholder on error
-                                        const target = e.target as HTMLImageElement;
-                                        target.style.display = 'none';
-                                        const parent = target.parentElement;
-                                        if (parent && !parent.querySelector('.error-placeholder')) {
-                                          const placeholder = document.createElement('div');
-                                          placeholder.className = 'error-placeholder w-full h-full flex items-center justify-center text-white/40 text-xs';
-                                          placeholder.textContent = 'Failed to load';
-                                          parent.appendChild(placeholder);
-                                        }
-                                      }}
-                                      onLoad={(e) => {
-                                        // Ensure image is visible on successful load
-                                        const target = e.target as HTMLImageElement;
-                                        if (target) {
-                                          target.style.display = 'block';
-                                          // Remove any error placeholders
-                                          const parent = target.parentElement;
-                                          const errorPlaceholder = parent?.querySelector('.error-placeholder');
-                                          if (errorPlaceholder) {
-                                            errorPlaceholder.remove();
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                  <button
-                                    onClick={() => handleRemoveImage(index)}
-                                    className="absolute -top-2 -right-2 p-1 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors border border-white/20 z-10"
-                                    type="button"
-                                    title="Remove image"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 rounded-b-lg text-center">
-                                    {index + 1}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Upload area - show if less than 3 images */}
-                          {customImagePreviews.length < 3 && (
-                            <label
-                              onDragOver={handleFileDragOver}
-                              onDragLeave={handleFileDragLeave}
-                              onDrop={handleDropZone}
-                              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                                isOverDropZone
-                                  ? 'border-white/40 bg-white/10'
-                                  : 'border-white/20 hover:bg-white/5'
-                              }`}
-                            >
-                              <Upload className={`w-6 h-6 mb-2 ${isOverDropZone ? 'text-white/80' : 'text-white/40'}`} />
-                              <span className={`text-sm text-center px-2 ${isOverDropZone ? 'text-white/80 font-medium' : 'text-white/60'}`}>
-                                {isOverDropZone 
-                                  ? 'Drop images here' 
-                                  : `Click to upload or drag images here (${customImagePreviews.length}/3)`}
-                              </span>
-                              <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={handleImageFileSelect}
-                                className="hidden"
-                              />
-                            </label>
-                          )}
-
-                          {/* Model limitation note */}
-                          {customImagePreviews.length > 0 && (
-                            <p className="text-xs text-white/60 italic">
-                              Note: Depending on the selected model, only the first {customImagePreviews.length > 1 ? 'few' : 'image'} may be used. FLUX models typically support up to 5 images via IP-Adapter, while Gen-4 Image models support 1-3 reference images.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Collapse Button */}
-                      <div className="pt-3 border-t border-white/10">
-                        <button
-                          onClick={handleTogglePromptExpansion}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                          title="Collapse prompt"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                          <span>Collapse Prompt</span>
-                        </button>
-                      </div>
-                    </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-sm text-white/60 pt-0.5">
-                        {currentScene.customDuration || currentScene.suggestedDuration}s •
-                      </span>
-                      <p className="text-sm text-white/60 flex-1">
-                        {currentScene.imagePrompt}
-                      </p>
-                    </>
-                  )}
-                </div>
-                {!isPromptExpanded && (
-                  <div className="flex-shrink-0 pl-2">
-                    <button
-                      onClick={handleTogglePromptExpansion}
-                      className="p-1 text-white/60 hover:text-white rounded hover:bg-white/10 transition-colors"
-                      title="Expand to edit prompt and settings"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+    <div className="h-full flex flex-col bg-black">
+      {/* Scene Selector */}
+      <div className="px-6 py-3 border-b border-white/10">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-white/80 uppercase tracking-wide">Current Scene:</span>
+          <div className="flex gap-2">
+            {project.storyboard.map((scene, index) => (
+              <button
+                key={scene.id}
+                onClick={() => setCurrentSceneIndex(index)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  index === currentSceneIndex
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                Scene {index + 1}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Scene Composition Panel */}
-      <div className="px-4 py-4 border-b border-white/10">
-        <SceneCompositionPanel sceneIndex={currentSceneIndex} />
-      </div>
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+        {/* Scene Header */}
+        <div className="mb-4 pb-4 border-b border-white/20">
+          <h3 className="text-lg font-semibold text-white mb-2">
+            Scene {currentSceneIndex + 1}: {currentScene.description}
+          </h3>
 
-      {/* Main Preview Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {!sceneHasImage && !sceneHasVideo && (
-          <div className="flex flex-col items-center justify-center h-full bg-white/5 rounded-lg border-2 border-dashed border-white/20">
-            <ImageIcon className="w-12 h-12 text-white/40 mb-4" />
-            <p className="text-sm text-white/60 mb-4">
-              No image generated yet
-            </p>
-            <button
-              onClick={handleGenerateImage}
-              disabled={isGeneratingImage}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
-            >
-              {isGeneratingImage ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating 3 images...
-                </>
-              ) : (
-                <>
-                  <ImageIcon className="w-4 h-4" />
-                  Generate Images
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Image Generation Grid */}
-        {(isGeneratingImage || sceneHasImage) && !sceneHasVideo && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-white">
-                {isGeneratingImage ? 'Generating images...' : 'Select an image'}
-              </h4>
-              {sceneHasImage && (
-                <button
-                  onClick={handleRegenerateImage}
-                  disabled={isGeneratingImage}
-                  className="px-3 py-1.5 text-sm bg-white/10 text-white/80 rounded-lg hover:bg-white/20 disabled:opacity-50 transition-colors border border-white/20"
-                >
-                  {isGeneratingImage ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    'Regenerate'
-                  )}
-                </button>
-              )}
+          {/* Prompt Editor - Always Expanded */}
+          <div className="mt-4 space-y-3">
+            {/* Video Prompt */}
+            <div>
+              <label className="block text-xs font-medium text-white mb-1">
+                Video Prompt <span className="text-white/60">*</span>
+              </label>
+              <textarea
+                value={editedVideoPrompt}
+                onChange={(e) => setEditedVideoPrompt(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-none backdrop-blur-sm"
+                rows={4}
+                placeholder="Enter video prompt describing motion/action (required)..."
+                required
+              />
             </div>
 
-            {/* Image Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {allImages.map((image, index) => {
-                const isGenerating = image.id.startsWith('generating-');
-                const generatingState = generatingImages.find(
-                  (_, idx) => `generating-${idx}` === image.id
-                );
-                const isSelected = selectedImageId === image.id || (!selectedImageId && index === 0 && !isGenerating);
-                const isLoading = isGenerating && generatingState?.status !== 'succeeded' && generatingState?.status !== 'failed';
-                
-                // Check if this image is being used as seed image
-                const isSeedImage = seedImageId === image.id && !isGenerating && image.localPath;
+            {/* Negative Prompt */}
+            <div>
+              <label className="block text-xs font-medium text-white mb-1">
+                Negative Prompt <span className="text-white/60 text-xs">(optional)</span>
+              </label>
+              <textarea
+                value={editedNegativePrompt}
+                onChange={(e) => setEditedNegativePrompt(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 resize-y min-h-[2.5rem] backdrop-blur-sm"
+                rows={2}
+                placeholder="What to avoid in the video (optional)..."
+              />
+            </div>
+
+            {/* Duration and Use Seed Frame */}
+            <div className="flex items-start gap-4">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-white mb-1">
+                  Duration <span className="text-white/60 text-xs">(optional, up to 10 seconds)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    step="0.1"
+                    value={editedDuration}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditedDuration(val === '' ? '' : Number(val));
+                    }}
+                    className="w-24 px-3 py-2 text-sm bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-white/40 text-white placeholder-white/40 backdrop-blur-sm"
+                    placeholder="8"
+                  />
+                  <span className="text-xs text-white/60">seconds</span>
+                </div>
+              </div>
+
+              {/* Use Seed Frame Toggle */}
+              {currentSceneIndex > 0 && (() => {
+                const previousScene = scenes[currentSceneIndex - 1];
+                const selectedSeedFrameIndex = previousScene?.selectedSeedFrameIndex ?? 0;
+                const seedFrame = previousScene?.seedFrames?.[selectedSeedFrameIndex];
+                const seedFrameUrl = seedFrame?.url
+                  ? (seedFrame.url.startsWith('http://') || seedFrame.url.startsWith('https://') || seedFrame.url.startsWith('/api')
+                      ? seedFrame.url
+                      : `/api/serve-image?path=${encodeURIComponent(seedFrame.localPath || seedFrame.url)}`)
+                  : null;
 
                 return (
-                  <div
-                    key={image.id}
-                    onClick={() => !isGenerating && handleSelectImage(image.id)}
-                    onDoubleClick={() => !isGenerating && image.localPath && setPreviewImage(image)}
-                    className={`relative group aspect-video rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
-                      isSelected && !isGenerating
-                        ? isSeedImage
-                          ? 'border-blue-400 ring-2 ring-blue-400/30 shadow-lg shadow-blue-400/20'
-                          : 'border-white ring-2 ring-white/20'
-                        : 'border-white/20 hover:border-white/40'
-                    } ${isGenerating ? 'cursor-not-allowed' : ''}`}
-                  >
-                    {isLoading ? (
-                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
-                      </div>
-                    ) : image.localPath ? (
-                      <>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editedUseSeedFrame}
+                        onChange={(e) => setEditedUseSeedFrame(e.target.checked)}
+                        className="w-4 h-4 text-white/60 bg-white/10 border-white/20 rounded focus:ring-white/40 focus:ring-2"
+                      />
+                      <span className="text-xs font-medium text-white/80">
+                        Use seed frame for continuity
+                      </span>
+                    </label>
+                    {editedUseSeedFrame && seedFrameUrl && (
+                      <div
+                        className="relative w-12 h-12 rounded border border-white/20 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                        onDoubleClick={() => setEnlargedSeedFrameUrl(seedFrameUrl)}
+                        title="Double-click to enlarge"
+                      >
                         <img
-                          src={`/api/serve-image?path=${encodeURIComponent(image.localPath)}`}
-                          alt={`Generated image ${index + 1}`}
+                          src={seedFrameUrl}
+                          alt="Seed frame preview"
                           className="w-full h-full object-cover"
                         />
-                        {isSelected && !isGenerating && (
-                          <div className={`absolute top-2 right-2 backdrop-blur-sm border rounded-full p-1 ${
-                            isSeedImage
-                              ? 'bg-blue-500/30 border-blue-400/50 text-blue-200'
-                              : 'bg-white/20 border-white/30 text-white'
-                          }`}>
-                            <CheckCircle2 className="w-4 h-4" />
-                          </div>
-                        )}
-                        {isSeedImage && (
-                          <div className="absolute bottom-2 left-2 bg-blue-500/80 backdrop-blur-sm border border-blue-400/50 text-white text-xs px-2 py-1 rounded font-medium">
-                            Seed Image
-                          </div>
-                        )}
-                        {/* Delete button - only show for non-generating images */}
-                        {!isGenerating && image.localPath && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteGeneratedImage(image);
-                            }}
-                            className="absolute top-2 left-2 w-8 h-8 bg-red-500/80 hover:bg-red-600/80 backdrop-blur-sm border border-red-400/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Delete image"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
-                        <ImageIcon className="w-8 h-8 text-white/40" />
                       </div>
                     )}
                   </div>
                 );
-              })}
+              })()}
             </div>
 
-            {/* Generate Video Button */}
-            {selectedImage && !isGeneratingImage && (
+            {/* Image Input - 4 Slots (1 Seed + 3 Reference) */}
+            <div>
+              <label className="block text-xs font-medium text-white mb-2">
+                Image Input <span className="text-white/60 text-xs">(1 seed image + up to 3 reference images)</span>
+              </label>
+              <div className="grid grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((slotIndex) => {
+                  const preview = customImagePreviews[slotIndex];
+                  const isSeedSlot = slotIndex === 0;
+
+                  return (
+                    <div key={`slot-${slotIndex}`} className="relative">
+                      <label
+                        onDragOver={handleFileDragOver}
+                        onDragLeave={handleFileDragLeave}
+                        onDrop={handleDropZone}
+                        className={`block w-full aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
+                          isOverDropZone
+                            ? 'border-white/40 bg-white/10'
+                            : 'border-white/20 hover:border-white/30 bg-white/5'
+                        }`}
+                      >
+                        {preview ? (
+                          <>
+                            <img
+                              src={preview.url}
+                              alt={`${isSeedSlot ? 'Seed' : 'Reference'} image ${slotIndex + 1}`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleRemoveImage(slotIndex);
+                              }}
+                              className="absolute -top-2 -right-2 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-colors border border-red-400/50 z-10"
+                              type="button"
+                              title="Remove image"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                            <Upload className="w-6 h-6 text-white/30 mb-1" />
+                            <span className="text-xs text-white/40 text-center">
+                              {isSeedSlot ? 'Seed' : `Ref ${slotIndex}`}
+                            </span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Handle single file upload for specific slot
+                              if (file.size > 10 * 1024 * 1024) {
+                                alert(`${file.name} is too large (max 10MB).`);
+                                return;
+                              }
+                              const previewUrl = URL.createObjectURL(file);
+                              const newPreviews = [...customImagePreviews];
+                              const newFiles = [...customImageFiles];
+
+                              // Calculate file index for this slot
+                              let fileIndex = 0;
+                              for (let i = 0; i < slotIndex; i++) {
+                                if (customImagePreviews[i]?.source === 'file') {
+                                  fileIndex++;
+                                }
+                              }
+
+                              newPreviews[slotIndex] = { url: previewUrl, source: 'file' };
+                              newFiles.splice(fileIndex, 0, file);
+
+                              setCustomImagePreviews(newPreviews);
+                              setCustomImageFiles(newFiles);
+                            }
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                      <div className="absolute bottom-1 left-1 right-1 text-center">
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          isSeedSlot
+                            ? 'bg-blue-500/80 text-white'
+                            : 'bg-white/10 text-white/60'
+                        }`}>
+                          {isSeedSlot ? 'Seed' : `Ref ${slotIndex}`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-white/40 mt-2">
+                First image is used as seed for video generation. Other 3 are reference images.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Video Generation Area */}
+        <div className="space-y-4">
+          {/* Generate Video Button */}
+          {!sceneHasVideo && (
             <button
               onClick={handleGenerateVideo}
               disabled={isGeneratingVideo}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-blue-500"
             >
               {isGeneratingVideo ? (
                 <>
@@ -1482,83 +1370,81 @@ export default function EditorView() {
               ) : (
                 <>
                   <Video className="w-5 h-5" />
-                    Generate Video from Selected Image
+                  Generate Video
                 </>
               )}
             </button>
-            )}
-          </div>
-        )}
+          )}
 
-        {sceneHasVideo && (
-          <div className="space-y-4">
-            {/* Video Preview */}
-            <div className="relative">
-              <VideoPlayer
-                src={sceneState?.videoLocalPath ? (
-                  sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
-                    ? sceneState.videoLocalPath // Use Replicate URL directly
-                    : `/api/serve-video?path=${encodeURIComponent(sceneState.videoLocalPath)}` // Use local path via API
-                ) : undefined}
-                className="w-full"
-              />
-              {/* Regenerate Button */}
+          {sceneHasVideo && (
+            <>
+              {/* Video Preview */}
+              <div className="relative">
+                <VideoPlayer
+                  src={sceneState?.videoLocalPath ? (
+                    sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
+                      ? sceneState.videoLocalPath
+                      : `/api/serve-video?path=${encodeURIComponent(sceneState.videoLocalPath)}`
+                  ) : undefined}
+                  className="w-full"
+                />
+                <button
+                  onClick={handleRegenerateVideo}
+                  disabled={isGeneratingVideo}
+                  className="absolute top-4 right-4 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20 backdrop-blur-sm flex items-center gap-2"
+                  title="Regenerate video"
+                >
+                  {isGeneratingVideo ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Regenerating...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-4 h-4" />
+                      Regenerate
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Seed Frame Selection */}
+              {seedFrames.length > 0 && currentSceneIndex < 4 && (
+                <div className="p-4 bg-white/5 rounded-lg border border-white/20">
+                  <SeedFrameSelector
+                    frames={seedFrames}
+                    selectedFrameIndex={sceneState?.selectedSeedFrameIndex}
+                    onSelectFrame={handleSelectSeedFrame}
+                  />
+                </div>
+              )}
+
+              {/* Approve & Continue */}
               <button
-                onClick={handleRegenerateVideo}
-                disabled={isGeneratingVideo}
-                className="absolute top-4 right-4 px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20 backdrop-blur-sm flex items-center gap-2"
-                title="Regenerate video"
+                onClick={handleApproveAndContinue}
+                disabled={isExtractingFrames}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
               >
-                {isGeneratingVideo ? (
+                {isExtractingFrames ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Regenerating...
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Extracting seed frames...
+                  </>
+                ) : currentSceneIndex >= 4 ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & View Final Video
                   </>
                 ) : (
                   <>
-                    <Video className="w-4 h-4" />
-                    Regenerate
+                    <CheckCircle2 className="w-5 h-5" />
+                    Approve & Continue to Next Scene
                   </>
                 )}
               </button>
-            </div>
-
-            {/* Seed Frame Selection */}
-            {seedFrames.length > 0 && currentSceneIndex < 4 && (
-              <div className="mt-6 p-4 bg-white/5 rounded-lg border border-white/20">
-                <SeedFrameSelector
-                  frames={seedFrames}
-                  selectedFrameIndex={sceneState?.selectedSeedFrameIndex}
-                  onSelectFrame={handleSelectSeedFrame}
-                />
-              </div>
-            )}
-
-            {/* Approve & Continue */}
-            <button
-              onClick={handleApproveAndContinue}
-              disabled={isExtractingFrames}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
-            >
-              {isExtractingFrames ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Extracting seed frames...
-                </>
-              ) : currentSceneIndex >= 4 ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5" />
-                  Approve & View Final Video
-                </>
-              ) : (
-                <>
-              <CheckCircle2 className="w-5 h-5" />
-              Approve & Continue to Next Scene
-                </>
-              )}
-            </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Image Preview Modal */}

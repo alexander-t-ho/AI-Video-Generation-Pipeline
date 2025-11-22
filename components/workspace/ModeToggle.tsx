@@ -2,12 +2,13 @@
 
 import { useProjectStore } from '@/lib/state/project-store';
 import { ViewMode } from '@/lib/types/components';
-import { LayoutGrid, Clock, Edit } from 'lucide-react';
+import { LayoutGrid, Clock, Video, Image } from 'lucide-react';
 
 const modes: { mode: ViewMode; label: string; icon: React.ReactNode }[] = [
   { mode: 'storyboard', label: 'Storyboard', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+  { mode: 'images', label: 'Images', icon: <Image className="w-3.5 h-3.5" /> },
+  { mode: 'video', label: 'Video', icon: <Video className="w-3.5 h-3.5" /> },
   { mode: 'timeline', label: 'Timeline', icon: <Clock className="w-3.5 h-3.5" /> },
-  { mode: 'editor', label: 'Editor', icon: <Edit className="w-3.5 h-3.5" /> },
 ];
 
 export default function ModeToggle() {

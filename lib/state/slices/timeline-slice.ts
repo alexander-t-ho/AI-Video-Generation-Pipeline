@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectStore, TimelineSlice } from '../types';
-import { TimelineClip, GeneratedVideo } from '@/lib/types';
+import { TimelineClip, GeneratedVideo, AudioTrack, ImageTrack } from '@/lib/types';
 
 export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSlice> = (set, get) => ({
   timelineClips: [],
@@ -9,10 +9,71 @@ export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSli
   timelineFuture: [],
   selectedClipId: null,
 
+  // Audio tracks
+  audioTracks: [],
+  selectedAudioTrackId: null,
+
+  // Image tracks
+  imageTracks: [],
+  selectedImageTrackId: null,
+
   setSelectedClipId: (clipId) => {
     set({ selectedClipId: clipId });
   },
-  
+
+  addImageClip: (imageUrl, duration, title = 'Image Clip', insertAtTime) => {
+    set((state) => {
+      const newHistory = [...state.timelineHistory, state.timelineClips];
+
+      const newClip: TimelineClip = {
+        id: uuidv4(),
+        type: 'image',
+        sceneIndex: -1, // Not from a scene
+        sceneId: uuidv4(), // Generate a unique ID
+        title,
+        imageUrl,
+        imageLocalPath: imageUrl,
+        animation: 'none',
+        startTime: insertAtTime ?? state.timelineClips.reduce((max, c) => Math.max(max, c.endTime), 0),
+        duration,
+        sourceDuration: duration,
+        endTime: 0, // Will be calculated below
+      };
+
+      // Calculate end time
+      newClip.endTime = newClip.startTime + newClip.duration;
+
+      // Insert clip and adjust subsequent clips
+      const insertIndex = insertAtTime !== undefined
+        ? state.timelineClips.findIndex(c => c.startTime >= insertAtTime)
+        : -1;
+
+      let newClips: TimelineClip[];
+
+      if (insertIndex === -1) {
+        // Add to end
+        newClips = [...state.timelineClips, newClip];
+      } else {
+        // Insert at position and shift subsequent clips
+        newClips = [
+          ...state.timelineClips.slice(0, insertIndex),
+          newClip,
+          ...state.timelineClips.slice(insertIndex).map(c => ({
+            ...c,
+            startTime: c.startTime + duration,
+            endTime: c.endTime + duration,
+          })),
+        ];
+      }
+
+      return {
+        timelineClips: newClips,
+        timelineHistory: newHistory,
+        timelineFuture: [],
+      };
+    });
+  },
+
   initializeTimelineClips: () => {
     set((state) => {
       if (!state.project) return state;
@@ -43,6 +104,7 @@ export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSli
 
           clips.push({
             id: uuidv4(),
+            type: 'video',
             sceneIndex,
             sceneId: scene.id,
             title: scene.description,
@@ -238,6 +300,101 @@ export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSli
   canRedo: () => {
     const state = get();
     return state.timelineFuture.length > 0;
+  },
+
+  // Audio track management
+  addAudioTrack: (audioUrl, title = 'Audio Track', duration) => {
+    set((state) => {
+      const newTrack: AudioTrack = {
+        id: uuidv4(),
+        title,
+        audioUrl,
+        audioLocalPath: audioUrl,
+        startTime: 0,
+        duration: duration || 10, // Default 10 seconds if not provided
+        volume: 100,
+        endTime: duration || 10,
+        sourceDuration: duration || 10,
+      };
+
+      return {
+        audioTracks: [...state.audioTracks, newTrack],
+      };
+    });
+  },
+
+  deleteAudioTrack: (trackId) => {
+    set((state) => ({
+      audioTracks: state.audioTracks.filter(t => t.id !== trackId),
+      selectedAudioTrackId: state.selectedAudioTrackId === trackId ? null : state.selectedAudioTrackId,
+    }));
+  },
+
+  updateAudioTrack: (trackId, updates) => {
+    set((state) => ({
+      audioTracks: state.audioTracks.map(track => {
+        if (track.id === trackId) {
+          const updatedTrack = { ...track, ...updates };
+          // Recalculate endTime if startTime or duration changed
+          if (updates.startTime !== undefined || updates.duration !== undefined) {
+            updatedTrack.endTime = updatedTrack.startTime + updatedTrack.duration;
+          }
+          return updatedTrack;
+        }
+        return track;
+      }),
+    }));
+  },
+
+  setSelectedAudioTrackId: (trackId) => {
+    set({ selectedAudioTrackId: trackId });
+  },
+
+  // Image track management
+  addImageTrack: (imageUrl, duration, title = 'Image Track') => {
+    set((state) => {
+      const newTrack: ImageTrack = {
+        id: uuidv4(),
+        title,
+        imageUrl,
+        imageLocalPath: imageUrl,
+        startTime: 0,
+        duration,
+        animation: 'none',
+        endTime: duration,
+      };
+
+      return {
+        imageTracks: [...state.imageTracks, newTrack],
+      };
+    });
+  },
+
+  deleteImageTrack: (trackId) => {
+    set((state) => ({
+      imageTracks: state.imageTracks.filter(t => t.id !== trackId),
+      selectedImageTrackId: state.selectedImageTrackId === trackId ? null : state.selectedImageTrackId,
+    }));
+  },
+
+  updateImageTrack: (trackId, updates) => {
+    set((state) => ({
+      imageTracks: state.imageTracks.map(track => {
+        if (track.id === trackId) {
+          const updatedTrack = { ...track, ...updates };
+          // Recalculate endTime if startTime or duration changed
+          if (updates.startTime !== undefined || updates.duration !== undefined) {
+            updatedTrack.endTime = updatedTrack.startTime + updatedTrack.duration;
+          }
+          return updatedTrack;
+        }
+        return track;
+      }),
+    }));
+  },
+
+  setSelectedImageTrackId: (trackId) => {
+    set({ selectedImageTrackId: trackId });
   },
 });
 

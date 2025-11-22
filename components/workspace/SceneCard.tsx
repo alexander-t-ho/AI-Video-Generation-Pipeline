@@ -73,7 +73,7 @@ export default function SceneCard({
       onClick();
     } else {
       setCurrentSceneIndex(sceneIndex);
-      setViewMode('editor');
+      setViewMode('images');
     }
   };
 
