@@ -3,7 +3,7 @@
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
 import SeedFrameSelector from './SeedFrameSelector';
-import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2, Copy } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages, deleteGeneratedImage } from '@/lib/api-client';
 import { GeneratedImage, SeedFrame } from '@/lib/types';
@@ -66,12 +66,14 @@ export default function EditorView() {
     selectSeedFrame,
     updateScenePrompt,
     updateSceneSettings,
+    duplicateScene,
   } = useSceneStore();
 
   const {
     setViewMode,
     setCurrentSceneIndex,
     mediaDrawer,
+    addChatMessage,
   } = useUIStore();
   
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -95,6 +97,37 @@ export default function EditorView() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [enlargedSeedFrameUrl, setEnlargedSeedFrameUrl] = useState<string | null>(null);
   const [seedImageId, setSeedImageId] = useState<string | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
+
+  const handleDuplicateScene = async () => {
+    if (!project || isDuplicating) return;
+
+    setIsDuplicating(true);
+    try {
+      addChatMessage({
+        role: 'agent',
+        content: `Duplicating Scene ${currentSceneIndex + 1}...`,
+        type: 'status',
+      });
+
+      await duplicateScene(currentSceneIndex);
+
+      addChatMessage({
+        role: 'agent',
+        content: `✓ Scene ${currentSceneIndex + 1} duplicated successfully`,
+        type: 'status',
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to duplicate scene';
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Error: ${errorMessage}`,
+        type: 'error',
+      });
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -134,7 +167,7 @@ export default function EditorView() {
     }
   }, [sceneState?.selectedImageId]);
 
-  // Initialize edited fields when scene changes or editing starts
+  // Initialize edited fields when scene changes - load current scene's saved values
   useEffect(() => {
     if (currentScene) {
       setEditedPrompt(currentScene.imagePrompt);
@@ -144,14 +177,14 @@ export default function EditorView() {
       // Default to false (opt-in for longer scenes), or use saved value
       setEditedUseSeedFrame(currentScene.useSeedFrame !== undefined ? currentScene.useSeedFrame : false);
       // Initialize custom images - support both single string (legacy) and array
-      const imageInputs = currentScene.customImageInput 
+      const imageInputs = currentScene.customImageInput
         ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
         : [];
       setCustomImageFiles([]);
       setDroppedImageUrls([]);
       setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
     }
-  }, [currentScene?.imagePrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame, currentSceneIndex]);
+  }, [currentSceneIndex, currentScene?.imagePrompt, currentScene?.videoPrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentScene?.useSeedFrame]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -1137,7 +1170,7 @@ export default function EditorView() {
                     : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                Scene {index + 1}
+                Scene {scene.order % 1 === 0 ? scene.order + 1 : (Math.floor(scene.order) + 1) + '.' + Math.round((scene.order % 1) * 10)}
               </button>
             ))}
           </div>
@@ -1148,9 +1181,29 @@ export default function EditorView() {
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
         {/* Scene Header */}
         <div className="mb-4 pb-4 border-b border-white/20">
-          <h3 className="text-lg font-semibold text-white mb-2">
-            Scene {currentSceneIndex + 1}: {currentScene.description}
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-white">
+              Scene {currentScene.order % 1 === 0 ? currentScene.order + 1 : (Math.floor(currentScene.order) + 1) + '.' + Math.round((currentScene.order % 1) * 10)}: {currentScene.description}
+            </h3>
+            <button
+              onClick={handleDuplicateScene}
+              disabled={isDuplicating}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/10 text-white/80 rounded-lg hover:bg-white/20 disabled:opacity-50 transition-colors border border-white/20"
+              title="Duplicate this scene"
+            >
+              {isDuplicating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Duplicating...
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Duplicate Scene
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Prompt Editor - Always Expanded */}
           <div className="mt-4 space-y-3">

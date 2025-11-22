@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectStore, SceneSlice, WorkflowStep } from '../types';
-import { GeneratedVideo, SeedFrame } from '@/lib/types';
+import { GeneratedVideo, SeedFrame, SceneWithState } from '@/lib/types';
 
 export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = (set, get) => ({
   scenes: [],
@@ -474,7 +474,7 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
   retrySceneGeneration: async (sceneIndex) => {
     const state = get();
     state.clearSceneError(sceneIndex);
-    
+
     try {
       const sceneState = state.scenes[sceneIndex];
       if (!sceneState?.generatedImages.length) {
@@ -488,6 +488,170 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
       const errorMessage = error instanceof Error ? error.message : 'Retry failed';
       state.setSceneError(sceneIndex, { message: errorMessage, retryable: true });
       throw error;
+    }
+  },
+
+  duplicateScene: async (sceneIndex) => {
+    const state = get();
+    if (!state.project) throw new Error('No project found');
+
+    const scene = state.project.storyboard[sceneIndex];
+    const sceneState = state.scenes[sceneIndex];
+
+    if (!scene) throw new Error('Invalid scene');
+
+    // Check if scene has been persisted to database
+    // A scene is persisted if it has images/videos that have been saved (have replicateId)
+    const hasPersistedImages = (sceneState.generatedImages?.length ?? 0) > 0 &&
+                                sceneState.generatedImages.some(img => img.replicateId);
+    const hasPersistedVideos = (sceneState.generatedVideos?.length ?? 0) > 0;
+
+    if ((hasPersistedImages || hasPersistedVideos) && scene.id) {
+      // Server-side duplication: Scene exists in DB with media, copy everything
+      const { duplicateScene } = await import('@/lib/api-client');
+
+      try {
+        const response = await duplicateScene(state.project.id, scene.id);
+
+        if (!response.success || !response.duplicatedScene) {
+          throw new Error(response.error || 'Failed to duplicate scene');
+        }
+
+        // Update local state with the duplicated scene from server
+        set((currentState) => {
+          if (!currentState.project) return currentState;
+
+          const duplicatedScene = response.duplicatedScene!;
+
+          // Insert the duplicated scene into storyboard right after the original
+          const updatedStoryboard = [
+            ...currentState.project.storyboard.slice(0, sceneIndex + 1),
+            duplicatedScene,
+            ...currentState.project.storyboard.slice(sceneIndex + 1),
+          ];
+
+          // Sort storyboard by sceneNumber
+          updatedStoryboard.sort((a, b) => a.order - b.order);
+
+          // Create scene state for the duplicated scene
+          const duplicatedSceneState: any = {
+            ...duplicatedScene,
+            generatedImages: response.duplicatedImages || [],
+            selectedImageId: response.duplicatedImages?.[0]?.id,
+            generatedVideos: response.duplicatedVideos || [],
+            selectedVideoId: response.duplicatedVideos?.[0]?.id,
+            videoLocalPath: response.duplicatedVideos?.[0]?.localPath,
+            actualDuration: response.duplicatedVideos?.[0]?.actualDuration,
+            seedFrames: response.duplicatedSeedFrames || [],
+            selectedSeedFrameIndex: sceneState.selectedSeedFrameIndex,
+            status: 'pending',
+          };
+
+          // Insert into scenes array
+          const updatedScenes = [
+            ...currentState.scenes.slice(0, sceneIndex + 1),
+            duplicatedSceneState,
+            ...currentState.scenes.slice(sceneIndex + 1),
+          ];
+
+          return {
+            project: {
+              ...currentState.project,
+              storyboard: updatedStoryboard,
+            },
+            scenes: updatedScenes,
+          };
+        });
+
+        return response.duplicatedScene;
+      } catch (error) {
+        // If server-side duplication fails (e.g., scene not in DB), fall back to client-side
+        console.warn('Server-side duplication failed, falling back to client-side:', error);
+        // Fall through to client-side duplication below
+      }
+    }
+
+    // Client-side duplication: Scene hasn't been persisted yet, just copy the data
+    {
+      const { v4: uuidv4 } = await import('uuid');
+
+      // Get the base scene number (the integer part of the order)
+      // For scene.order = 0 (Scene 1), baseSceneNumber = 0
+      // For scene.order = 1 (Scene 2), baseSceneNumber = 1
+      const baseSceneNumber = Math.floor(scene.order);
+
+      // Find existing duplicates with the same base number
+      // For Scene 1 (order=0), we look for scenes with order between 0 and 1 (exclusive of 0)
+      const existingDuplicates = state.project.storyboard.filter(
+        s => {
+          const sBase = Math.floor(s.order);
+          return sBase === baseSceneNumber && s.order !== baseSceneNumber;
+        }
+      );
+
+      let newSceneNumber: number;
+      if (existingDuplicates.length === 0) {
+        // First duplicate: Scene 1 (0) -> Scene 1.1 (0.1)
+        newSceneNumber = baseSceneNumber + 0.1;
+      } else {
+        // Find the highest sub-number and increment
+        const maxOrder = Math.max(...existingDuplicates.map(s => s.order));
+        const lastSubNumber = Math.round((maxOrder - baseSceneNumber) * 10);
+        newSceneNumber = baseSceneNumber + (lastSubNumber + 1) / 10;
+      }
+
+      const duplicatedScene = {
+        ...scene,
+        id: uuidv4(),
+        order: newSceneNumber,
+        description: `${scene.description} (Copy)`,
+      };
+
+      // Copy all generated content from the original scene
+      const duplicatedSceneState: SceneWithState = {
+        ...duplicatedScene,
+        generatedImages: sceneState.generatedImages ? [...sceneState.generatedImages] : [],
+        selectedImageId: sceneState.selectedImageId,
+        generatedVideos: sceneState.generatedVideos ? [...sceneState.generatedVideos] : [],
+        selectedVideoId: sceneState.selectedVideoId,
+        videoLocalPath: sceneState.videoLocalPath,
+        actualDuration: sceneState.actualDuration,
+        seedFrames: sceneState.seedFrames ? [...sceneState.seedFrames] : [],
+        selectedSeedFrameIndex: sceneState.selectedSeedFrameIndex,
+        status: sceneState.status || 'pending' as const,
+      };
+
+      // Update local state
+      set((currentState) => {
+        if (!currentState.project) return currentState;
+
+        // Insert the duplicated scene into storyboard right after the original
+        const updatedStoryboard = [
+          ...currentState.project.storyboard.slice(0, sceneIndex + 1),
+          duplicatedScene,
+          ...currentState.project.storyboard.slice(sceneIndex + 1),
+        ];
+
+        // Sort storyboard by order
+        updatedStoryboard.sort((a, b) => a.order - b.order);
+
+        // Insert into scenes array at the same position
+        const updatedScenes = [
+          ...currentState.scenes.slice(0, sceneIndex + 1),
+          duplicatedSceneState,
+          ...currentState.scenes.slice(sceneIndex + 1),
+        ];
+
+        return {
+          project: {
+            ...currentState.project,
+            storyboard: updatedStoryboard,
+          },
+          scenes: updatedScenes,
+        };
+      });
+
+      return duplicatedScene;
     }
   },
 });

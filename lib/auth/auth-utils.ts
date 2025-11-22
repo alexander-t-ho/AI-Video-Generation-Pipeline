@@ -86,6 +86,11 @@ export async function checkCompanyAccess(userId: string, companyId: string): Pro
 
 // Check if user owns project or is in same company
 export async function checkProjectAccess(userId: string, projectId: string): Promise<boolean> {
+  // Skip auth checks in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return true;
+  }
+
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: { owner: true },

@@ -194,7 +194,7 @@ model Project {
 
 model Scene {
   id               String      @id @default(uuid())
-  sceneNumber      Int         // Order index (1, 2, 3, etc.)
+  sceneNumber      Float       // Order index (1, 1.1, 2, 2.1, 3, etc.) - supports sub-numbering for duplicates
   sceneTitle       String      // Title of the scene
   sceneSummary     String      @db.Text // Summary/description
   imagePrompt      String      @db.Text // Prompt for image generation
@@ -206,6 +206,8 @@ model Scene {
   useSeedFrame     Boolean     @default(false)
   modelParameters  Json?       // Model-specific parameters for video generation (e.g., aspect_ratio, resolution, seed, etc.)
   status           SceneStatus @default(PENDING)
+  isDuplicate      Boolean     @default(false) // Whether this scene is a duplicate
+  parentSceneId    String?     // ID of the parent scene if this is a duplicate
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 

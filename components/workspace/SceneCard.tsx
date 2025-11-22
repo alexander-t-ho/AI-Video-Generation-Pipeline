@@ -1,7 +1,7 @@
 'use client';
 
 import { Scene } from '@/lib/types';
-import { CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, Video } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, Video, Copy } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus } from '@/lib/api-client';
 import { ImageGenerationRequest } from '@/lib/types';
@@ -35,7 +35,8 @@ export default function SceneCard({
     addChatMessage,
     sceneErrors,
     retrySceneGeneration,
-    clearSceneError
+    clearSceneError,
+    duplicateScene,
   } = useProjectStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const sceneError = sceneErrors[sceneIndex];
@@ -329,6 +330,37 @@ export default function SceneCard({
     }
   };
 
+  const handleDuplicateScene = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!project || isGenerating) return;
+
+    setIsGenerating(true);
+    try {
+      addChatMessage({
+        role: 'agent',
+        content: `Duplicating Scene ${sceneIndex + 1}...`,
+        type: 'status',
+      });
+
+      await duplicateScene(sceneIndex);
+
+      addChatMessage({
+        role: 'agent',
+        content: `✓ Scene ${sceneIndex + 1} duplicated successfully`,
+        type: 'status',
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to duplicate scene';
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Error: ${errorMessage}`,
+        type: 'error',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleGenerateVideo = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!project || isGenerating) return;
@@ -455,9 +487,20 @@ export default function SceneCard({
     >
       {/* Compact Header: Number, Title, Duration, Status */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20 flex-shrink-0">
-          {sceneIndex + 1}
-        </span>
+        <div className="relative flex-shrink-0">
+          <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20">
+            {scene.order % 1 === 0 ? scene.order + 1 : (Math.floor(scene.order) + 1) + '.' + Math.round((scene.order % 1) * 10)}
+          </span>
+          {/* Duplicate button - appears on hover */}
+          <button
+            onClick={handleDuplicateScene}
+            disabled={isGenerating}
+            className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/30 disabled:opacity-50 transition-all border border-white/20 shadow-sm"
+            title="Duplicate scene"
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+        </div>
         <h3 className="text-sm font-medium text-white flex-1 truncate">
           {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
         </h3>

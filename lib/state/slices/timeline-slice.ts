@@ -81,7 +81,14 @@ export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSli
       const clips: TimelineClip[] = [];
       let currentTime = 0;
 
-      state.scenes.forEach((scene, sceneIndex) => {
+      // Sort scenes by scene number (supports decimal numbers like 1, 1.1, 2, 2.1, etc.)
+      const sortedScenes = [...state.scenes].sort((a, b) => {
+        const aOrder = a.order ?? 0;
+        const bOrder = b.order ?? 0;
+        return aOrder - bOrder;
+      });
+
+      sortedScenes.forEach((scene, sceneIndex) => {
         let video: GeneratedVideo | undefined;
         if (scene.selectedVideoId && scene.generatedVideos) {
           video = scene.generatedVideos.find(v => v.id === scene.selectedVideoId);

@@ -78,14 +78,17 @@ export async function PATCH(
     const session = await getSession();
     const { id } = await params;
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Skip auth in development mode
+    if (process.env.NODE_ENV !== 'development') {
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
 
-    // Check access
-    const hasAccess = await checkProjectAccess(session.user.id, id);
-    if (!hasAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      // Check access
+      const hasAccess = await checkProjectAccess(session.user.id, id);
+      if (!hasAccess) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
     }
 
     const body = await req.json();

@@ -915,3 +915,39 @@ export async function generateComposite(
   });
 }
 
+/**
+ * Duplicate a scene (copies all related data: images, videos, seed frames, files)
+ */
+export async function duplicateScene(
+  projectId: string,
+  sceneId: string
+): Promise<{
+  success: boolean;
+  duplicatedScene?: any;
+  duplicatedImages?: any[];
+  duplicatedVideos?: any[];
+  duplicatedSeedFrames?: any[];
+  error?: string;
+}> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/scenes/duplicate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId,
+        sceneId,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to duplicate scene' }));
+      throw new Error(error.error || 'Failed to duplicate scene');
+    }
+
+    return response.json();
+  });
+}
+

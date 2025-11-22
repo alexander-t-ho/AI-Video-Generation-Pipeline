@@ -107,6 +107,9 @@ export interface SceneSlice {
   setSceneError: (sceneIndex: number, error: { message: string; retryable: boolean }) => void;
   clearSceneError: (sceneIndex: number) => void;
   retrySceneGeneration: (sceneIndex: number) => Promise<void>;
+
+  // Scene duplication
+  duplicateScene: (sceneIndex: number) => Promise<Scene>;
 }
 
 export interface TimelineSlice {

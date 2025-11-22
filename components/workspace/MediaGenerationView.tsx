@@ -2,7 +2,7 @@
 
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import SceneCompositionPanel from './SceneCompositionPanel';
-import { Image as ImageIcon, Loader2, CheckCircle2, Trash2, ChevronDown, ChevronUp, Upload, XCircle } from 'lucide-react';
+import { Image as ImageIcon, Loader2, CheckCircle2, Trash2, ChevronDown, ChevronUp, Upload, XCircle, Copy } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, uploadImages } from '@/lib/api-client';
 import { GeneratedImage } from '@/lib/types';
@@ -50,8 +50,8 @@ function ImagePreviewModal({ image, isOpen, onClose }: ImagePreviewModalProps) {
 
 export default function MediaGenerationView() {
   const { project, currentSceneIndex } = useProjectStore();
-  const { scenes, setSceneStatus, addGeneratedImage, selectImage, deleteGeneratedImage: removeGeneratedImage, updateScenePrompt, updateSceneSettings } = useSceneStore();
-  const { mediaDrawer } = useUIStore();
+  const { scenes, setSceneStatus, addGeneratedImage, selectImage, deleteGeneratedImage: removeGeneratedImage, updateScenePrompt, updateSceneSettings, duplicateScene } = useSceneStore();
+  const { mediaDrawer, addChatMessage } = useUIStore();
 
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
@@ -70,6 +70,37 @@ export default function MediaGenerationView() {
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [seedImageId, setSeedImageId] = useState<string | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
+
+  const handleDuplicateScene = async () => {
+    if (!project || isDuplicating) return;
+
+    setIsDuplicating(true);
+    try {
+      addChatMessage({
+        role: 'agent',
+        content: `Duplicating Scene ${currentSceneIndex + 1}...`,
+        type: 'status',
+      });
+
+      await duplicateScene(currentSceneIndex);
+
+      addChatMessage({
+        role: 'agent',
+        content: `✓ Scene ${currentSceneIndex + 1} duplicated successfully`,
+        type: 'status',
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to duplicate scene';
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Error: ${errorMessage}`,
+        type: 'error',
+      });
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -110,7 +141,7 @@ export default function MediaGenerationView() {
     }
   }, [sceneState?.selectedImageId]);
 
-  // Initialize edited fields when scene changes
+  // Initialize edited fields when scene changes - load current scene's saved values
   useEffect(() => {
     if (currentScene) {
       setEditedPrompt(currentScene.imagePrompt);
@@ -124,7 +155,7 @@ export default function MediaGenerationView() {
       setDroppedImageUrls([]);
       setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
     }
-  }, [currentScene?.imagePrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput, currentSceneIndex]);
+  }, [currentSceneIndex, currentScene?.imagePrompt, currentScene?.videoPrompt, currentScene?.negativePrompt, currentScene?.customDuration, currentScene?.customImageInput]);
 
   const handleGenerateImage = async () => {
     if (!project?.id) return;
@@ -574,7 +605,7 @@ export default function MediaGenerationView() {
                     : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                Scene {index + 1}
+                Scene {scene.order % 1 === 0 ? scene.order + 1 : (Math.floor(scene.order) + 1) + '.' + Math.round((scene.order % 1) * 10)}
               </button>
             ))}
           </div>
@@ -585,9 +616,29 @@ export default function MediaGenerationView() {
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
         {/* Scene Header */}
         <div className="mb-4 pb-4 border-b border-white/20">
-          <h3 className="text-lg font-semibold text-white mb-2">
-            Scene {currentSceneIndex + 1}: {currentScene.description}
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-white">
+              Scene {currentScene.order % 1 === 0 ? currentScene.order + 1 : (Math.floor(currentScene.order) + 1) + '.' + Math.round((currentScene.order % 1) * 10)}: {currentScene.description}
+            </h3>
+            <button
+              onClick={handleDuplicateScene}
+              disabled={isDuplicating}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/10 text-white/80 rounded-lg hover:bg-white/20 disabled:opacity-50 transition-colors border border-white/20"
+              title="Duplicate this scene"
+            >
+              {isDuplicating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Duplicating...
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Duplicate Scene
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Editable Image Prompt */}
           <div className="mt-3">
