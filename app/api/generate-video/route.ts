@@ -4,16 +4,18 @@ import { createVideoPredictionWithRetry, setRuntimeVideoModel } from '@/lib/vide
 /**
  * POST /api/generate-video
  * Creates a video generation prediction and returns prediction ID for polling
- * 
+ *
  * Request Body:
  * {
- *   imageUrl: string;        // Required: S3 URL or public HTTP/HTTPS URL
- *   prompt: string;          // Required: Motion/action description
- *   seedFrame?: string;      // Optional: Seed frame URL for Scene 1-4
- *   sceneIndex: number;      // Required: Scene index (0-4)
- *   projectId: string;       // Required: Project ID
+ *   imageUrl: string;              // Required: S3 URL or public HTTP/HTTPS URL
+ *   prompt: string;                // Required: Motion/action description
+ *   seedFrame?: string;            // Optional: Seed frame URL for Scene 1-4
+ *   sceneIndex: number;            // Required: Scene index (0-4)
+ *   projectId: string;             // Required: Project ID
+ *   duration?: number;             // Optional: Video duration in seconds (1-30)
+ *   referenceImageUrls?: string[]; // Optional: Reference images for consistency/IP-Adapter
  * }
- * 
+ *
  * Response:
  * {
  *   success: boolean;
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration } = body;
+    const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration, referenceImageUrls } = body;
 
     // Validate required fields
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -142,6 +144,25 @@ export async function POST(request: NextRequest) {
       setRuntimeVideoModel(selectedModel);
     }
 
+    // Validate reference images if provided
+    let refImageUrls: string[] = [];
+    if (referenceImageUrls) {
+      if (!Array.isArray(referenceImageUrls)) {
+        return NextResponse.json(
+          { success: false, error: 'referenceImageUrls must be an array of strings if provided' },
+          { status: 400 }
+        );
+      }
+      // Validate each URL is a string
+      if (!referenceImageUrls.every(url => typeof url === 'string')) {
+        return NextResponse.json(
+          { success: false, error: 'All referenceImageUrls must be strings' },
+          { status: 400 }
+        );
+      }
+      refImageUrls = referenceImageUrls;
+    }
+
     // Log request details
     console.log('[Video Generation API] ========================================');
     console.log('[Video Generation API] Request received');
@@ -154,6 +175,13 @@ export async function POST(request: NextRequest) {
     console.log('[Video Generation API] Inputs:');
     console.log('[Video Generation API]   - Image URL:', imageUrl);
     console.log('[Video Generation API]   - Seed Frame:', seedFrameUrl || 'none');
+    console.log('[Video Generation API]   - Reference Images:', refImageUrls.length > 0 ? refImageUrls.length : 'none');
+    if (refImageUrls.length > 0) {
+      refImageUrls.forEach((url, idx) => {
+        const urlPreview = url.length > 80 ? url.substring(0, 80) + '...' : url;
+        console.log(`[Video Generation API]     [${idx + 1}] ${urlPreview}`);
+      });
+    }
     console.log('[Video Generation API] ========================================');
 
     // Validate and use duration if provided (will be rounded up to model-acceptable values)
@@ -174,7 +202,8 @@ export async function POST(request: NextRequest) {
       imageUrl,
       prompt,
       seedFrameUrl,
-      videoDuration
+      videoDuration,
+      refImageUrls
     );
 
     return NextResponse.json({

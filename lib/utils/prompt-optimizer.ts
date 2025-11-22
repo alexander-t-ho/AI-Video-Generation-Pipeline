@@ -157,6 +157,27 @@ export function adjustPromptForCharacterReference(
   return prompt;
 }
 
+/**
+ * Enhances prompts with whimsical cinematography guidance
+ * Adds specific visual terms for Wes Anderson-style aesthetics
+ * @param prompt Base prompt to enhance
+ * @returns Enhanced prompt with whimsical cinematography terms
+ */
+export function enhanceWhimsicalPrompt(prompt: string): string {
+  if (!prompt) return '';
+
+  // Check if already has whimsical terms to avoid duplication
+  const hasWhimsicalTerms = /symmetrical|centered framing|pastel|shallow depth|deliberate staging|retro color|film grain|Wes Anderson/i.test(prompt);
+
+  if (hasWhimsicalTerms) {
+    return prompt; // Already enhanced
+  }
+
+  // Add whimsical cinematography terms
+  const whimsicalTerms = ', symmetrical composition, centered framing, shallow depth of field, pastel color palette, soft diffused lighting, film grain texture, retro color grading, deliberate staging, saturated colors with careful balance, static tripod perspective, flat horizon line, geometric framing, muted yet vibrant tones, golden hour aesthetic, methodical composition, theatrical yet intimate mood, meticulous production design';
+
+  return prompt.trim() + whimsicalTerms;
+}
 
 
 

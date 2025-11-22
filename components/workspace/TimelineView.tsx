@@ -718,7 +718,7 @@ export default function TimelineView() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar">
         {/* Video Preview Player */}
         {getVideoPathsForStitching().length > 0 && (
           <div className="px-6 py-4 border-b border-white/10 bg-black/50">
@@ -847,7 +847,7 @@ export default function TimelineView() {
         )}
 
         {/* Timeline Track Section */}
-        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4">
+        <div className="flex-1 flex flex-col px-6 py-4">
           {/* Toolbar */}
           <div className="mb-3 flex items-center justify-between">
             <TimelineToolbar

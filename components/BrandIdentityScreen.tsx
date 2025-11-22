@@ -18,6 +18,7 @@ export default function BrandIdentityScreen() {
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [carDatabase, setCarDatabase] = useState<CarDatabase | null>(null);
   const [isLoadingCars, setIsLoadingCars] = useState(true);
+  const [isWaitingForProject, setIsWaitingForProject] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -217,39 +218,73 @@ export default function BrandIdentityScreen() {
       console.warn('[BrandIdentityScreen] No car selected and no reference images to save');
     }
     
-    // Navigate to workspace immediately (don't wait for generation)
-    router.push('/workspace');
-    
-    // Trigger auto-generation in the background after navigation
-    // Use setTimeout to ensure state update (setCharacterReferences) has completed
-    // and to allow navigation to happen first
-    setTimeout(() => {
-      const currentState = useProjectStore.getState();
-      const hasSubscenes = currentState.scenes.some(scene => scene.subscenes && scene.subscenes.length > 0);
+    // Check if project has storyboard before navigating
+    const { project } = useProjectStore.getState();
+    if (project?.storyboard && project.storyboard.length > 0) {
+      // Navigate to workspace immediately (don't wait for generation)
+      router.push('/workspace');
       
-      if (hasSubscenes) {
-        console.log('[BrandIdentityScreen] Storyboard with subscenes found, starting auto-generation...');
-        console.log('[BrandIdentityScreen] Using character references:', currentState.project?.characterReferences?.length || 0);
-        currentState.addChatMessage({
-          role: 'agent',
-          content: 'Starting automatic image and video generation for all subscenes using selected brand elements...',
-          type: 'status',
-        });
+      // Trigger auto-generation in the background after navigation
+      // Use setTimeout to ensure state update (setCharacterReferences) has completed
+      // and to allow navigation to happen first
+      setTimeout(() => {
+        const currentState = useProjectStore.getState();
+        const hasSubscenes = currentState.scenes.some(scene => scene.subscenes && scene.subscenes.length > 0);
         
-        // Start auto-generation in the background (don't wait for it)
-        // Images/videos will appear in real-time as they're generated
-        currentState.autoGenerateSubsceneImages().catch((error) => {
-          console.error('[BrandIdentityScreen] Error during auto-generation:', error);
-          useProjectStore.getState().addChatMessage({
+        if (hasSubscenes) {
+          console.log('[BrandIdentityScreen] Storyboard with subscenes found, starting auto-generation...');
+          console.log('[BrandIdentityScreen] Using character references:', currentState.project?.characterReferences?.length || 0);
+          currentState.addChatMessage({
             role: 'agent',
-            content: `⚠️ Auto-generation encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            type: 'error',
+            content: 'Starting automatic image and video generation for all subscenes using selected brand elements...',
+            type: 'status',
           });
-        });
-      } else {
-        console.log('[BrandIdentityScreen] No subscenes found in storyboard, skipping auto-generation');
-      }
-    }, 200); // Small delay to ensure state update is complete and navigation has started
+          
+          // Start auto-generation in the background (don't wait for it)
+          // Images/videos will appear in real-time as they're generated
+          currentState.autoGenerateSubsceneImages().catch((error) => {
+            console.error('[BrandIdentityScreen] Error during auto-generation:', error);
+            useProjectStore.getState().addChatMessage({
+              role: 'agent',
+              content: `⚠️ Auto-generation encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error',
+            });
+          });
+        } else {
+          console.log('[BrandIdentityScreen] No subscenes found in storyboard, skipping auto-generation');
+        }
+      }, 200); // Small delay to ensure state update is complete and navigation has started
+    } else {
+      // Storyboard not ready yet (still generating) - show loading
+      console.log('[BrandIdentity] Storyboard not ready yet, waiting...');
+      setIsWaitingForProject(true);
+      // Poll for storyboard to be ready
+      const checkProject = setInterval(() => {
+        const { project: currentProject } = useProjectStore.getState();
+        if (currentProject?.storyboard && currentProject.storyboard.length > 0) {
+          clearInterval(checkProject);
+          setIsWaitingForProject(false);
+          router.push('/workspace');
+          
+          // Trigger auto-generation after navigation
+          setTimeout(() => {
+            const currentState = useProjectStore.getState();
+            const hasSubscenes = currentState.scenes.some(scene => scene.subscenes && scene.subscenes.length > 0);
+            if (hasSubscenes) {
+              currentState.autoGenerateSubsceneImages().catch((error) => {
+                console.error('[BrandIdentityScreen] Error during auto-generation:', error);
+              });
+            }
+          }, 200);
+        }
+      }, 500);
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        clearInterval(checkProject);
+        setIsWaitingForProject(false);
+        console.log('[BrandIdentity] Still waiting for storyboard after 5 minutes');
+      }, 300000);
+    }
   };
 
   const handleAddRecoloredImages = (baseCarId: string, images: Array<{ url: string, colorHex: string }>) => {
@@ -548,9 +583,17 @@ export default function BrandIdentityScreen() {
         </button>
         <button
           onClick={handleContinue}
-          className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+          disabled={isWaitingForProject}
+          className="px-6 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-wait flex items-center gap-2"
         >
-          Continue
+          {isWaitingForProject ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Preparing...</span>
+            </>
+          ) : (
+            'Continue'
+          )}
         </button>
       </div>
 

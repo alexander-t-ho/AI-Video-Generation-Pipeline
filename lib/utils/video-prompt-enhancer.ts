@@ -14,9 +14,23 @@ function isAutomotiveContent(prompt: string): boolean {
     'driving', 'road', 'highway', 'street', 'wheels', 'tires', 'headlights',
     'taillights', 'driving', 'moving', 'traveling', 'speeding'
   ];
-  
+
   const lowerPrompt = prompt.toLowerCase();
   return automotiveKeywords.some(keyword => lowerPrompt.includes(keyword));
+}
+
+/**
+ * Detects if a prompt is for an interior/cockpit view
+ */
+function isInteriorView(prompt: string): boolean {
+  const interiorKeywords = [
+    'interior', 'cockpit', 'inside', 'pov inside', 'dashboard', 'steering wheel',
+    'driver seat', 'cabin', 'inside car', 'inside vehicle', 'from inside',
+    'driver pov', 'driver\'s pov', 'chest-mounted pov'
+  ];
+
+  const lowerPrompt = prompt.toLowerCase();
+  return interiorKeywords.some(keyword => lowerPrompt.includes(keyword));
 }
 
 /**
@@ -117,6 +131,25 @@ export function enhanceVideoPromptForAutomotive(
     enhancements.push('physically consistent movement, maintaining vehicle proportions and details');
   }
 
+  // For interior views, explicitly ensure no environmental debris inside
+  if (isInteriorView(originalPrompt)) {
+    const hasOffRoadElements = lowerPrompt.includes('mud') ||
+                               lowerPrompt.includes('dirt') ||
+                               lowerPrompt.includes('water') ||
+                               lowerPrompt.includes('off-road') ||
+                               lowerPrompt.includes('terrain') ||
+                               lowerPrompt.includes('flying');
+
+    if (hasOffRoadElements) {
+      // If off-road elements are mentioned, explicitly state they should be outside only
+      enhancements.push('clean interior with no mud, dirt, or water inside the car');
+      enhancements.push('environmental elements visible only through windshield and on exterior');
+    } else {
+      // For regular interior shots, just ensure clean interior
+      enhancements.push('clean, pristine interior surfaces');
+    }
+  }
+
   // Combine original prompt with enhancements
   if (enhancements.length > 0) {
     const enhancementText = enhancements.join(', ');
@@ -130,8 +163,8 @@ export function enhanceVideoPromptForAutomotive(
  * Creates a negative prompt for automotive video generation
  * to avoid common issues
  */
-export function createAutomotiveNegativePrompt(): string {
-  return [
+export function createAutomotiveNegativePrompt(prompt?: string): string {
+  const baseNegatives = [
     'missing headlights',
     'headlights not lit',
     'incorrect headlight placement',
@@ -154,7 +187,35 @@ export function createAutomotiveNegativePrompt(): string {
     'low quality',
     'blurry',
     'distorted',
-  ].join(', ');
+  ];
+
+  // Add interior-specific negatives if this is an interior view
+  if (prompt && isInteriorView(prompt)) {
+    const interiorNegatives = [
+      'mud inside car',
+      'dirt inside car',
+      'water inside car',
+      'debris inside car',
+      'mud on dashboard',
+      'dirt on dashboard',
+      'water on dashboard',
+      'mud on seats',
+      'dirt on seats',
+      'water on seats',
+      'mud on interior surfaces',
+      'dirt on interior surfaces',
+      'water on interior surfaces',
+      'debris on interior',
+      'dirty interior',
+      'messy interior',
+      'mud inside cabin',
+      'dirt inside cabin',
+      'water inside cabin',
+    ];
+    return [...baseNegatives, ...interiorNegatives].join(', ');
+  }
+
+  return baseNegatives.join(', ');
 }
 
 /**
@@ -180,7 +241,7 @@ export function enhanceVideoPrompt(
   };
 
   if (options.useNegativePrompt !== false && isAutomotiveContent(originalPrompt)) {
-    result.negativePrompt = createAutomotiveNegativePrompt();
+    result.negativePrompt = createAutomotiveNegativePrompt(originalPrompt);
   }
 
   return result;

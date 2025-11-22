@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense, useState } from 'react';
 import { useProjectStore, useProjectStore as projectStore } from '@/lib/state/project-store';
+import { useProjectAutoSave } from '@/lib/hooks/useProjectAutoSave';
 import LeftPanel from '@/components/workspace/LeftPanel';
 import MiddlePanel from '@/components/workspace/MiddlePanel';
 import RightPanel from '@/components/workspace/RightPanel';
@@ -12,6 +13,8 @@ import WorkspaceHeader from '@/components/workspace/WorkspaceHeader';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function WorkspaceContent() {
+  // Enable auto-save for project metadata
+  useProjectAutoSave();
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
   const { project, loadProject } = useProjectStore();
