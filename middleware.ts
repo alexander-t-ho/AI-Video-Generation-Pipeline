@@ -13,12 +13,18 @@ export default withAuth(
           return true;
         }
 
-        // Allow access to test routes (flux-test, veo-test)
+        // Allow access to test routes (flux-test, veo-test, seedance-test, nana-banana-pro-test, faceswap-test)
         if (
           req.nextUrl.pathname.startsWith('/flux-test') ||
           req.nextUrl.pathname.startsWith('/veo-test') ||
+          req.nextUrl.pathname.startsWith('/seedance-test') ||
+          req.nextUrl.pathname.startsWith('/nana-banana-pro-test') ||
+          req.nextUrl.pathname.startsWith('/faceswap-test') ||
           req.nextUrl.pathname.startsWith('/api/flux-test') ||
-          req.nextUrl.pathname.startsWith('/api/veo-test')
+          req.nextUrl.pathname.startsWith('/api/veo-test') ||
+          req.nextUrl.pathname.startsWith('/api/seedance-test') ||
+          req.nextUrl.pathname.startsWith('/api/nana-banana-pro-test') ||
+          req.nextUrl.pathname.startsWith('/api/faceswap-test')
         ) {
           return true;
         }

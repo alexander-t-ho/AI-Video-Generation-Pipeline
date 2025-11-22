@@ -51,6 +51,12 @@ export async function POST(request: NextRequest) {
     const images = formData.getAll('images') as File[];
     const prompt = formData.get('prompt') as string;
     const negativePrompt = formData.get('negativePrompt') as string | null;
+    const durationParam = formData.get('duration') as string;
+    const duration = durationParam ? parseInt(durationParam) : 6; // Valid: 4, 6, or 8
+    const aspectRatio = (formData.get('aspectRatio') as string) || '16:9'; // Valid: 16:9 or 9:16
+    const resolution = (formData.get('resolution') as string) || '720p'; // Valid: 720p or 1080p
+    const seedParam = formData.get('seed') as string | null;
+    const seed = seedParam ? parseInt(seedParam) : undefined;
 
     // Validate required fields
     if (!imageFile) {
@@ -91,6 +97,12 @@ export async function POST(request: NextRequest) {
     console.log('[Veo Test] Prompt:', prompt);
     if (negativePrompt && negativePrompt.trim().length > 0) {
       console.log('[Veo Test] Negative Prompt:', negativePrompt);
+    }
+    console.log('[Veo Test] Duration:', duration, 'seconds');
+    console.log('[Veo Test] Aspect Ratio:', aspectRatio);
+    console.log('[Veo Test] Resolution:', resolution);
+    if (seed !== undefined) {
+      console.log('[Veo Test] Seed:', seed);
     }
     console.log('[Veo Test] ========================================');
 
@@ -159,9 +171,23 @@ export async function POST(request: NextRequest) {
     const input: any = {
       image: imageUrl,
       prompt: prompt.trim(),
-      duration: 6, // 6 seconds (valid options: 4, 6, or 8)
-      aspect_ratio: '16:9',
+      duration: duration, // valid options: 4, 6, or 8
+      aspect_ratio: aspectRatio, // valid options: 16:9 or 9:16
+      resolution: resolution, // valid options: 720p or 1080p
     };
+
+    // Add seed if provided for reproducible results
+    if (seed !== undefined) {
+      input.seed = seed;
+      console.log('[Veo Test] Using seed:', seed);
+    }
+
+    console.log('[Veo Test] Input parameters:', {
+      duration: `${duration}s`,
+      aspect_ratio: aspectRatio,
+      resolution: resolution,
+      seed: seed ?? '(random)',
+    });
 
     // Add negative prompt if provided
     if (negativePrompt && negativePrompt.trim().length > 0) {

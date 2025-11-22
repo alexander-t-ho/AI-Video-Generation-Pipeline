@@ -361,3 +361,82 @@ export async function matchCarToBackground(
   return processedBuffer;
 }
 
+/**
+ * Apply color matching adjustments to an image buffer
+ * @param imageBuffer - Image buffer to process
+ * @param options - Color matching options
+ * @returns Processed image buffer
+ */
+export async function applyColorMatching(
+  imageBuffer: Buffer,
+  options: {
+    tintColor?: { r: number; g: number; b: number };
+    brightnessAdjust?: number; // -100 to 100
+    saturationAdjust?: number; // -100 to 100
+    contrastAdjust?: number; // -100 to 100
+  }
+): Promise<Buffer> {
+  const logPrefix = '[ColorMatcher]';
+  console.log(`${logPrefix} Applying color matching to buffer`);
+
+  let pipeline = sharp(imageBuffer);
+  const composites: any[] = [];
+
+  // Apply brightness adjustment
+  if (options.brightnessAdjust !== undefined && Math.abs(options.brightnessAdjust) > 1) {
+    const brightnessMultiplier = 1 + (options.brightnessAdjust / 100);
+    pipeline = pipeline.modulate({
+      brightness: brightnessMultiplier,
+    });
+    console.log(`${logPrefix} Applied brightness: ${options.brightnessAdjust.toFixed(1)}%`);
+  }
+
+  // Apply saturation adjustment
+  if (options.saturationAdjust !== undefined && Math.abs(options.saturationAdjust) > 1) {
+    const saturationMultiplier = 1 + (options.saturationAdjust / 100);
+    pipeline = pipeline.modulate({
+      saturation: saturationMultiplier,
+    });
+    console.log(`${logPrefix} Applied saturation: ${options.saturationAdjust.toFixed(1)}%`);
+  }
+
+  // Apply contrast adjustment
+  if (options.contrastAdjust !== undefined && Math.abs(options.contrastAdjust) > 1) {
+    const contrastMultiplier = 1 + (options.contrastAdjust / 100);
+    const offset = 128 * (1 - contrastMultiplier);
+    pipeline = pipeline.linear(contrastMultiplier, offset);
+    console.log(`${logPrefix} Applied contrast: ${options.contrastAdjust.toFixed(1)}%`);
+  }
+
+  // Apply tint color
+  if (options.tintColor) {
+    const { r, g, b } = options.tintColor;
+    const tintAlpha = 0.15; // Subtle tint
+    const metadata = await sharp(imageBuffer).metadata();
+    const width = metadata.width || 1920;
+    const height = metadata.height || 1080;
+
+    const tintOverlay = await sharp({
+      create: {
+        width,
+        height,
+        channels: 4,
+        background: { r, g, b, alpha: tintAlpha },
+      },
+    }).png().toBuffer();
+    
+    composites.push({ input: tintOverlay, blend: 'overlay' });
+    console.log(`${logPrefix} Applied tint: RGB(${r}, ${g}, ${b})`);
+  }
+
+  // Apply composite overlays if any
+  if (composites.length > 0) {
+    pipeline = pipeline.composite(composites);
+  }
+
+  const processedBuffer = await pipeline.png().toBuffer();
+  console.log(`${logPrefix} ✓ Color matching applied`);
+
+  return processedBuffer;
+}
+

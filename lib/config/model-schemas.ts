@@ -508,9 +508,9 @@ export const IMAGE_TO_IMAGE_SCHEMAS: Record<string, ModelSchema> = {
     limitations: []
   },
 
-  'google/nano-banana': {
+  'google/nano-banana': { // Replicate model ID (display name: Nana Banana Pro)
     id: 'google/nano-banana',
-    name: 'Nano Banana',
+    name: 'Nana Banana Pro',
     provider: 'Google',
     type: 'image-to-image',
     input: {

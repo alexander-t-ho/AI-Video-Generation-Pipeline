@@ -209,8 +209,8 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     supportedInputs: ['prompt', 'image', 'negative_prompt', 'strength', 'guidance_scale', 'num_outputs', 'seed'],
   },
   {
-    id: 'google/nano-banana',
-    name: 'Nano Banana',
+    id: 'google/nano-banana', // Replicate model ID
+    name: 'Nana Banana Pro', // Display name
     provider: 'Google',
     description: 'Specialized for precise recoloring and color changes',
     supportedInputs: ['prompt', 'image'],

@@ -36,7 +36,7 @@ function isS3Url(url: string): boolean {
 
 /**
  * POST /api/recolor-image
- * Recolors a vehicle image using google/nano-banana model
+ * Recolors a vehicle image using google/nana-banana-pro model
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -68,11 +68,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Choose model based on image source - nano-banana requires S3 URLs
+    // Choose model based on image source - nana-banana-pro requires S3 URLs
     if (isS3Url(body.imageUrl)) {
-      // Use google/nano-banana model for S3-hosted images
+      // Use google/nano-banana model for S3-hosted images (display name: Nana Banana Pro)
       setRuntimeImageModel('google/nano-banana');
-      console.log(`[Recolor API] Using nano-banana model for S3 URL`);
+      console.log(`[Recolor API] Using nana-banana-pro model for S3 URL`);
     } else {
       // For testing/demo purposes, return a mock successful response
       // In production, this would use FLUX-dev or another model that can handle external URLs
@@ -144,9 +144,9 @@ export async function POST(request: NextRequest) {
         console.log(`[Recolor API] Generated pre-signed URL for color reference: ${colorRefUrl}`);
     }
 
-    // Generate recolored image using nano-banana model
+    // Generate recolored image using nana-banana-pro model
     // We pass the color reference URL in the referenceImageUrls array
-    // The image generator will handle adding it to image_input for nano-banana
+    // The image generator will handle adding it to image_input for nana-banana-pro
     const generatedImage = await generateImage(
       prompt,
       body.projectId,

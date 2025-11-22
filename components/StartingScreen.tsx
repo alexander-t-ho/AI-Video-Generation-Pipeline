@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DevPanel from './workspace/DevPanel';
 import { StartingScreenProps } from '@/lib/types/components';
-import { Settings, ArrowRight, Image, X, Sparkles, Video, Loader2, Wand2 } from 'lucide-react';
+import { Settings, ArrowRight, Image, X, Sparkles, Video, Loader2, Wand2, Film, Banana, User } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StartingScreen({
@@ -201,6 +201,27 @@ export default function StartingScreen({
           title="Stylized Preview Generator"
         >
           <Sparkles className="w-4 h-4" />
+        </Link>
+        <Link
+          href="/seedance-test"
+          className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"
+          title="Seedance 1 Pro Fast Video Generation"
+        >
+          <Film className="w-4 h-4" />
+        </Link>
+        <Link
+          href="/nana-banana-pro-test"
+          className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"
+          title="Nana Banana Pro Image Editing"
+        >
+          <Banana className="w-4 h-4" />
+        </Link>
+        <Link
+          href="/faceswap-test"
+          className="p-2.5 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 hover:text-white/80 border border-white/10 backdrop-blur-sm transition-all"
+          title="Face Swap"
+        >
+          <User className="w-4 h-4" />
         </Link>
         <button
           onClick={() => setIsDevPanelOpen(!isDevPanelOpen)}
