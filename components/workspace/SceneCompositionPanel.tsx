@@ -103,11 +103,9 @@ function ImageSelectionModal({
 }
 
 export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPanelProps) {
-  const { project, scenes, updateSceneSettings, addGeneratedImage, selectImage } = useProjectStore();
-  const [showReferenceModal, setShowReferenceModal] = useState(false);
+  const { project, scenes, updateSceneSettings, addGeneratedImage, selectImage, toggleReferenceImage } = useProjectStore();
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
   const [isGeneratingComposite, setIsGeneratingComposite] = useState(false);
-  const referenceInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
   const [backgroundPrompt, setBackgroundPrompt] = useState('');
@@ -123,23 +121,80 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     loadPublicBackgrounds();
   }, []);
 
-  // Drag-drop for reference box
-  const referenceDropZone = useMediaDragDrop({
-    dropZoneId: 'reference-box',
+  // Helper function to find image URL from ID
+  const findImageUrl = useCallback((itemId: string) => {
+    // Search in uploaded images
+    if (project?.uploadedImages) {
+      for (const uploadedImage of project.uploadedImages) {
+        if (uploadedImage.id === itemId) return uploadedImage.url;
+        const processed = uploadedImage.processedVersions?.find(p => p.id === itemId);
+        if (processed) return processed.url;
+      }
+    }
+
+    // Search in generated images
+    for (const scn of scenes) {
+      const img = scn.generatedImages?.find((i: GeneratedImage) => i.id === itemId);
+      if (img) return img.url;
+    }
+
+    return null;
+  }, [project, scenes]);
+
+  // Drag-drop for per-scene reference image slots (3 reference images per scene)
+  const referenceDropZone1 = useMediaDragDrop({
+    dropZoneId: 'scene-reference-0',
     acceptedTypes: ['image', 'frame'],
     onDrop: (itemId, itemType) => {
-      console.log('[SceneComposition] Reference dropped:', itemId, itemType);
-      updateSceneSettings(sceneIndex, { referenceImageId: itemId });
+      const imageUrl = findImageUrl(itemId);
+      if (imageUrl) addSceneReferenceImage(imageUrl, 0);
     },
     onFilesDrop: async (files) => {
       if (!project) return;
-      console.log('[SceneComposition] Files dropped on reference:', files);
       const { uploadImages } = await import('@/lib/api-client');
       try {
         const result = await uploadImages(files, project.id, false);
-        if (result.images && result.images.length > 0) {
-          updateSceneSettings(sceneIndex, { referenceImageId: result.images[0].id });
-        }
+        if (result.images && result.images.length > 0) addSceneReferenceImage(result.images[0].url, 0);
+      } catch (error) {
+        console.error('Failed to upload reference image:', error);
+      }
+    },
+    maxFiles: 1,
+  });
+
+  const referenceDropZone2 = useMediaDragDrop({
+    dropZoneId: 'scene-reference-1',
+    acceptedTypes: ['image', 'frame'],
+    onDrop: (itemId, itemType) => {
+      const imageUrl = findImageUrl(itemId);
+      if (imageUrl) addSceneReferenceImage(imageUrl, 1);
+    },
+    onFilesDrop: async (files) => {
+      if (!project) return;
+      const { uploadImages } = await import('@/lib/api-client');
+      try {
+        const result = await uploadImages(files, project.id, false);
+        if (result.images && result.images.length > 0) addSceneReferenceImage(result.images[0].url, 1);
+      } catch (error) {
+        console.error('Failed to upload reference image:', error);
+      }
+    },
+    maxFiles: 1,
+  });
+
+  const referenceDropZone3 = useMediaDragDrop({
+    dropZoneId: 'scene-reference-2',
+    acceptedTypes: ['image', 'frame'],
+    onDrop: (itemId, itemType) => {
+      const imageUrl = findImageUrl(itemId);
+      if (imageUrl) addSceneReferenceImage(imageUrl, 2);
+    },
+    onFilesDrop: async (files) => {
+      if (!project) return;
+      const { uploadImages } = await import('@/lib/api-client');
+      try {
+        const result = await uploadImages(files, project.id, false);
+        if (result.images && result.images.length > 0) addSceneReferenceImage(result.images[0].url, 2);
       } catch (error) {
         console.error('Failed to upload reference image:', error);
       }
@@ -174,29 +229,54 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   const scene = project?.storyboard[sceneIndex];
   const sceneState = scenes[sceneIndex];
 
-  // Get reference image
-  const getReferenceImage = () => {
-    if (!scene || !project) return null;
-    if (!scene.referenceImageId) return null;
+  // Get per-scene reference images (up to 3) - AI-selected based on scene type
+  const getReferenceImages = () => {
+    if (!project || !scene) return [null, null, null];
+    // ONLY use per-scene reference images (AI-selected), no global fallback
+    const refUrls = scene.referenceImageUrls || [];
 
-    // Check uploaded images
-    if (project.uploadedImages) {
-      for (const uploadedImage of project.uploadedImages) {
-        if (uploadedImage.id === scene.referenceImageId) return uploadedImage;
-        const processed = uploadedImage.processedVersions?.find(
-          (p) => p.id === scene.referenceImageId
-        );
-        if (processed) return processed;
+    return [0, 1, 2].map(index => {
+      const url = refUrls[index];
+      if (!url) return null;
+
+      // Try to find the image object from URL
+      // Check uploaded images
+      if (project.uploadedImages) {
+        for (const uploadedImage of project.uploadedImages) {
+          if (uploadedImage.url === url) return uploadedImage;
+          const processed = uploadedImage.processedVersions?.find(p => p.url === url);
+          if (processed) return processed;
+        }
       }
-    }
 
-    // Check generated images
-    for (const scn of scenes) {
-      const img = scn.generatedImages?.find((i: GeneratedImage) => i.id === scene.referenceImageId);
-      if (img) return img;
-    }
+      // Check generated images
+      for (const scn of scenes) {
+        const img = scn.generatedImages?.find((i: GeneratedImage) => i.url === url);
+        if (img) return img;
+      }
 
-    return null;
+      // Return a minimal object with just the URL if we can't find the full object
+      return { id: url, url, localPath: url };
+    });
+  };
+
+  const removeReferenceImage = (slotIndex: number) => {
+    if (!scene) return;
+    // ONLY use per-scene reference images (AI-selected), no global fallback
+    const refUrls = scene.referenceImageUrls || [];
+    if (refUrls[slotIndex]) {
+      // Remove from per-scene reference images
+      const newRefUrls = refUrls.filter((_, index) => index !== slotIndex);
+      updateSceneSettings(sceneIndex, { referenceImageUrls: newRefUrls });
+    }
+  };
+
+  const addSceneReferenceImage = (imageUrl: string, slotIndex: number) => {
+    if (!scene) return;
+    // ONLY use per-scene reference images (AI-selected), no global fallback
+    const refUrls = [...(scene.referenceImageUrls || [])];
+    refUrls[slotIndex] = imageUrl;
+    updateSceneSettings(sceneIndex, { referenceImageUrls: refUrls });
   };
 
   // Get background image
@@ -257,48 +337,9 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     return `/api/serve-image?path=${encodeURIComponent(url)}`;
   };
 
-  const referenceImage = getReferenceImage();
+  const [referenceImage1, referenceImage2, referenceImage3] = getReferenceImages();
   const backgroundImage = getBackgroundImage();
   const compositeImage = getCompositeImage();
-
-  // Get available reference images for modal
-  const getAvailableReferences = () => {
-    const refs: Array<{ id: string; url: string; label?: string; originalName?: string }> = [];
-
-    // Add uploaded images
-    if (project?.uploadedImages) {
-      project.uploadedImages.forEach((uploadedImage) => {
-        refs.push({
-          id: uploadedImage.id,
-          url: getImageUrl(uploadedImage),
-          label: 'Original',
-          originalName: uploadedImage.originalName,
-        });
-
-        uploadedImage.processedVersions?.forEach((processed) => {
-          refs.push({
-            id: processed.id,
-            url: getImageUrl(processed),
-            label: `Processed ${processed.iteration}`,
-            originalName: uploadedImage.originalName,
-          });
-        });
-      });
-    }
-
-    // Add generated images
-    scenes.forEach((scn, idx) => {
-      scn.generatedImages?.forEach((img: GeneratedImage) => {
-        refs.push({
-          id: img.id,
-          url: getImageUrl(img),
-          label: `Scene ${idx + 1}`,
-        });
-      });
-    });
-
-    return refs;
-  };
 
   // Get available background images for modal
   const getAvailableBackgrounds = () => {
@@ -336,10 +377,6 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     }
 
     return bgs;
-  };
-
-  const handleReferenceSelect = (imageId: string) => {
-    updateSceneSettings(sceneIndex, { referenceImageId: imageId });
   };
 
   const handleBackgroundSelect = (imageId: string) => {
@@ -402,20 +439,21 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   };
 
   const handleGenerateComposite = async () => {
-    if (!referenceImage || !backgroundImage || !project) {
-      alert('Please select both a reference image and a background image first');
+    // Use the first reference image for composite generation
+    if (!referenceImage1 || !backgroundImage || !project) {
+      alert('Please add a reference image (Reference 1) and select a background image first');
       return;
     }
 
     setIsGeneratingComposite(true);
     try {
       console.log('Generating composite with:', {
-        reference: referenceImage,
+        reference: referenceImage1,
         background: backgroundImage,
       });
 
       // Get the URLs for the images
-      const referenceUrl = getImageUrl(referenceImage);
+      const referenceUrl = getImageUrl(referenceImage1);
       const backgroundUrl = getImageUrl(backgroundImage);
 
       // Call the composite generation API
@@ -504,43 +542,128 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
             </div>
           )}
 
-          {/* Reference, Background & Composite */}
-          <div className="grid grid-cols-3 gap-3">
-            {/* Reference Box */}
+          {/* Reference Images (3), Background & Composite (5 total) */}
+          <div className="grid grid-cols-5 gap-3">
+            {/* Reference Image 1 */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-white/80">Reference</label>
+              <label className="text-xs font-medium text-white/80">Reference 1</label>
               <div
-                onClick={() => setShowReferenceModal(true)}
-                onDrop={referenceDropZone.handleDrop}
-                onDragOver={referenceDropZone.handleDragOver}
-                onDragLeave={referenceDropZone.handleDragLeave}
+                onDrop={referenceDropZone1.handleDrop}
+                onDragOver={referenceDropZone1.handleDragOver}
+                onDragLeave={referenceDropZone1.handleDragLeave}
                 className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
-                  referenceDropZone.isOverDropZone
+                  referenceDropZone1.isOverDropZone
                     ? 'border-blue-400 bg-blue-500/10'
-                    : referenceImage
-                    ? 'border-white/20 hover:border-white/40'
+                    : referenceImage1
+                    ? 'border-yellow-400/50 hover:border-yellow-400/80'
                     : 'border-white/20 hover:border-white/40 bg-white/5'
                 }`}
               >
-                {referenceImage ? (
-                  <img
-                    src={getImageUrl(referenceImage)}
-                    alt="Reference"
-                    className="w-full h-full object-cover"
-                  />
+                {referenceImage1 ? (
+                  <>
+                    <img
+                      src={getImageUrl(referenceImage1)}
+                      alt="Reference 1"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeReferenceImage(0);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <Upload className="w-6 h-6 text-white/40" />
-                    <p className="text-xs text-white/40">Click or drag</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                    <Upload className="w-5 h-5 text-white/40" />
+                    <p className="text-xs text-white/40">Drag here</p>
                   </div>
                 )}
-                <input
-                  ref={referenceInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleFileSelect(e, 'reference')}
-                />
+              </div>
+            </div>
+
+            {/* Reference Image 2 */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-white/80">Reference 2</label>
+              <div
+                onDrop={referenceDropZone2.handleDrop}
+                onDragOver={referenceDropZone2.handleDragOver}
+                onDragLeave={referenceDropZone2.handleDragLeave}
+                className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                  referenceDropZone2.isOverDropZone
+                    ? 'border-blue-400 bg-blue-500/10'
+                    : referenceImage2
+                    ? 'border-yellow-400/50 hover:border-yellow-400/80'
+                    : 'border-white/20 hover:border-white/40 bg-white/5'
+                }`}
+              >
+                {referenceImage2 ? (
+                  <>
+                    <img
+                      src={getImageUrl(referenceImage2)}
+                      alt="Reference 2"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeReferenceImage(1);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                    <Upload className="w-5 h-5 text-white/40" />
+                    <p className="text-xs text-white/40">Drag here</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Reference Image 3 */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-white/80">Reference 3</label>
+              <div
+                onDrop={referenceDropZone3.handleDrop}
+                onDragOver={referenceDropZone3.handleDragOver}
+                onDragLeave={referenceDropZone3.handleDragLeave}
+                className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                  referenceDropZone3.isOverDropZone
+                    ? 'border-blue-400 bg-blue-500/10'
+                    : referenceImage3
+                    ? 'border-yellow-400/50 hover:border-yellow-400/80'
+                    : 'border-white/20 hover:border-white/40 bg-white/5'
+                }`}
+              >
+                {referenceImage3 ? (
+                  <>
+                    <img
+                      src={getImageUrl(referenceImage3)}
+                      alt="Reference 3"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeReferenceImage(2);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                    <Upload className="w-5 h-5 text-white/40" />
+                    <p className="text-xs text-white/40">Drag here</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -653,31 +776,10 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
               </button>
             </div>
           </div>
-
-          {/* Generate Composite Button */}
-          {referenceImage && backgroundImage && !compositeImage && (
-            <button
-              onClick={handleGenerateComposite}
-              disabled={isGeneratingComposite}
-              className="w-full px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isGeneratingComposite ? 'Generating Composite...' : 'Generate Composite'}
-            </button>
-          )}
         </>
       )}
 
       {/* Modals - outside collapsible section */}
-      {/* Reference Selection Modal */}
-      <ImageSelectionModal
-        isOpen={showReferenceModal}
-        onClose={() => setShowReferenceModal(false)}
-        title="Select Reference Image"
-        images={getAvailableReferences()}
-        onSelect={handleReferenceSelect}
-        selectedImageId={scene.referenceImageId}
-      />
-
       {/* Background Selection Modal */}
       <ImageSelectionModal
         isOpen={showBackgroundModal}

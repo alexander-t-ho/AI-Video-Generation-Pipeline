@@ -9,6 +9,8 @@ import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadI
 import { GeneratedImage, SeedFrame } from '@/lib/types';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 import { getPublicBackgrounds, getPublicBackgroundUrl, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
+import { selectSceneReferenceImages } from '@/lib/state/slices/project-core-slice';
+import { shouldMigrateSceneReferences, clearSceneReferencesForMigration } from '@/lib/utils/migrate-scene-references';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -76,6 +78,7 @@ export default function EditorView() {
     setCurrentSceneIndex,
     mediaDrawer,
     addChatMessage,
+    setLiveEditingPrompts,
   } = useUIStore();
   
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -281,6 +284,97 @@ export default function EditorView() {
     }
   }, [selectedImage]);
 
+  // One-time migration: Clear old scene references to trigger AI re-analysis
+  useEffect(() => {
+    if (project && shouldMigrateSceneReferences(project)) {
+      console.log('[EditorView Migration] Detected old global references, clearing to trigger AI re-analysis');
+
+      // Clear all scene-specific references to force AI re-analysis
+      const clearedScenes = clearSceneReferencesForMigration(project.storyboard);
+
+      // Update each scene
+      clearedScenes.forEach((scene, index) => {
+        updateSceneSettings(index, { referenceImageUrls: undefined });
+      });
+
+      console.log('[EditorView Migration] ✅ Migration complete - AI will now analyze each scene');
+    }
+  }, [project?.id]); // Run once per project
+
+  // Auto-populate reference images (slots 1, 2, 3) with AI-powered smart selection
+  // Store them in the scene's referenceImageUrls field for per-scene reference management
+  useEffect(() => {
+    const uploadedImages = project?.uploadedImages;
+    const currentScene = project?.storyboard[currentSceneIndex];
+
+    if (uploadedImages && uploadedImages.length > 0 && currentScene) {
+      // Use AI-based smart selection: analyze scene prompt with Claude API
+      const scenePrompt = editedVideoPrompt || currentScene.videoPrompt || currentScene.imagePrompt || currentScene.description || '';
+
+      // Check if this scene has per-scene references or is using global references
+      const hasSceneSpecificRefs = currentScene.referenceImageUrls && currentScene.referenceImageUrls.length > 0;
+      const needsAIAnalysis = !hasSceneSpecificRefs; // Run AI if no scene-specific refs
+
+      console.log('[EditorView] Reference check for scene', currentSceneIndex, {
+        hasSceneSpecificRefs,
+        needsAIAnalysis,
+        currentRefs: currentScene.referenceImageUrls,
+        globalRefs: project?.referenceImageUrls
+      });
+
+      // Run AI analysis if needed
+      if (needsAIAnalysis) {
+        console.log('[EditorView] Running AI analysis for scene', currentSceneIndex, ':', scenePrompt.substring(0, 60));
+
+        // Call async function to get AI-selected reference images
+        selectSceneReferenceImages(uploadedImages, scenePrompt).then(selectedUrls => {
+          // Store AI-selected images directly in the scene
+          updateSceneSettings(currentSceneIndex, { referenceImageUrls: selectedUrls });
+
+          console.log('[EditorView] ✅ AI-populated per-scene reference images:', {
+            sceneIndex: currentSceneIndex,
+            sceneId: currentScene.id,
+            promptSnippet: scenePrompt.substring(0, 50),
+            selectedCount: selectedUrls.length,
+            urls: selectedUrls
+          });
+        }).catch(error => {
+          console.error('[EditorView] ❌ Failed to get AI-selected reference images:', error);
+        });
+      } else {
+        console.log('[EditorView] Skipping AI analysis - scene already has references');
+      }
+
+      // Populate customImagePreviews from scene's referenceImageUrls for display
+      if (currentScene.referenceImageUrls && currentScene.referenceImageUrls.length > 0) {
+        setCustomImagePreviews(prev => {
+          const newPreviews = [...prev];
+
+          currentScene.referenceImageUrls!.forEach((url, index) => {
+            const slotIndex = index + 1; // Slots 1, 2, 3 (not 0, which is seed)
+            if (slotIndex <= 3) {
+              newPreviews[slotIndex] = {
+                url,
+                source: 'url' as const
+              };
+            }
+          });
+
+          return newPreviews;
+        });
+      }
+    }
+  }, [project?.uploadedImages, currentSceneIndex, editedVideoPrompt, project?.storyboard]);
+
+  // Sync edited prompts to liveEditingPrompts for real-time API preview
+  useEffect(() => {
+    setLiveEditingPrompts(currentSceneIndex, {
+      imagePrompt: editedPrompt,
+      videoPrompt: editedVideoPrompt,
+      negativePrompt: editedNegativePrompt,
+    });
+  }, [editedPrompt, editedVideoPrompt, editedNegativePrompt, currentSceneIndex, setLiveEditingPrompts]);
+
   const handleGenerateImage = async () => {
     if (!project?.id) return;
 
@@ -325,8 +419,9 @@ export default function EditorView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_image');
 
-      // Get reference images from project (uploaded images for object consistency) - limit to 3
-      let referenceImageUrls = (project.referenceImageUrls || []).slice(0, 3);
+      // Get per-scene reference images (AI-selected based on scene type: interior vs exterior)
+      // ONLY use scene-specific references, no global fallback
+      let referenceImageUrls = (currentScene.referenceImageUrls || []).slice(0, 3);
 
       // Get seed frame from previous scene (for Scenes 1-4, to use as seed image for image-to-image generation)
       let seedImageUrl: string | undefined = undefined;

@@ -211,8 +211,15 @@ export default function SceneCard({
 
       if (!usingSeedFrame) {
         // Only add reference images if NOT using seed frame mode
-        // Priority 1: Use reference image from scene composition box if available
-        if (scene.referenceImageId) {
+        // Priority 1: Use AI-selected per-scene reference images if available
+        if (scene.referenceImageUrls && scene.referenceImageUrls.length > 0) {
+          referenceImageUrls = scene.referenceImageUrls.slice(0, SCENE_CONSTANTS.MAX_REFERENCE_IMAGES);
+          console.log(
+            `[SceneCard] Scene ${sceneIndex}: Using ${referenceImageUrls.length} AI-selected per-scene reference image(s)`
+          );
+        }
+        // Priority 2: Use reference image from scene composition box if available
+        else if (scene.referenceImageId) {
           const referenceImageUrl = findImageUrlById(scene.referenceImageId, searchContext);
 
           if (referenceImageUrl) {
@@ -227,16 +234,7 @@ export default function SceneCard({
             );
           }
         }
-
-        // Priority 2: Fallback to project-level reference images if no scene-specific reference
-        if (referenceImageUrls.length === 0) {
-          referenceImageUrls = (project.referenceImageUrls || []).slice(0, SCENE_CONSTANTS.MAX_REFERENCE_IMAGES);
-          if (referenceImageUrls.length > 0) {
-            console.log(
-              `[SceneCard] Scene ${sceneIndex}: Using ${referenceImageUrls.length} project-level reference image(s)`
-            );
-          }
-        }
+        // No project-level fallback - scenes should only use their own AI-selected references
       } else {
         console.log(
           `[SceneCard] Scene ${sceneIndex}: Seed frame mode enabled - NOT including reference images`

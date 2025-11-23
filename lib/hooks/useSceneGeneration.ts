@@ -116,9 +116,9 @@ export function useSceneGeneration(
 
       const seedFrameUrl = getSeedFrameUrl(sceneIndex);
 
-      // Get reference images from brand assets (uploaded images) for object consistency
-      // These are the images uploaded in the brand identity screen
-      const referenceImageUrls: string[] = (project.referenceImageUrls || []).slice(0, 3);
+      // Get per-scene reference images (AI-selected based on scene type: interior vs exterior)
+      // ONLY use scene-specific references, no global fallback
+      const referenceImageUrls: string[] = (scene.referenceImageUrls || []).slice(0, 3);
 
       if (referenceImageUrls.length > 0) {
         addChatMessage({
@@ -224,8 +224,9 @@ export function useSceneGeneration(
 
       const seedFrameUrl = getSeedFrameUrl(sceneIndex);
 
-      // Get reference images from brand assets for object consistency
-      const referenceImageUrls: string[] = (project.referenceImageUrls || []).slice(0, 3);
+      // Get per-scene reference images (AI-selected based on scene type: interior vs exterior)
+      // ONLY use scene-specific references, no global fallback
+      const referenceImageUrls: string[] = (scene.referenceImageUrls || []).slice(0, 3);
 
       if (referenceImageUrls.length > 0) {
         addChatMessage({

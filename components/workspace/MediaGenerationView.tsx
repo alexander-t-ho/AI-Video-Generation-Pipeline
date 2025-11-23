@@ -51,7 +51,7 @@ function ImagePreviewModal({ image, isOpen, onClose }: ImagePreviewModalProps) {
 export default function MediaGenerationView() {
   const { project, currentSceneIndex } = useProjectStore();
   const { scenes, setSceneStatus, addGeneratedImage, selectImage, deleteGeneratedImage: removeGeneratedImage, updateScenePrompt, updateSceneSettings, duplicateScene } = useSceneStore();
-  const { mediaDrawer, addChatMessage } = useUIStore();
+  const { mediaDrawer, addChatMessage, setLiveEditingPrompts } = useUIStore();
 
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
@@ -193,7 +193,9 @@ export default function MediaGenerationView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_image');
 
-      let referenceImageUrls = (project.referenceImageUrls || []).slice(0, 3);
+      // Use per-scene reference images (AI-selected based on scene type: interior vs exterior)
+      // ONLY use scene-specific references, no global fallback
+      let referenceImageUrls = (currentScene.referenceImageUrls || []).slice(0, 3);
       let seedImageUrl: string | undefined = undefined;
       let seedFrameUrl: string | undefined = undefined;
       let currentSeedImageId: string | undefined = undefined;
@@ -614,6 +616,15 @@ export default function MediaGenerationView() {
       autoSave(false);
     }
   }, [customImagePreviews.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
+
+  // Update live editing prompts immediately for real-time API preview sync
+  useEffect(() => {
+    setLiveEditingPrompts(currentSceneIndex, {
+      imagePrompt: editedPrompt,
+      videoPrompt: editedVideoPrompt,
+      negativePrompt: editedNegativePrompt,
+    });
+  }, [editedPrompt, editedVideoPrompt, editedNegativePrompt, currentSceneIndex, setLiveEditingPrompts]);
 
   useEffect(() => {
     return () => {

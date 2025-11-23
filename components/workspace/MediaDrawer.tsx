@@ -1024,7 +1024,6 @@ export default function MediaDrawer() {
     skipSceneFilter: boolean = false
   ) => {
     const isExpanded = expandedSections[sectionKey];
-    const [isDragOver, setIsDragOver] = useState(false);
     const filteredItems = items.filter((item) => {
       if (mediaDrawer.searchQuery) {
         const query = mediaDrawer.searchQuery.toLowerCase();

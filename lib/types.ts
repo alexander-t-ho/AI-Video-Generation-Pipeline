@@ -27,6 +27,7 @@ export interface Scene {
   referenceImageId?: string; // Optional: ID of selected reference/seed image
   backgroundImageId?: string; // Optional: ID of selected background image
   compositeImageId?: string;  // Optional: ID of generated composite image (reference + background)
+  referenceImageUrls?: string[]; // Optional: Per-scene reference image URLs (up to 3) - AI-selected based on scene type
 }
 
 export interface StoryboardRequest {

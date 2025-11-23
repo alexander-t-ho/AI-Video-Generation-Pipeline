@@ -1622,3 +1622,29 @@ export async function getNarrationServiceStatus(): Promise<NarrationServiceStatu
 
   return response.json();
 }
+
+/**
+ * Update scene settings (including referenceImageUrls)
+ */
+export async function updateScene(
+  sceneId: string,
+  updates: Record<string, any>
+): Promise<{ success: boolean; scene: any }> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/scenes/${sceneId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to update scene' }));
+      throw new Error(error.error || 'Failed to update scene');
+    }
+
+    return response.json();
+  });
+}

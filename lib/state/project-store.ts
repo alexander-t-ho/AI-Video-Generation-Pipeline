@@ -24,7 +24,7 @@ const initialState = {
   selectedStylePrompt: null as string | null,
   needsCharacterValidation: false,
   hasUploadedImages: false,
-  
+
   // UI
   viewMode: 'storyboard' as ViewMode,
   currentSceneIndex: 0,
@@ -38,6 +38,7 @@ const initialState = {
     isDragging: false,
   } as DragDropState,
   chatMessages: [] as ChatMessage[],
+  liveEditingPrompts: {} as Record<number, import('./types').LiveEditingPrompts>,
   
   // Scene
   scenes: [] as SceneWithState[],

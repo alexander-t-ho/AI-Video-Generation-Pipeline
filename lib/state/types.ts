@@ -85,6 +85,7 @@ export interface SceneSlice {
     referenceImageId?: string;
     backgroundImageId?: string;
     compositeImageId?: string;
+    referenceImageUrls?: string[];
   }) => void;
   updateSceneModelParameters: (sceneIndex: number, modelParameters: Record<string, any>) => void;
   
@@ -176,19 +177,28 @@ export interface TimelineSlice {
   duplicateTextOverlay: (overlayId: string) => void;
 }
 
+export interface LiveEditingPrompts {
+  imagePrompt?: string;
+  videoPrompt?: string;
+  negativePrompt?: string;
+}
+
 export interface UISlice {
   viewMode: ViewMode;
   currentSceneIndex: number;
   mediaDrawer: MediaDrawerState;
   dragDrop: DragDropState;
   chatMessages: ChatMessage[];
+  liveEditingPrompts: Record<number, LiveEditingPrompts>; // sceneIndex -> prompts being edited
 
   setViewMode: (mode: ViewMode) => void;
   setCurrentSceneIndex: (index: number) => void;
   addChatMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   updateMediaDrawer: (updates: Partial<MediaDrawerState>) => void;
   updateDragDrop: (updates: Partial<DragDropState>) => void;
-  
+  setLiveEditingPrompts: (sceneIndex: number, prompts: LiveEditingPrompts) => void;
+  clearLiveEditingPrompts: (sceneIndex: number) => void;
+
   // Media organization
   toggleMediaItem: (itemId: string) => void;
   selectMediaItem: (itemId: string) => void;
@@ -196,7 +206,7 @@ export interface UISlice {
   clearMediaSelection: () => void;
   setMediaFilter: (filter: MediaDrawerState['filters']) => void;
   setMediaSearchQuery: (query: string) => void;
-  
+
   navigateToWorkspace: (projectId: string) => void;
 }
 

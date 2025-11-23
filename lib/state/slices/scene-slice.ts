@@ -69,13 +69,13 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
   updateSceneSettings: (sceneIndex, settings) => {
     set((state) => {
       if (!state.project || !state.project.storyboard[sceneIndex]) return state;
-      
+
       const updatedStoryboard = [...state.project.storyboard];
       updatedStoryboard[sceneIndex] = {
         ...updatedStoryboard[sceneIndex],
         ...settings,
       };
-      
+
       const updatedScenes = [...state.scenes];
       if (updatedScenes[sceneIndex]) {
         updatedScenes[sceneIndex] = {
@@ -83,7 +83,21 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
           ...settings,
         };
       }
-      
+
+      // Persist referenceImageUrls to database if updated
+      const scene = updatedStoryboard[sceneIndex];
+      if (scene.id && settings.referenceImageUrls !== undefined) {
+        import('@/lib/api-client').then(({ updateScene }) => {
+          updateScene(scene.id, { referenceImageUrls: settings.referenceImageUrls })
+            .then(() => {
+              console.log('[SceneSlice] ✅ Persisted referenceImageUrls to database for scene', scene.id);
+            })
+            .catch((error) => {
+              console.error('[SceneSlice] ❌ Failed to persist referenceImageUrls:', error);
+            });
+        });
+      }
+
       return {
         project: {
           ...state.project,

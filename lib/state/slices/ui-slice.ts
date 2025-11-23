@@ -16,6 +16,7 @@ export const createUISlice: StateCreator<ProjectStore, [], [], UISlice> = (set) 
     isDragging: false,
   },
   chatMessages: [],
+  liveEditingPrompts: {},
 
   setViewMode: (mode) => {
     set({ viewMode: mode });
@@ -31,22 +32,39 @@ export const createUISlice: StateCreator<ProjectStore, [], [], UISlice> = (set) 
       id: uuidv4(),
       timestamp: new Date().toISOString(),
     };
-    
+
     set((state) => ({
       chatMessages: [...state.chatMessages, chatMessage],
     }));
   },
-  
+
   updateMediaDrawer: (updates) => {
     set((state) => ({
       mediaDrawer: { ...state.mediaDrawer, ...updates },
     }));
   },
-  
+
   updateDragDrop: (updates) => {
     set((state) => ({
       dragDrop: { ...state.dragDrop, ...updates },
     }));
+  },
+
+  setLiveEditingPrompts: (sceneIndex, prompts) => {
+    set((state) => ({
+      liveEditingPrompts: {
+        ...state.liveEditingPrompts,
+        [sceneIndex]: prompts,
+      },
+    }));
+  },
+
+  clearLiveEditingPrompts: (sceneIndex) => {
+    set((state) => {
+      const newLiveEditingPrompts = { ...state.liveEditingPrompts };
+      delete newLiveEditingPrompts[sceneIndex];
+      return { liveEditingPrompts: newLiveEditingPrompts };
+    });
   },
   
   toggleMediaItem: (itemId) => {

@@ -21,7 +21,7 @@ interface PayloadField {
 }
 
 export default function APIPreviewPanel({ sceneIndex, generationType }: APIPreviemPanelProps) {
-  const { project, scenes, currentSceneIndex, mediaDrawer } = useProjectStore();
+  const { project, scenes, currentSceneIndex, mediaDrawer, liveEditingPrompts } = useProjectStore();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [displayType, setDisplayType] = useState<'image' | 'video'>(generationType || 'image');
   const activeSceneIndex = sceneIndex ?? currentSceneIndex;
@@ -33,13 +33,21 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
     const sceneState = scenes[activeSceneIndex];
     if (!scene || !sceneState) return null;
 
+    // Get live editing prompts if available, otherwise fall back to saved scene prompts
+    const livePrompts = liveEditingPrompts[activeSceneIndex];
+    const effectiveImagePrompt = livePrompts?.imagePrompt ?? scene.imagePrompt;
+    const effectiveVideoPrompt = livePrompts?.videoPrompt ?? scene.videoPrompt;
+    const effectiveNegativePrompt = livePrompts?.negativePrompt ?? scene.negativePrompt;
+
     // Image generation payload
     if (displayType === 'image') {
       const selectedImage = sceneState?.selectedImageId
         ? sceneState.generatedImages?.find((img: any) => img.id === sceneState.selectedImageId)
         : sceneState?.generatedImages?.[0];
 
-      const allReferenceImages = project.referenceImageUrls || [];
+      // Use per-scene reference images (AI-selected based on scene type)
+      // ONLY use scene-specific references, no global fallback
+      const allReferenceImages = scene.referenceImageUrls || [];
       const referenceImages = allReferenceImages.slice(0, 3);
       const wasTruncated = allReferenceImages.length > 3;
 
@@ -91,7 +99,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         {
           key: 'prompt',
           label: 'Prompt',
-          value: scene.imagePrompt,
+          value: effectiveImagePrompt,
           type: 'string',
           required: true,
           description: 'Text description of the image to generate',
@@ -99,7 +107,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         {
           key: 'negativePrompt',
           label: 'Negative Prompt',
-          value: scene.negativePrompt || '',
+          value: effectiveNegativePrompt || '',
           type: 'string',
           description: 'Things to avoid in the image',
         },
@@ -181,8 +189,9 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
       })() : 'NOT SELECTED';
 
-      // Get reference images dragged into the storyboard prompt (limit to 3)
-      const allReferenceImagesVideo = project.referenceImageUrls || [];
+      // Get per-scene reference images (AI-selected based on scene type)
+      // ONLY use scene-specific references, no global fallback
+      const allReferenceImagesVideo = scene.referenceImageUrls || [];
       const referenceImages = allReferenceImagesVideo.slice(0, 3);
       const wasTruncatedVideo = allReferenceImagesVideo.length > 3;
 
@@ -201,7 +210,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
         {
           key: 'prompt',
           label: 'Video Prompt',
-          value: scene.videoPrompt || scene.imagePrompt, // Fallback to imagePrompt for backward compatibility
+          value: effectiveVideoPrompt || effectiveImagePrompt, // Fallback to imagePrompt for backward compatibility
           type: 'string',
           required: true,
           description: 'Motion and scene description for video generation',
@@ -244,7 +253,7 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
     }
 
     return null;
-  }, [project, scenes, activeSceneIndex, displayType, mediaDrawer.seedImageId]);
+  }, [project, scenes, activeSceneIndex, displayType, mediaDrawer.seedImageId, liveEditingPrompts]);
 
   const handleCopy = () => {
     if (!previewData) return;
