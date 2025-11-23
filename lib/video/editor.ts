@@ -131,7 +131,13 @@ async function processClipEdit(
 ): Promise<string> {
   // Guard: Only process video clips
   if (clip.type !== 'video' || !clip.videoLocalPath) {
-    throw new Error(`Cannot process non-video clip: ${clip.id}`);
+    console.error(`[Editor] Invalid clip:`, {
+      clipId: clip.id,
+      type: clip.type,
+      hasVideoLocalPath: !!clip.videoLocalPath,
+      videoLocalPath: clip.videoLocalPath,
+    });
+    throw new Error(`Cannot process non-video clip: ${clip.id} (type: ${clip.type}, hasPath: ${!!clip.videoLocalPath})`);
   }
 
   const outputPath = path.join(outputDir, `clip-${clip.id}.mp4`);
@@ -152,16 +158,28 @@ async function processClipEdit(
     }
   }
 
+  // Verify input file exists before processing
+  try {
+    await fs.access(clip.videoLocalPath);
+  } catch (error) {
+    console.error(`[Editor] Input video file does not exist:`, {
+      clipId: clip.id,
+      videoLocalPath: clip.videoLocalPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new Error(`Input video file does not exist: ${clip.videoLocalPath}`);
+  }
+
   // Process the clip
   if (clip.trimStart !== undefined || clip.trimEnd !== undefined) {
     const startTime = clip.trimStart || 0;
     const endTime = clip.trimEnd || clip.sourceDuration;
 
-    console.log(`[Editor] Processing clip with trim: ${clip.id} (${startTime}s - ${endTime}s)`);
+    console.log(`[Editor] Processing clip with trim: ${clip.id} (${startTime}s - ${endTime}s) from ${clip.videoLocalPath}`);
     await cropVideo(clip.videoLocalPath, outputPath, startTime, endTime);
   } else {
     // No trimming needed, just copy the file
-    console.log(`[Editor] Copying clip (no trim): ${clip.id}`);
+    console.log(`[Editor] Copying clip (no trim): ${clip.id} from ${clip.videoLocalPath}`);
     await fs.copyFile(clip.videoLocalPath, outputPath);
   }
 

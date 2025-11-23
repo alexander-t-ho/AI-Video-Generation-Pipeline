@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense, useState } from 'react';
 import { useProjectStore, useProjectStore as projectStore } from '@/lib/state/project-store';
 import { useProjectAutoSave } from '@/lib/hooks/useProjectAutoSave';
+import { useAutoGenerate } from '@/lib/hooks/useAutoGenerate';
 import LeftPanel from '@/components/workspace/LeftPanel';
 import MiddlePanel from '@/components/workspace/MiddlePanel';
 import RightPanel from '@/components/workspace/RightPanel';
@@ -17,11 +18,19 @@ function WorkspaceContent() {
   useProjectAutoSave();
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
+  const autoGenerate = searchParams.get('autoGenerate') === 'true';
   const { project, loadProject } = useProjectStore();
+
+  console.log('[Workspace] URL params:', {
+    projectId,
+    autoGenerate,
+    hasProject: !!project,
+  });
   // On mobile, panels start collapsed; on desktop, media drawer starts expanded, agent starts collapsed
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasTriggeredAutoGenerate, setHasTriggeredAutoGenerate] = useState(false);
   
   // Auto-collapse panels on mobile on mount
   useEffect(() => {
@@ -106,6 +115,34 @@ function WorkspaceContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, projectId]); // loadProject is stable, don't need it in deps
+
+  // Auto-generate all scenes if autoGenerate flag is set
+  useAutoGenerate({
+    enabled: autoGenerate && !hasTriggeredAutoGenerate && !!project,
+    onComplete: () => {
+      console.log('[Workspace] Auto-generation complete!');
+      setHasTriggeredAutoGenerate(true);
+      alert('Auto-generation complete! Check the scenes.');
+    },
+    onError: (error) => {
+      console.error('[Workspace] Auto-generation error:', error);
+      setHasTriggeredAutoGenerate(true);
+      alert(`Auto-generation error: ${error.message}`);
+    },
+  });
+
+  // Log when auto-generate is enabled
+  useEffect(() => {
+    if (autoGenerate && project) {
+      console.log('[Workspace] Auto-generate enabled!', {
+        autoGenerate,
+        hasTriggeredAutoGenerate,
+        projectId: project.id,
+        storyboardLength: project.storyboard?.length,
+        uploadedImagesLength: project.uploadedImages?.length,
+      });
+    }
+  }, [autoGenerate, project, hasTriggeredAutoGenerate]);
 
   if (!project || isLoading) {
     return (

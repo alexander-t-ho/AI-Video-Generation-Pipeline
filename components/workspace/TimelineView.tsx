@@ -120,6 +120,7 @@ export default function TimelineView() {
         const previewPath = await generatePreview(
           videoClips.map(clip => ({
             id: clip.id,
+            type: 'video' as const,
             videoLocalPath: clip.videoLocalPath!,
             trimStart: clip.trimStart,
             trimEnd: clip.trimEnd,

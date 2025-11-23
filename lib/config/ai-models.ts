@@ -156,6 +156,13 @@ export const AVAILABLE_T2I_MODELS: ModelOption[] = [
  */
 export const AVAILABLE_I2I_MODELS: ModelOption[] = [
   {
+    id: 'google/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'Google',
+    description: 'Specialized for precise recoloring and color changes (default)',
+    supportedInputs: ['prompt', 'image_input'],
+  },
+  {
     id: 'runwayml/gen4-image',
     name: 'Runway Gen-4 Image',
     provider: 'Runway',
@@ -186,7 +193,7 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     id: 'black-forest-labs/flux-dev',
     name: 'FLUX Dev (IP-Adapter)',
     provider: 'Black Forest Labs',
-    description: 'Open-weight with reference support (default)',
+    description: 'Open-weight with reference support',
     supportedInputs: ['prompt', 'image', 'ip_adapter_images', 'ip_adapter_scale', 'aspect_ratio', 'output_format', 'seed'],
   },
   {
@@ -207,13 +214,6 @@ export const AVAILABLE_I2I_MODELS: ModelOption[] = [
     provider: 'Stability AI',
     description: 'Versatile image transformation',
     supportedInputs: ['prompt', 'image', 'negative_prompt', 'strength', 'guidance_scale', 'num_outputs', 'seed'],
-  },
-  {
-    id: 'google/nano-banana-pro',
-    name: 'Nano Banana',
-    provider: 'Google',
-    description: 'Specialized for precise recoloring and color changes',
-    supportedInputs: ['prompt', 'image'],
   },
   {
     id: 'stability-ai/sd3-medium',
@@ -335,16 +335,15 @@ export const AVAILABLE_VIDEO_MODELS: ModelOption[] = [
 
 export const IMAGE_CONFIG = {
   // Model identifier for Replicate
-  // Note: FLUX models on Replicate require the full version hash
-  // flux-schnell is the fastest and most reliable for testing
-  model: process.env.REPLICATE_IMAGE_MODEL || 'black-forest-labs/flux-schnell',
-  
+  // google/nano-banana-pro is the default for image-to-image generation with precise color control
+  model: process.env.REPLICATE_IMAGE_MODEL || 'google/nano-banana-pro',
+
   // Image generation parameters
   aspectRatio: '16:9' as const,
   outputFormat: 'png' as const,
   outputQuality: 90,
   safetyTolerance: 2,
-  
+
   // Polling configuration
   pollInterval: 2000, // 2 seconds
   pollTimeout: 300000, // 5 minutes
@@ -412,17 +411,17 @@ function resolveVideoModel(envModel?: string): string {
 export const VIDEO_CONFIG = {
   // Model identifier for Replicate (supports aliases)
   model: resolveVideoModel(process.env.REPLICATE_VIDEO_MODEL),
-  
+
   // Video generation parameters
-  duration: parseInt(process.env.VIDEO_DURATION || '5', 10), // 5 or 10 seconds for WAN models
+  duration: parseInt(process.env.VIDEO_DURATION || '8', 10), // 8 seconds default (Veo 3.1 optimized: 4, 6, or 8)
   resolution: (process.env.VIDEO_RESOLUTION || '720p') as '720p' | '1080p' | '4K',
-  
+
   // Polling configuration
   pollInterval: 2000, // 2 seconds
   pollTimeout: 600000, // 10 minutes (videos take longer)
   maxPollAttempts: 300, // 10 minutes total (300 * 2s)
   maxRetries: 2,
-  
+
   // Download configuration
   downloadRetries: 3,
 } as const;
@@ -433,10 +432,10 @@ export const VIDEO_CONFIG = {
 
 export const MODEL_INFO = {
   image: {
-    name: 'FLUX 1.1 Pro',
-    provider: 'Black Forest Labs',
-    type: 'text-to-image',
-    description: 'High-quality text-to-image generation',
+    name: 'Nano Banana Pro',
+    provider: 'Google',
+    type: 'image-to-image',
+    description: 'Precise image-to-image generation with color control',
   },
   video: {
     name: getVideoModelName(VIDEO_CONFIG.model),
@@ -481,7 +480,7 @@ function getVideoModelName(model: string): string {
  * Environment Variables:
  *
  * Image Generation:
- * - REPLICATE_IMAGE_MODEL: Full model identifier (default: black-forest-labs/flux-1.1-pro)
+ * - REPLICATE_IMAGE_MODEL: Full model identifier (default: google/nano-banana-pro)
  *
  * Video Generation:
  * - REPLICATE_VIDEO_MODEL: Model identifier or alias (default: google/veo-3.1)
@@ -491,7 +490,7 @@ function getVideoModelName(model: string): string {
  *
  * Example .env.local:
  * ```
- * REPLICATE_IMAGE_MODEL=black-forest-labs/flux-1.1-pro
+ * REPLICATE_IMAGE_MODEL=google/nano-banana-pro
  * REPLICATE_VIDEO_MODEL=google/veo-3.1
  * VIDEO_DURATION=8
  * VIDEO_RESOLUTION=720p

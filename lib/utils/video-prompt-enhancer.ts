@@ -14,9 +14,23 @@ function isAutomotiveContent(prompt: string): boolean {
     'driving', 'road', 'highway', 'street', 'wheels', 'tires', 'headlights',
     'taillights', 'driving', 'moving', 'traveling', 'speeding'
   ];
-  
+
   const lowerPrompt = prompt.toLowerCase();
   return automotiveKeywords.some(keyword => lowerPrompt.includes(keyword));
+}
+
+/**
+ * Detects if a scene is indoors
+ */
+function isIndoorScene(prompt: string): boolean {
+  const indoorKeywords = [
+    'indoor', 'interior', 'inside', 'garage', 'showroom', 'warehouse',
+    'parking garage', 'tunnel', 'covered', 'enclosed space', 'building',
+    'studio', 'exhibition hall'
+  ];
+
+  const lowerPrompt = prompt.toLowerCase();
+  return indoorKeywords.some(keyword => lowerPrompt.includes(keyword));
 }
 
 /**
@@ -76,17 +90,30 @@ export function enhanceVideoPromptForAutomotive(
   // Add headlight instructions
   if (ensureHeadlights && !lowerPrompt.includes('headlight')) {
     // Check if it's likely a night/dark scene
-    const isDarkScene = lowerPrompt.includes('night') || 
-                       lowerPrompt.includes('dark') || 
-                       lowerPrompt.includes('dusk') || 
+    const isDarkScene = lowerPrompt.includes('night') ||
+                       lowerPrompt.includes('dark') ||
+                       lowerPrompt.includes('dusk') ||
                        lowerPrompt.includes('dawn') ||
                        lowerPrompt.includes('evening') ||
                        lowerPrompt.includes('twilight');
-    
-    if (isDarkScene) {
-      enhancements.push('headlights are on and properly lit, illuminating the road ahead');
+
+    // Check if it's an indoor scene
+    const isIndoor = isIndoorScene(originalPrompt);
+
+    if (isDarkScene || isIndoor) {
+      enhancements.push('headlights are on and properly lit, illuminating the area ahead');
     } else {
       enhancements.push('headlights are visible and properly positioned on the vehicle');
+    }
+  }
+
+  // Add indoor-specific lighting enhancements
+  if (isIndoorScene(originalPrompt)) {
+    if (!lowerPrompt.includes('lighting') && !lowerPrompt.includes('light')) {
+      enhancements.push('well-lit indoor environment with professional overhead lighting');
+    }
+    if (!lowerPrompt.includes('floor') && !lowerPrompt.includes('ground')) {
+      enhancements.push('smooth polished floor with realistic reflections');
     }
   }
 

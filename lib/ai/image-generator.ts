@@ -576,6 +576,8 @@ export async function downloadAndSaveImage(
     console.log(`${logPrefix} Image saved and uploaded successfully`);
     console.log(`${logPrefix} Local path: ${storedFile.localPath}`);
     console.log(`${logPrefix} S3 Key: ${storedFile.s3Key}`);
+    console.log(`${logPrefix} S3 URL: ${storedFile.url}`);
+    console.log(`${logPrefix} URL type: ${storedFile.url.startsWith('http') ? 'HTTP/HTTPS (S3)' : 'Local file path'}`);
     console.log(`${logPrefix} File size: ${storedFile.size} bytes (${(storedFile.size / 1024).toFixed(2)} KB)`);
     console.log(`${logPrefix} Image ID: ${imageId}`);
     console.log(`${logPrefix} ========================================`);
@@ -591,6 +593,7 @@ export async function downloadAndSaveImage(
       createdAt: new Date().toISOString(),
     };
 
+    console.log(`${logPrefix} Returning GeneratedImage with url: ${generatedImage.url}`);
     return generatedImage;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

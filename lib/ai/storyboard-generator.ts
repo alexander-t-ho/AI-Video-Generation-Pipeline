@@ -46,7 +46,7 @@ with particular strength in product and automotive commercials.
 Given a short creative brief for a video advertisement, create exactly 3 scenes.
 
 For each scene:
-- Duration: 10 seconds
+- Duration: 8 seconds (optimized for Google Veo 3.1 video generation)
 - Clear visual focus and logical progression from the previous scene
 - Keep the scene description SHORT and CONCISE - 3-6 words maximum
 - Provide a detailed imagePrompt for visual generation (static image description)
@@ -67,7 +67,7 @@ Output strictly valid JSON in this format:
       "description": "Short 3-6 word phrase describing the scene",
       "imagePrompt": "Detailed prompt for image generation including shot type, subject, style, lighting, composition.",
       "videoPrompt": "Detailed prompt for video generation describing motion, action, camera movement, and dynamic elements.",
-      "duration": 10
+      "duration": 8
     },
     ...
   ]

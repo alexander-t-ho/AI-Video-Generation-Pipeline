@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Rocket } from 'lucide-react';
 import { CarVariant, CustomAsset, CarReferenceImage, CarDatabase } from './brand-identity/types';
 import { mockCarDatabase } from './brand-identity/mockData';
 import CarSelector, { SuggestedCarInfo } from './brand-identity/CarSelector';
@@ -296,6 +296,35 @@ export default function BrandIdentityScreen() {
         console.log('[BrandIdentity] Still waiting for storyboard after 5 minutes');
       }, 300000);
     }
+  };
+
+  const handleAutoGenerate = async () => {
+    // Build list of selected images to save
+    const selectedImages = selectedCar && selectedAssetIds.size > 0
+      ? selectedCar.referenceImages
+          .filter(img => selectedAssetIds.has(img.id))
+          .map(img => ({
+            id: img.id,
+            url: img.url,
+            localPath: img.url, // Use URL as path for S3 images
+            originalName: img.filename || ('brand' in selectedCar ? `${selectedCar.brand}-${selectedCar.model}` : selectedCar.name),
+            size: 0,
+            mimeType: 'image/png',
+            createdAt: new Date().toISOString(),
+          }))
+      : [];
+
+    // Save assets to project store
+    if (selectedImages.length > 0) {
+      const { setUploadedImages } = useProjectStore.getState();
+      setUploadedImages(selectedImages);
+      console.log('[BrandIdentity] Saved', selectedImages.length, 'selected images for auto-generation');
+    }
+
+    // Navigate to workspace immediately - don't wait for storyboard
+    // The workspace will show loading indicators while generation happens
+    console.log('[BrandIdentity] Navigating to workspace for auto-generation');
+    router.push('/workspace?autoGenerate=true');
   };
 
   const handleAddRecoloredImages = (baseCarId: string, images: Array<{ url: string, colorHex: string }>) => {
@@ -592,6 +621,24 @@ export default function BrandIdentityScreen() {
           <ArrowLeft className="w-4 h-4" />
           <span>Back</span>
         </button>
+
+        {/* Auto-Generate Button */}
+        <button
+          onClick={handleAutoGenerate}
+          disabled={isWaitingForProject || selectedAssetIds.size === 0}
+          className={`p-3 rounded-lg border backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group relative ${
+            selectedAssetIds.size > 0 && !isWaitingForProject
+              ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent hover:from-purple-600 hover:to-pink-600'
+              : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
+          }`}
+          title="Auto-generate entire video"
+        >
+          <Rocket className={`w-5 h-5 ${selectedAssetIds.size > 0 && !isWaitingForProject ? 'text-white' : 'text-white/60'}`} />
+          <span className="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-black/90 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            Auto-generate entire video
+          </span>
+        </button>
+
         <button
           onClick={handleContinue}
           disabled={isWaitingForProject || selectedAssetIds.size === 0}

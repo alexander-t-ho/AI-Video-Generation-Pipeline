@@ -378,6 +378,7 @@ export class StorageService {
     let url = localPath;
     if (this.config.useS3 && isS3Configured()) {
       try {
+        console.log(`[StorageService] Uploading to S3: ${s3Key}`);
         await uploadToS3WithRetry(
           buffer,
           s3Key,
@@ -391,6 +392,7 @@ export class StorageService {
           }
         );
         url = this.getS3Url(s3Key);
+        console.log(`[StorageService] ✓ S3 upload successful: ${url}`);
 
         // Optionally delete local file after S3 upload
         const keepLocal = options?.keepLocal ?? this.config.keepLocalAfterUpload;
@@ -402,8 +404,16 @@ export class StorageService {
           }
         }
       } catch (error) {
-        console.error('[StorageService] S3 upload failed, file remains local only:', error);
+        console.error('[StorageService] ❌ S3 upload failed, file remains local only:', error);
+        console.error('[StorageService] Error details:', error instanceof Error ? error.message : String(error));
+        console.error('[StorageService] Stack trace:', error instanceof Error ? error.stack : 'N/A');
         // Continue with local-only storage
+      }
+    } else {
+      if (!this.config.useS3) {
+        console.log('[StorageService] S3 disabled in config, using local storage only');
+      } else if (!isS3Configured()) {
+        console.warn('[StorageService] S3 not configured (missing AWS env vars), using local storage only');
       }
     }
 

@@ -11,51 +11,56 @@ This directory contains centralized configuration for all AI models used in the 
 ### Image Generation
 
 ```bash
-# Image model (default: black-forest-labs/flux-1.1-pro)
-# Scene 0 automatically uses runwayml/gen4-image for maximum consistency
-REPLICATE_IMAGE_MODEL=black-forest-labs/flux-1.1-pro
+# Image model (default: google/nano-banana-pro)
+# Nano Banana Pro is optimized for image-to-image generation with precise color control
+REPLICATE_IMAGE_MODEL=google/nano-banana-pro
 
 # Image-to-Image (I2I) models for reference-based generation
-# Options: runwayml/gen4-image (Scene 0), runwayml/gen4-image-turbo, 
-#          black-forest-labs/flux-dev (default for Scenes 1-4)
+# Options: google/nano-banana-pro (default), runwayml/gen4-image,
+#          black-forest-labs/flux-dev, black-forest-labs/flux-1.1-pro
 ```
 
 ### Video Generation
 
 ```bash
-# Video model - supports aliases or full identifiers
-REPLICATE_VIDEO_MODEL=wan2.5
+# Video model - supports aliases or full identifiers (default: google/veo-3.1)
+REPLICATE_VIDEO_MODEL=google/veo-3.1
 
 # Supported aliases:
+# - veo, veo-3.1 → google/veo-3.1 (default, premium quality)
+# - veo-fast, veo-3.1-fast → google/veo-3.1-fast
 # - wan2.5, wan-2.5 → wan-video/wan-2.5-i2v-fast
 # - wan2.2, wan-2.2 → wan-video/wan-2.2-i2v-fast
-# - wan2.1, wan-2.1 → wan-video/wan-2.1-i2v-fast
-# - gen4, gen4-aleph, runway-gen4 → runwayml/gen4-aleph (best for Scene 0→1)
+# - gen4, gen4-aleph, runway-gen4 → runwayml/gen4-aleph
 # - gen4-turbo, runway-gen4-turbo → runwayml/gen4-turbo
 # - luma, ray → luma/ray
+# - sora, sora-2-pro → openai/sora-2-pro
 
 # Video settings
-VIDEO_DURATION=5        # 5 or 10 seconds (WAN models)
+VIDEO_DURATION=8        # 4, 6, or 8 seconds (Veo models); 5 or 10 (WAN models)
 VIDEO_RESOLUTION=720p   # 720p, 1080p, or 4K
 ```
 
 ## Current Configuration
 
 ### Image Generation
-- **Model**: FLUX 1.1 Pro (default), Runway Gen-4 Image (Scene 0)
-- **Provider**: Black Forest Labs / Runway
-- **Type**: Text-to-image, Image-to-image with reference images
+- **Model**: Nano Banana Pro (default)
+- **Provider**: Google
+- **Type**: Image-to-image with precise color control
 - **Aspect Ratio**: 16:9
 - **Output Format**: PNG
 - **Quality**: 90
-- **Scene 0**: Automatically uses Runway Gen-4 Image for maximum consistency with reference image
+- **Best For**: Recoloring, color changes, and image-to-image transformations
+- **Alternative Models**: Runway Gen-4 Image, FLUX 1.1 Pro, FLUX Dev
 
 ### Video Generation
-- **Model**: WAN 2.5 (i2v-fast) - default
-- **Provider**: Replicate
+- **Model**: Google Veo 3.1 (default)
+- **Provider**: Google
 - **Type**: Image-to-video
-- **Duration**: 5 seconds (configurable: 5 or 10)
+- **Duration**: 8 seconds (configurable: 4, 6, or 8 for Veo)
 - **Resolution**: 720p (configurable: 720p, 1080p, 4K)
+- **Features**: Premium quality, supports interpolation mode, reference images
+- **Alternative Models**: Veo 3.1 Fast, WAN 2.5, Runway Gen-4, Luma Ray, Sora 2
 
 ## Usage
 
@@ -75,14 +80,17 @@ console.log('Video resolution:', VIDEO_CONFIG.resolution);
 To change models, update your `.env.local` file:
 
 ```bash
-# Use WAN 2.2 instead of 2.5
-REPLICATE_VIDEO_MODEL=wan2.2
+# Use FLUX 1.1 Pro instead of Nano Banana Pro for image generation
+REPLICATE_IMAGE_MODEL=black-forest-labs/flux-1.1-pro
+
+# Use WAN 2.5 instead of Veo for faster/cheaper video generation
+REPLICATE_VIDEO_MODEL=wan2.5
 
 # Use 1080p resolution
 VIDEO_RESOLUTION=1080p
 
-# Use 10 second duration
-VIDEO_DURATION=10
+# Use different duration (depends on model: Veo=4/6/8, WAN=5/10)
+VIDEO_DURATION=8
 ```
 
 No code changes required - the configuration is automatically loaded from environment variables.
