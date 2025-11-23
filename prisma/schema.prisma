@@ -117,29 +117,30 @@ model Project {
 }
 
 model Scene {
-  id                String           @id @default(uuid())
-  sceneNumber       Float
-  sceneTitle        String
-  sceneSummary      String
-  imagePrompt       String
-  suggestedDuration Float
-  negativePrompt    String?
-  customDuration    Float?
-  customImageInput  String?
-  useSeedFrame      Boolean          @default(false)
-  status            SceneStatus      @default(PENDING)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  projectId         String
-  videoPrompt       String
-  modelParameters   Json?
-  isDuplicate       Boolean          @default(false)
-  parentSceneId     String?
-  generatedImages   GeneratedImage[]
-  generatedVideos   GeneratedVideo[]
-  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  seedFrames        SeedFrame[]
-  timelineClips     TimelineClip[]
+  id                  String           @id @default(uuid())
+  sceneNumber         Float
+  sceneTitle          String
+  sceneSummary        String
+  imagePrompt         String
+  suggestedDuration   Float
+  negativePrompt      String?
+  customDuration      Float?
+  customImageInput    String?
+  useSeedFrame        Boolean          @default(false)
+  status              SceneStatus      @default(PENDING)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  projectId           String
+  videoPrompt         String
+  modelParameters     Json?
+  isDuplicate         Boolean          @default(false)
+  parentSceneId       String?
+  referenceImageUrls  Json?
+  generatedImages     GeneratedImage[]
+  generatedVideos     GeneratedVideo[]
+  project             Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  seedFrames          SeedFrame[]
+  timelineClips       TimelineClip[]
 
   @@unique([projectId, sceneNumber])
   @@index([projectId])
