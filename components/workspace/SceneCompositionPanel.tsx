@@ -103,7 +103,7 @@ function ImageSelectionModal({
 }
 
 export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPanelProps) {
-  const { project, scenes, updateSceneSettings, addGeneratedImage, selectImage, toggleReferenceImage } = useProjectStore();
+  const { project, scenes, updateSceneSettings, addGeneratedImage, toggleReferenceImage } = useProjectStore();
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
   const [isGeneratingComposite, setIsGeneratingComposite] = useState(false);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
@@ -474,8 +474,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
           compositeImageId: response.image.id,
         });
 
-        // Select the composite image
-        selectImage(sceneIndex, response.image.id);
+        // Don't auto-select the composite - let user drag it to video tab in manual mode
 
         console.log('Composite generated successfully:', response.image);
       } else {
@@ -746,54 +745,49 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
             {/* Composite Box */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-white/80">Composite</label>
-                {compositeImage && !isGeneratingComposite && (
-                  <button
-                    onClick={handleGenerateComposite}
-                    className="px-2 py-1 text-[10px] font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded transition-colors"
-                    title="Regenerate composite"
-                  >
-                    Regenerate
-                  </button>
-                )}
-              </div>
+              <label className="text-xs font-medium text-white/80">Composite</label>
               <div
                 className="relative aspect-video rounded-lg border-2 border-white/20 overflow-hidden bg-white/5"
               >
                 {compositeImage ? (
-                  <img
-                    src={getImageUrl(compositeImage)}
-                    alt="Composite"
-                    className="w-full h-full object-cover"
-                  />
+                  <>
+                    <img
+                      src={getImageUrl(compositeImage)}
+                      alt="Composite"
+                      className="w-full h-full object-cover"
+                    />
+                    {!isGeneratingComposite && (
+                      <button
+                        onClick={handleGenerateComposite}
+                        className="absolute top-1 right-1 px-2 py-1 text-[10px] font-medium bg-blue-500/80 hover:bg-blue-500 text-white border border-blue-400/30 rounded transition-colors"
+                        title="Regenerate composite"
+                      >
+                        Regenerate
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                  <div className="absolute inset-0 flex items-center justify-center">
                     {isGeneratingComposite ? (
-                      <>
+                      <div className="flex flex-col items-center justify-center gap-2">
                         <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
                         <p className="text-xs text-white/40">Generating...</p>
-                      </>
+                      </div>
                     ) : (
-                      <>
-                        <button
-                          onClick={handleGenerateComposite}
-                          disabled={(!referenceImage1 && !referenceImage2) || !backgroundImage}
-                          className="px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-                          title="Generate composite from reference images and background"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-                            <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.7" />
-                            <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.5" />
-                            <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.5" />
-                            <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.7" />
-                          </svg>
-                          Generate
-                        </button>
-                        <p className="text-[10px] text-white/30 text-center px-2">
-                          Add reference & background
-                        </p>
-                      </>
+                      <button
+                        onClick={handleGenerateComposite}
+                        disabled={(!referenceImage1 && !referenceImage2) || !backgroundImage}
+                        className="px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                        title="Generate composite from reference images and background"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+                          <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.7" />
+                          <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.5" />
+                          <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.5" />
+                          <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.7" />
+                        </svg>
+                        Generate
+                      </button>
                     )}
                   </div>
                 )}
