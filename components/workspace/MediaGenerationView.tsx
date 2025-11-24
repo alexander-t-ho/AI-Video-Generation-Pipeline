@@ -158,6 +158,35 @@ export default function MediaGenerationView() {
     }
   }, [currentSceneIndex]);
 
+  // Auto-save edited prompts with debounce
+  useEffect(() => {
+    if (!currentScene) return;
+
+    // Skip if prompt hasn't actually changed from what's in the store
+    if (editedPrompt === currentScene.imagePrompt) return;
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Debounce save by 500ms
+    saveTimeoutRef.current = setTimeout(() => {
+      console.log('[MediaGenerationView] Auto-saving image prompt:', editedPrompt.substring(0, 50) + '...');
+      updateScenePrompt(currentSceneIndex, editedPrompt);
+      // Also update video prompt if it was based on image prompt
+      if (editedVideoPrompt === currentScene.imagePrompt || !editedVideoPrompt) {
+        updateSceneSettings(currentSceneIndex, { videoPrompt: editedPrompt });
+      }
+    }, 500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [editedPrompt, currentSceneIndex, currentScene?.imagePrompt, updateScenePrompt, updateSceneSettings, editedVideoPrompt]);
+
   const handleGenerateImage = async () => {
     if (!project?.id || isGeneratingImage) return;
 
