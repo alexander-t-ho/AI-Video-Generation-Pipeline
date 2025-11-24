@@ -1299,6 +1299,26 @@ export default function EditorView() {
     });
   };
 
+  const handleClearAllImages = () => {
+    // Revoke all blob URLs
+    customImagePreviews.forEach(preview => {
+      if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
+        URL.revokeObjectURL(preview.url);
+      }
+    });
+
+    // Clear all state
+    setCustomImageFiles([]);
+    setDroppedImageUrls([]);
+    setCustomImagePreviews([]);
+
+    // Immediately update scene settings to clear customImageInput
+    // This ensures the API Preview Panel reflects the cleared state
+    updateSceneSettings(currentSceneIndex, {
+      customImageInput: undefined,
+    });
+  };
+
   const handleDeleteGeneratedImage = async (image: GeneratedImage) => {
     try {
       // Call API to delete the image files
@@ -1637,34 +1657,18 @@ export default function EditorView() {
     saveTimeoutRef.current = setTimeout(async () => {
       let imageInputUrls: string[] = [];
 
-      // Collect all image URLs from different sources
-      const mediaUrls: string[] = [];
-      const fileUrls: string[] = [];
-
-      // Get URLs from media drawer drops
-      if (droppedImageUrls.length > 0) {
-        mediaUrls.push(...droppedImageUrls);
-      } else {
-        // Get URLs from existing media previews
-        customImagePreviews
-          .filter((p): p is { url: string; source: 'file' | 'media' } => p !== null && p.source === 'media')
-          .forEach(preview => {
-            // Extract original URL from preview (remove /api/serve-image wrapper if present)
-            const url = preview.url.startsWith('/api/serve-image?path=')
-              ? decodeURIComponent(preview.url.split('path=')[1])
-              : preview.url;
-            mediaUrls.push(url);
-          });
-      }
+      // Build image URLs array maintaining slot positions (including nulls for empty slots)
+      // This is critical for video generation to know which slot is the seed image
+      const slotUrls: (string | null)[] = [];
 
       // Upload files if any were selected (only if not skipping)
+      let uploadedFileUrls: string[] = [];
       if (!skipImages && customImageFiles.length > 0 && project) {
         setIsUploadingImage(true);
         try {
           const uploadResult = await uploadImages(customImageFiles, project.id, false);
           if (uploadResult.images && uploadResult.images.length > 0) {
-            // Use the uploaded image URLs
-            fileUrls.push(...uploadResult.images.map(img => img.url));
+            uploadedFileUrls = uploadResult.images.map(img => img.url);
             // Clean up preview URLs
             customImagePreviews.forEach(preview => {
               if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
@@ -1682,16 +1686,42 @@ export default function EditorView() {
         }
       }
 
-      // Combine all URLs: files first (uploaded), then media (for consistent ordering)
-      imageInputUrls = [...fileUrls, ...mediaUrls];
+      // Process each slot (0-4) to maintain position
+      let fileUploadIndex = 0;
+      for (let i = 0; i < Math.max(5, customImagePreviews.length); i++) {
+        const preview = customImagePreviews[i];
 
-      // Convert to single string if only one image (for backward compatibility)
-      // Or keep as array if multiple images
-      const imageInput = imageInputUrls.length === 0 
-        ? undefined 
-        : imageInputUrls.length === 1 
-          ? imageInputUrls[0] 
-          : imageInputUrls;
+        if (!preview) {
+          // Empty slot - preserve null
+          slotUrls[i] = null;
+        } else if (preview.source === 'file') {
+          // File that was uploaded
+          if (fileUploadIndex < uploadedFileUrls.length) {
+            slotUrls[i] = uploadedFileUrls[fileUploadIndex];
+            fileUploadIndex++;
+          } else {
+            slotUrls[i] = null;
+          }
+        } else {
+          // Media from drawer - extract original URL
+          const url = preview.url.startsWith('/api/serve-image?path=')
+            ? decodeURIComponent(preview.url.split('path=')[1])
+            : preview.url;
+          slotUrls[i] = url;
+        }
+      }
+
+      // Remove trailing nulls to keep array compact, but preserve internal nulls
+      while (slotUrls.length > 0 && slotUrls[slotUrls.length - 1] === null) {
+        slotUrls.pop();
+      }
+
+      // Convert to appropriate format for storage
+      const imageInput = slotUrls.length === 0
+        ? undefined
+        : slotUrls.length === 1
+          ? slotUrls[0] // Single value (could be null)
+          : slotUrls; // Array with possible nulls
 
       // Update scene settings
       updateSceneSettings(currentSceneIndex, {
@@ -1716,7 +1746,7 @@ export default function EditorView() {
     if (isPromptExpanded && (customImageFiles.length > 0 || droppedImageUrls.length > 0 || customImagePreviews.length > 0)) {
       autoSave(false); // Include images
     }
-  }, [customImagePreviews.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
+  }, [customImagePreviews, customImageFiles.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -1746,11 +1776,15 @@ export default function EditorView() {
 
     // Reset to scene's current images
     const imageInputs = currentScene.customImageInput
-      ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+      ? (Array.isArray(currentScene.customImageInput)
+          ? currentScene.customImageInput
+          : [currentScene.customImageInput])
       : [];
     setCustomImageFiles([]);
     setDroppedImageUrls([]);
-    setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+    setCustomImagePreviews(imageInputs.map(url =>
+      url ? { url, source: 'media' as const } : null
+    ) as any);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';

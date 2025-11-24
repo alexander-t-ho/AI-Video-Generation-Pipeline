@@ -1035,6 +1035,36 @@ export default function MediaDrawer() {
             <X className="w-3 h-3" />
           </button>
         )}
+
+        {/* Clear Seed Image Button (for purple-highlighted items) */}
+        {isSeed && !showRemoveButton && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              // Clear the seed image by updating media drawer
+              useProjectStore.getState().updateMediaDrawer({ seedImageId: null });
+            }}
+            className="absolute bottom-2 right-2 p-1.5 bg-violet-500/80 hover:bg-violet-600 text-white rounded-full transition-colors border border-violet-400/50 opacity-0 group-hover:opacity-100"
+            title="Remove seed image"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
+
+        {/* Clear Reference Image Button (for yellow-highlighted items) */}
+        {isSelected && !isSeed && !showRemoveButton && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              // Remove from selected items
+              useProjectStore.getState().deselectMediaItem(item.id);
+            }}
+            className="absolute bottom-2 right-2 p-1.5 bg-yellow-500/80 hover:bg-yellow-600 text-white rounded-full transition-colors border border-yellow-400/50 opacity-0 group-hover:opacity-100"
+            title="Remove reference image"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </div>
     );
   };

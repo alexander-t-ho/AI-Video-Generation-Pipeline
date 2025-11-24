@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectStore, TimelineSlice } from '../types';
-import { TimelineClip, GeneratedVideo, AudioTrack, ImageTrack, TextOverlay, NarrationTrack, NarrationVoice } from '@/lib/types';
+import { TimelineClip, GeneratedVideo, AudioTrack, ImageTrack, TextOverlay, NarrationTrack, NarrationVoice, SplashScreen, SplashLogo, SplashText } from '@/lib/types';
 
 export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSlice> = (set, get) => ({
   timelineClips: [],
@@ -601,6 +601,205 @@ export const createTimelineSlice: StateCreator<ProjectStore, [], [], TimelineSli
         textOverlays: [...state.textOverlays, newOverlay],
       };
     });
+  },
+
+  // Splash screen management
+  splashScreens: [],
+  selectedSplashScreenId: null,
+
+  addSplashScreen: (title = 'End Card', duration = 3) => {
+    set((state) => {
+      // Calculate start time - add to end of timeline
+      const totalDuration = state.timelineClips.reduce((max, c) => Math.max(max, c.endTime), 0);
+
+      const newSplash: SplashScreen = {
+        id: uuidv4(),
+        title,
+        startTime: totalDuration,
+        duration,
+        backgroundColor: '#000000',
+        backgroundImageOpacity: 1.0,
+        logos: [],
+        textElements: [],
+        fadeIn: 0.5,
+        fadeOut: 0.5,
+        endTime: totalDuration + duration,
+      };
+
+      return {
+        splashScreens: [...state.splashScreens, newSplash],
+        selectedSplashScreenId: newSplash.id,
+      };
+    });
+  },
+
+  deleteSplashScreen: (splashId) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.filter(s => s.id !== splashId),
+      selectedSplashScreenId: state.selectedSplashScreenId === splashId ? null : state.selectedSplashScreenId,
+    }));
+  },
+
+  updateSplashScreen: (splashId, updates) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          const updatedSplash = { ...splash, ...updates };
+          // Recalculate endTime if startTime or duration changed
+          if (updates.startTime !== undefined || updates.duration !== undefined) {
+            updatedSplash.endTime = updatedSplash.startTime + updatedSplash.duration;
+          }
+          return updatedSplash;
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  setSelectedSplashScreenId: (splashId) => {
+    set({ selectedSplashScreenId: splashId });
+  },
+
+  duplicateSplashScreen: (splashId) => {
+    set((state) => {
+      const splash = state.splashScreens.find(s => s.id === splashId);
+      if (!splash) return state;
+
+      const newSplash: SplashScreen = {
+        ...splash,
+        id: uuidv4(),
+        title: `${splash.title} (Copy)`,
+        logos: splash.logos.map(logo => ({ ...logo, id: uuidv4() })),
+        textElements: splash.textElements.map(text => ({ ...text, id: uuidv4() })),
+      };
+
+      return {
+        splashScreens: [...state.splashScreens, newSplash],
+      };
+    });
+  },
+
+  // Splash screen logo management
+  addSplashLogo: (splashId, imageUrl) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          const newLogo: SplashLogo = {
+            id: uuidv4(),
+            imageUrl,
+            imageLocalPath: imageUrl,
+            x: 0.5,
+            y: 0.5,
+            width: 200,
+            height: 200,
+            opacity: 1.0,
+            rotation: 0,
+            order: splash.logos.length,
+          };
+          return {
+            ...splash,
+            logos: [...splash.logos, newLogo],
+          };
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  deleteSplashLogo: (splashId, logoId) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          return {
+            ...splash,
+            logos: splash.logos.filter(logo => logo.id !== logoId),
+          };
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  updateSplashLogo: (splashId, logoId, updates) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          return {
+            ...splash,
+            logos: splash.logos.map(logo =>
+              logo.id === logoId ? { ...logo, ...updates } : logo
+            ),
+          };
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  // Splash screen text management
+  addSplashText: (splashId, text) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          const newText: SplashText = {
+            id: uuidv4(),
+            text,
+            x: 0.5,
+            y: 0.5,
+            fontSize: 48,
+            fontFamily: 'Arial',
+            fontColor: '#FFFFFF',
+            fontWeight: 'normal',
+            textAlign: 'center',
+            opacity: 1.0,
+            rotation: 0,
+            backgroundOpacity: 0.0,
+            borderWidth: 0,
+            shadowEnabled: false,
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+            shadowBlur: 4,
+            shadowColor: '#000000',
+            order: splash.textElements.length,
+          };
+          return {
+            ...splash,
+            textElements: [...splash.textElements, newText],
+          };
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  deleteSplashText: (splashId, textId) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          return {
+            ...splash,
+            textElements: splash.textElements.filter(text => text.id !== textId),
+          };
+        }
+        return splash;
+      }),
+    }));
+  },
+
+  updateSplashText: (splashId, textId, updates) => {
+    set((state) => ({
+      splashScreens: state.splashScreens.map(splash => {
+        if (splash.id === splashId) {
+          return {
+            ...splash,
+            textElements: splash.textElements.map(text =>
+              text.id === textId ? { ...text, ...updates } : text
+            ),
+          };
+        }
+        return splash;
+      }),
+    }));
   },
 });
 

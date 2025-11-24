@@ -21,7 +21,7 @@ export interface Scene {
   videoPrompt: string;       // Detailed prompt for video generation (motion/action description)
   negativePrompt?: string;   // Optional: Negative prompt (what to avoid)
   customDuration?: number;   // Optional: Custom duration in seconds (overrides suggestedDuration)
-  customImageInput?: string | string[]; // Optional: Custom image input URL(s) for image-to-image generation (up to 3 images)
+  customImageInput?: string | (string | null)[] | null; // Optional: Custom image input URL(s) for video generation. Supports null to preserve slot positions (e.g., [null, "ref1.jpg", "ref2.jpg"] means no seed image but 2 references)
   useSeedFrame?: boolean;    // Optional: Whether to use seed frame from previous scene (default: true for scenes > 0)
   modelParameters?: Record<string, any>; // Optional: Model-specific parameters for video generation (e.g., aspect_ratio, resolution, seed, etc.)
   referenceImageId?: string; // Optional: ID of selected reference/seed image
@@ -342,6 +342,81 @@ export interface ImageTrack {
 
   // Computed properties
   endTime: number;           // End time in timeline (startTime + duration)
+}
+
+// ============================================================================
+// Splash Screen Types
+// ============================================================================
+
+/**
+ * Logo element for splash screens
+ */
+export interface SplashLogo {
+  id: string;                       // UUID v4
+  imageUrl: string;                 // URL to logo image
+  imageLocalPath?: string;          // Local path to logo image
+  x: number;                        // X position (0-1, percentage)
+  y: number;                        // Y position (0-1, percentage)
+  width: number;                    // Width in pixels
+  height: number;                   // Height in pixels
+  opacity: number;                  // Opacity 0-1
+  rotation: number;                 // Rotation in degrees
+  order: number;                    // Z-index for layering
+}
+
+/**
+ * Text element for splash screens
+ */
+export interface SplashText {
+  id: string;                       // UUID v4
+  text: string;                     // Text content
+  x: number;                        // X position (0-1, percentage)
+  y: number;                        // Y position (0-1, percentage)
+  fontSize: number;                 // Font size in pixels
+  fontFamily: string;               // Font family
+  fontColor: string;                // Hex color code
+  fontWeight: 'normal' | 'bold';    // Font weight
+  textAlign: 'left' | 'center' | 'right'; // Text alignment
+  opacity: number;                  // Text opacity 0-1
+  rotation: number;                 // Rotation in degrees
+  backgroundColor?: string;         // Optional background color
+  backgroundOpacity: number;        // Background opacity 0-1
+  borderWidth: number;              // Border width
+  borderColor?: string;             // Border color
+  shadowEnabled: boolean;           // Enable shadow
+  shadowOffsetX: number;            // Shadow X offset
+  shadowOffsetY: number;            // Shadow Y offset
+  shadowBlur: number;               // Shadow blur radius
+  shadowColor: string;              // Shadow color
+  order: number;                    // Z-index for layering
+}
+
+/**
+ * Represents a splash screen (end card) on the timeline
+ * Combines background image/color with logos and text
+ */
+export interface SplashScreen {
+  id: string;                       // UUID v4
+  title: string;                    // Splash screen name
+  startTime: number;                // Start time in timeline (seconds)
+  duration: number;                 // Duration to display (seconds)
+
+  // Background
+  backgroundColor: string;          // Background color (hex, default: "#000000")
+  backgroundImageUrl?: string;      // Optional background image URL
+  backgroundImageLocalPath?: string; // Optional local path to background image
+  backgroundImageOpacity: number;   // Background image opacity 0-1
+
+  // Content elements
+  logos: SplashLogo[];              // Logo elements
+  textElements: SplashText[];       // Text elements
+
+  // Animation
+  fadeIn: number;                   // Fade in duration (seconds)
+  fadeOut: number;                  // Fade out duration (seconds)
+
+  // Computed properties
+  endTime: number;                  // End time in timeline (startTime + duration)
 }
 
 // ============================================================================

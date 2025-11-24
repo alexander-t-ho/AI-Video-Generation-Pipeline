@@ -7,9 +7,11 @@ import TimelineToolbar from './TimelineToolbar';
 import AudioTrackItem from './AudioTrackItem';
 import ImageTrackItem from './ImageTrackItem';
 import NarrationTrackItem from './NarrationTrackItem';
-import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus, Wand2, Mic } from 'lucide-react';
+import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus, Wand2, Mic, Type, Sparkles } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { stitchVideos, applyClipEdits, generatePreview, generateMusicTrack, pollMusicStatus, generateNarration, NarrationVoice } from '@/lib/api-client';
+import { TextOverlayEditor } from './TextOverlayEditor';
+import { SplashScreenEditor } from './SplashScreenEditor';
 
 export default function TimelineView() {
   const {
@@ -83,6 +85,10 @@ export default function TimelineView() {
   const [narrationVoice, setNarrationVoice] = useState<NarrationVoice>('alloy');
   const [narrationSpeed, setNarrationSpeed] = useState(1.0);
   const [isGeneratingNarration, setIsGeneratingNarration] = useState(false);
+  // Text overlay state
+  const [showTextOverlayPanel, setShowTextOverlayPanel] = useState(false);
+  // Splash screen state
+  const [showSplashScreenPanel, setShowSplashScreenPanel] = useState(false);
   const narrationRefs = useRef<Map<string, HTMLAudioElement>>(new Map()); // Audio elements for narration tracks
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
@@ -114,7 +120,7 @@ export default function TimelineView() {
         const audio = new Audio(track.audioUrl);
         audio.preload = 'auto';
         audio.volume = track.volume / 100;
-        
+
         // Handle audio errors
         audio.addEventListener('error', (e) => {
           console.error(`[Audio] Error loading track ${track.title}:`, e);
@@ -124,7 +130,12 @@ export default function TimelineView() {
             type: 'error',
           });
         });
-        
+
+        // Log when audio is ready to play
+        audio.addEventListener('canplaythrough', () => {
+          console.log(`[Audio] Track ready: ${track.title}`);
+        });
+
         audioRefs.current.set(track.id, audio);
       } else {
         // Update volume if it changed
@@ -172,6 +183,11 @@ export default function TimelineView() {
             content: `⚠️ Failed to load narration: ${track.title}`,
             type: 'error',
           });
+        });
+
+        // Log when narration is ready to play
+        audio.addEventListener('canplaythrough', () => {
+          console.log(`[Narration] Track ready: ${track.title}`);
         });
 
         narrationRefs.current.set(track.id, audio);
@@ -354,33 +370,86 @@ export default function TimelineView() {
         lastVideoTimeRef.current = videoTime;
         lastUpdateTimeRef.current = performance.now();
         setCurrentTimelineTime(videoTime);
-        
+
         // Sync audio tracks with video time
         audioTracks.forEach(track => {
           const audio = audioRefs.current.get(track.id);
-          if (!audio) return;
+          if (!audio) {
+            console.warn(`[Audio] No audio element for track ${track.id}`);
+            return;
+          }
 
           const isInRange = videoTime >= track.startTime && videoTime < track.endTime;
-          
+
           if (isInRange) {
             // Calculate where we should be in the audio file
             const audioOffset = videoTime - track.startTime;
-            
+
             // Only seek if we're significantly off (avoid constant seeking)
-            if (Math.abs(audio.currentTime - audioOffset) > 0.1) {
+            if (Math.abs(audio.currentTime - audioOffset) > 0.15) {
+              console.log(`[Audio] Seeking ${track.title} to ${audioOffset.toFixed(2)}s`);
               audio.currentTime = audioOffset;
             }
-            
+
             // Play if paused
             if (audio.paused) {
               audio.volume = track.volume / 100;
+              console.log(`[Audio] Playing ${track.title} at volume ${audio.volume}`);
               audio.play().catch(err => {
                 console.error(`[Audio] Play error for ${track.title}:`, err);
+                addChatMessage({
+                  role: 'agent',
+                  content: `⚠️ Cannot play audio: ${track.title}. ${err.message}`,
+                  type: 'error',
+                });
               });
             }
           } else {
             // Pause if outside range
             if (!audio.paused) {
+              console.log(`[Audio] Pausing ${track.title} (outside range)`);
+              audio.pause();
+            }
+          }
+        });
+
+        // Sync narration tracks with video time
+        narrationTracks.forEach(track => {
+          const audio = narrationRefs.current.get(track.id);
+          if (!audio) {
+            console.warn(`[Narration] No audio element for track ${track.id}`);
+            return;
+          }
+
+          const isInRange = videoTime >= track.startTime && videoTime < track.endTime;
+
+          if (isInRange) {
+            // Calculate where we should be in the audio file
+            const audioOffset = videoTime - track.startTime;
+
+            // Only seek if we're significantly off (avoid constant seeking)
+            if (Math.abs(audio.currentTime - audioOffset) > 0.15) {
+              console.log(`[Narration] Seeking ${track.title} to ${audioOffset.toFixed(2)}s`);
+              audio.currentTime = audioOffset;
+            }
+
+            // Play if paused
+            if (audio.paused) {
+              audio.volume = track.volume / 100;
+              console.log(`[Narration] Playing ${track.title} at volume ${audio.volume}`);
+              audio.play().catch(err => {
+                console.error(`[Narration] Play error for ${track.title}:`, err);
+                addChatMessage({
+                  role: 'agent',
+                  content: `⚠️ Cannot play narration: ${track.title}. ${err.message}`,
+                  type: 'error',
+                });
+              });
+            }
+          } else {
+            // Pause if outside range
+            if (!audio.paused) {
+              console.log(`[Narration] Pausing ${track.title} (outside range)`);
               audio.pause();
             }
           }
@@ -461,12 +530,17 @@ export default function TimelineView() {
       // Use actual video duration for accurate end position
       const endTime = video?.duration || totalDuration;
       setCurrentTimelineTime(endTime);
-      
+
       // Pause all audio tracks
       audioRefs.current.forEach(audio => {
         audio.pause();
       });
-      
+
+      // Pause all narration tracks
+      narrationRefs.current.forEach(audio => {
+        audio.pause();
+      });
+
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -480,10 +554,23 @@ export default function TimelineView() {
         setCurrentTimelineTime(videoTime);
         lastVideoTimeRef.current = videoTime;
         lastUpdateTimeRef.current = performance.now();
-        
+
         // Seek all audio tracks to match video position
         audioTracks.forEach(track => {
           const audio = audioRefs.current.get(track.id);
+          if (audio) {
+            if (videoTime >= track.startTime && videoTime < track.endTime) {
+              const audioOffset = videoTime - track.startTime;
+              audio.currentTime = audioOffset;
+            } else {
+              audio.pause();
+            }
+          }
+        });
+
+        // Seek all narration tracks to match video position
+        narrationTracks.forEach(track => {
+          const audio = narrationRefs.current.get(track.id);
           if (audio) {
             if (videoTime >= track.startTime && videoTime < track.endTime) {
               const audioOffset = videoTime - track.startTime;
@@ -521,7 +608,7 @@ export default function TimelineView() {
         animationFrameRef.current = null;
       }
     };
-  }, [previewVideoUrl, isPlaying, totalDuration, audioTracks]);
+  }, [previewVideoUrl, isPlaying, totalDuration, audioTracks, narrationTracks, addChatMessage]);
 
   // Calculate playhead position on timeline (smooth, no jumps)
   // Map video time to timeline time for accurate positioning
@@ -559,9 +646,14 @@ export default function TimelineView() {
       // Pause video
       videoRef.current.pause();
       setIsPlaying(false);
-      
+
       // Pause all audio tracks
       audioRefs.current.forEach(audio => {
+        audio.pause();
+      });
+
+      // Pause all narration tracks
+      narrationRefs.current.forEach(audio => {
         audio.pause();
       });
     } else {
@@ -577,18 +669,64 @@ export default function TimelineView() {
       // Play video
       videoRef.current.play();
       setIsPlaying(true);
-      
+
       // Play audio tracks that should be active at current time
       const videoTime = videoRef.current.currentTime || 0;
+      console.log(`[Audio] Starting playback at ${videoTime.toFixed(2)}s`);
+
       audioTracks.forEach(track => {
         const audio = audioRefs.current.get(track.id);
-        if (audio && videoTime >= track.startTime && videoTime < track.endTime) {
+        if (!audio) {
+          console.warn(`[Audio] No audio element for track ${track.id}`);
+          return;
+        }
+
+        const isInRange = videoTime >= track.startTime && videoTime < track.endTime;
+        console.log(`[Audio] Track ${track.title}: range ${track.startTime}-${track.endTime}s, current ${videoTime.toFixed(2)}s, inRange: ${isInRange}`);
+
+        if (isInRange) {
           // Calculate offset into the audio file
           const audioOffset = videoTime - track.startTime;
           audio.currentTime = audioOffset;
           audio.volume = track.volume / 100;
+          console.log(`[Audio] Starting ${track.title} at ${audioOffset.toFixed(2)}s, volume ${audio.volume}`);
+
           audio.play().catch(err => {
             console.error(`[Audio] Failed to play ${track.title}:`, err);
+            addChatMessage({
+              role: 'agent',
+              content: `⚠️ Cannot play audio: ${track.title}. Browser may be blocking autoplay.`,
+              type: 'error',
+            });
+          });
+        }
+      });
+
+      // Play narration tracks that should be active at current time
+      narrationTracks.forEach(track => {
+        const audio = narrationRefs.current.get(track.id);
+        if (!audio) {
+          console.warn(`[Narration] No audio element for track ${track.id}`);
+          return;
+        }
+
+        const isInRange = videoTime >= track.startTime && videoTime < track.endTime;
+        console.log(`[Narration] Track ${track.title}: range ${track.startTime}-${track.endTime}s, current ${videoTime.toFixed(2)}s, inRange: ${isInRange}`);
+
+        if (isInRange) {
+          // Calculate offset into the audio file
+          const audioOffset = videoTime - track.startTime;
+          audio.currentTime = audioOffset;
+          audio.volume = track.volume / 100;
+          console.log(`[Narration] Starting ${track.title} at ${audioOffset.toFixed(2)}s, volume ${audio.volume}`);
+
+          audio.play().catch(err => {
+            console.error(`[Narration] Failed to play ${track.title}:`, err);
+            addChatMessage({
+              role: 'agent',
+              content: `⚠️ Cannot play narration: ${track.title}. Browser may be blocking autoplay.`,
+              type: 'error',
+            });
           });
         }
       });
@@ -1357,6 +1495,28 @@ export default function TimelineView() {
                 <Plus className="w-3.5 h-3.5" />
                 Add Image Clip
               </button>
+              <button
+                onClick={() => setShowTextOverlayPanel(!showTextOverlayPanel)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border transition-colors ${
+                  showTextOverlayPanel
+                    ? 'bg-blue-600/30 border-blue-500/50 text-blue-300'
+                    : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border-blue-500/30'
+                }`}
+              >
+                <Type className="w-3.5 h-3.5" />
+                Text Overlays
+              </button>
+              <button
+                onClick={() => setShowSplashScreenPanel(!showSplashScreenPanel)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border transition-colors ${
+                  showSplashScreenPanel
+                    ? 'bg-amber-600/30 border-amber-500/50 text-amber-300'
+                    : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border-amber-500/30'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Splash Screen
+              </button>
             </div>
             <div className="flex items-center gap-4">
               {/* Play/Pause Button */}
@@ -1652,6 +1812,20 @@ export default function TimelineView() {
                 </div>
               </div>
             </div>
+
+            {/* Text Overlay Section */}
+            {showTextOverlayPanel && (
+              <div className="mb-3">
+                <TextOverlayEditor />
+              </div>
+            )}
+
+            {/* Splash Screen Section */}
+            {showSplashScreenPanel && (
+              <div className="mb-3">
+                <SplashScreenEditor />
+              </div>
+            )}
 
           </div>
 

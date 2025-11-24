@@ -578,6 +578,44 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
             </div>
           )}
 
+          {/* First Frame / Seed Frame (only for scenes > 0) */}
+          {sceneIndex > 0 && scenes[sceneIndex - 1]?.seedFrames && scenes[sceneIndex - 1].seedFrames!.length > 0 && (
+            <div className="space-y-1 mb-3">
+              <label className="text-xs font-medium text-white/80">First Frame (from previous scene)</label>
+              <div className="relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden border-purple-400/50 hover:border-purple-400/80">
+                {scene?.useSeedFrame !== false ? (
+                  <>
+                    <img
+                      src={getImageUrl(scenes[sceneIndex - 1].seedFrames![scenes[sceneIndex - 1].selectedSeedFrameIndex ?? 0])}
+                      alt="First Frame"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateSceneSettings(sceneIndex, { useSeedFrame: false });
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <div className="absolute bottom-1 left-1 px-2 py-1 bg-purple-500/80 text-white text-[10px] rounded font-medium">
+                      Seed Frame
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    onClick={() => updateSceneSettings(sceneIndex, { useSeedFrame: true })}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-white/5"
+                  >
+                    <Upload className="w-5 h-5 text-white/40" />
+                    <p className="text-xs text-white/40">Click to enable</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Reference Images (3), Background & Composite (5 total) */}
           <div className="grid grid-cols-5 gap-3">
             {/* Reference Image 1 */}

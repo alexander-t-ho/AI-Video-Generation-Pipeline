@@ -168,30 +168,57 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
 
     // Video generation payload
     if (displayType === 'video') {
-      const selectedImage = sceneState?.selectedImageId
-        ? sceneState.generatedImages?.find((img: any) => img.id === sceneState.selectedImageId)
-        : sceneState?.generatedImages?.[0];
+      // Check for custom image inputs from video generation UI (slots 0-4)
+      const customInputs = scene.customImageInput
+        ? (Array.isArray(scene.customImageInput)
+            ? scene.customImageInput
+            : [scene.customImageInput])
+        : [];
 
+      // Slot 0 is seed image, slots 1-3 are reference images, slot 4 is last frame
+      const customSeedImage = customInputs[0] || null;
+      const customReferenceImages = [
+        customInputs[1],
+        customInputs[2],
+        customInputs[3],
+      ].filter((url): url is string => !!url);
+
+      // Get seed frame from scene state (used for labeling)
       const seedFrame = sceneState?.selectedSeedFrameIndex !== undefined
         ? sceneState.seedFrames?.[sceneState.selectedSeedFrameIndex]
         : null;
 
-      // Use seed frame as base image if available, otherwise use selected image
-      const baseImage = seedFrame || selectedImage;
-
-      // Format the base image URL properly
-      const baseImageUrl = baseImage ? (() => {
-        let imgUrl = baseImage.localPath || baseImage.url;
-        if (!imgUrl) return 'NOT SELECTED';
+      // If custom seed image is provided, use it; otherwise fall back to selected/seed frame
+      let baseImageUrl: string = 'NOT SELECTED';
+      if (customSeedImage) {
+        // Custom seed image from slot 0
+        const imgUrl = customSeedImage;
         if (imgUrl.startsWith('/api') || imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
-          return imgUrl;
+          baseImageUrl = imgUrl;
+        } else {
+          baseImageUrl = `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
         }
-        return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
-      })() : 'NOT SELECTED';
+      } else {
+        // Fall back to selected image or seed frame
+        const selectedImage = sceneState?.selectedImageId
+          ? sceneState.generatedImages?.find((img: any) => img.id === sceneState.selectedImageId)
+          : sceneState?.generatedImages?.[0];
 
-      // Get per-scene reference images (AI-selected based on scene type)
-      // ONLY use scene-specific references, no global fallback
-      const allReferenceImagesVideo = scene.referenceImageUrls || [];
+        const baseImage = seedFrame || selectedImage;
+        baseImageUrl = baseImage ? (() => {
+          let imgUrl = baseImage.localPath || baseImage.url;
+          if (!imgUrl) return 'NOT SELECTED';
+          if (imgUrl.startsWith('/api') || imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+            return imgUrl;
+          }
+          return `/api/serve-image?path=${encodeURIComponent(imgUrl)}`;
+        })() : 'NOT SELECTED';
+      }
+
+      // Get reference images: prioritize custom inputs, then fall back to AI-selected
+      const allReferenceImagesVideo = customReferenceImages.length > 0
+        ? customReferenceImages
+        : (scene.referenceImageUrls || []);
       const referenceImages = allReferenceImagesVideo.slice(0, 3);
       const wasTruncatedVideo = allReferenceImagesVideo.length > 3;
 
