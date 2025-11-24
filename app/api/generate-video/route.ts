@@ -60,9 +60,18 @@ export async function POST(request: NextRequest) {
     const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration, referenceImageUrls, modelParameters } = body;
 
     // Validate required fields
-    if (!imageUrl || typeof imageUrl !== 'string') {
+    // imageUrl is optional if reference images are provided (reference-only mode)
+    if (imageUrl !== undefined && (typeof imageUrl !== 'string' || imageUrl === '')) {
       return NextResponse.json(
-        { success: false, error: 'imageUrl is required and must be a string' },
+        { success: false, error: 'imageUrl must be a non-empty string if provided' },
+        { status: 400 }
+      );
+    }
+
+    // If no imageUrl provided, require reference images
+    if (!imageUrl && (!referenceImageUrls || !Array.isArray(referenceImageUrls) || referenceImageUrls.length === 0)) {
+      return NextResponse.json(
+        { success: false, error: 'Either imageUrl or referenceImageUrls must be provided' },
         { status: 400 }
       );
     }
@@ -88,12 +97,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate that imageUrl is an HTTP/HTTPS URL (S3 or other public URL)
-    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+    // Validate that imageUrl is an HTTP/HTTPS URL (S3 or other public URL) if provided
+    if (imageUrl && !imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'imageUrl must be a publicly accessible HTTP/HTTPS URL (e.g., S3 URL)' 
+        {
+          success: false,
+          error: 'imageUrl must be a publicly accessible HTTP/HTTPS URL (e.g., S3 URL)'
         },
         { status: 400 }
       );

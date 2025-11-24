@@ -531,7 +531,7 @@ export async function pollImageStatus(
  * Generate video for a scene or subscene
  */
 export async function generateVideo(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   projectId: string,
   sceneIndex: number,

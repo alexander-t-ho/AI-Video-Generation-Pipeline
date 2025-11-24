@@ -240,49 +240,24 @@ export default function EditorView() {
       setEditedVideoPrompt(currentScene.videoPrompt || currentScene.imagePrompt); // Fallback to imagePrompt for backward compatibility
       setEditedNegativePrompt(currentScene.negativePrompt || '--no watermark --no warped face --no floating limbs --no text artifacts --no distorted hands --no blurry edges');
       setEditedDuration(currentScene.customDuration || '');
-      // Initialize custom images - support both single string (legacy) and array
+      // Initialize custom images - support both single string (legacy), array, and array with nulls
       const imageInputs = currentScene.customImageInput
-        ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+        ? (Array.isArray(currentScene.customImageInput)
+            ? currentScene.customImageInput
+            : [currentScene.customImageInput])
         : [];
       setCustomImageFiles([]);
       setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      // Map to previews, preserving null slots for empty positions
+      setCustomImagePreviews(imageInputs.map(url =>
+        url ? { url, source: 'media' as const } : null
+      ) as any);
     }
   }, [currentSceneIndex]);
 
-  // Auto-populate seed image (slot 0) with selected image from image tab
-  useEffect(() => {
-    // If there's a selected image from the image tab, auto-populate it as seed image
-    if (selectedImage && selectedImage.localPath) {
-      const seedImageUrl = selectedImage.localPath.startsWith('http://') || selectedImage.localPath.startsWith('https://') || selectedImage.localPath.startsWith('/api')
-        ? selectedImage.localPath
-        : `/api/serve-image?path=${encodeURIComponent(selectedImage.localPath)}`;
-
-      // Only auto-populate if slot 0 is empty or was auto-populated before
-      setCustomImagePreviews(prev => {
-        const newPreviews = [...prev];
-        // Auto-populate if empty or if it's a URL (likely auto-populated before)
-        if (!newPreviews[0] || newPreviews[0].source === 'url') {
-          newPreviews[0] = {
-            url: seedImageUrl,
-            source: 'url' as const
-          };
-          console.log('[EditorView] Auto-populated seed image from selected image in image tab');
-        }
-        return newPreviews;
-      });
-    } else {
-      // Clear auto-populated seed image if no selected image
-      setCustomImagePreviews(prev => {
-        const newPreviews = [...prev];
-        if (newPreviews[0]?.source === 'url') {
-          newPreviews[0] = null;
-          console.log('[EditorView] Cleared auto-populated seed image');
-        }
-        return newPreviews;
-      });
-    }
-  }, [selectedImage]);
+  // REMOVED: Auto-populate logic for seed images
+  // User requested to only auto-populate when using rocket button (auto-generation mode)
+  // Manual drag-and-drop should be the primary way to set images in video tab
 
   // One-time migration: Clear old scene references to trigger AI re-analysis
   useEffect(() => {
@@ -762,25 +737,38 @@ export default function EditorView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_video');
 
-      // Seed frame logic removed - users now manually save last frame when needed
-      // Always use the selected image for video generation
-      if (!selectedImage) {
-        throw new Error('Please generate or select an image first');
-      }
-      const imageToUse = selectedImage.localPath || selectedImage.url;
-      console.log(`[EditorView] Scene ${currentSceneIndex}: Using selected image for video generation`);
+      // Check if seed image (slot 0) is provided
+      // Slot 0 directly maps to the base/seed image sent to API
+      // If empty, no seed image is sent (reference-only mode)
+      const seedImagePreview = customImagePreviews[0];
+      let s3Url: string | undefined;
 
-      // Upload image to S3 if it's a local path, otherwise use the URL directly
-      let s3Url: string;
-      if (imageToUse.startsWith('http://') || imageToUse.startsWith('https://')) {
-        // Already a public URL, use it directly
-        s3Url = imageToUse;
-        console.log('[EditorView] Image is already a public URL, using directly:', s3Url.substring(0, 80) + '...');
+      if (seedImagePreview) {
+        // Seed image provided in slot 0 - use it as the starting frame
+        if (seedImagePreview.source === 'file') {
+          // Find the file for slot 0
+          const seedFile = customImageFiles[0];
+          if (seedFile) {
+            // Upload the file
+            const uploadResult = await uploadImages([seedFile], project.id, false);
+            if (uploadResult.images && uploadResult.images.length > 0) {
+              s3Url = uploadResult.images[0].url;
+              console.log('[EditorView] Uploaded seed image from slot 0 to S3:', s3Url.substring(0, 80) + '...');
+            }
+          }
+        } else if (seedImagePreview.url.startsWith('http://') || seedImagePreview.url.startsWith('https://')) {
+          s3Url = seedImagePreview.url;
+          console.log('[EditorView] Seed image from slot 0 is already a public URL:', s3Url.substring(0, 80) + '...');
+        } else if (seedImagePreview.url.startsWith('/api/serve-image')) {
+          const localPath = decodeURIComponent(seedImagePreview.url.split('path=')[1]);
+          const uploadResult = await uploadImageToS3(localPath, project.id);
+          s3Url = uploadResult.s3Url;
+          console.log('[EditorView] Uploaded seed image from slot 0 (local path) to S3:', s3Url.substring(0, 80) + '...');
+        }
       } else {
-        // Local path, upload to S3
-        const uploadResult = await uploadImageToS3(imageToUse, project.id);
-        s3Url = uploadResult.s3Url;
-        console.log('[EditorView] Uploaded image to S3:', s3Url.substring(0, 80) + '...');
+        // No seed image in slot 0 - reference-only mode
+        console.log('[EditorView] Slot 0 is empty - using reference-only video generation (no base image)');
+        s3Url = undefined;
       }
 
       // Collect reference images from slots 1-3
@@ -1149,6 +1137,26 @@ export default function EditorView() {
     });
   };
 
+  const handleClearAllImages = () => {
+    // Revoke all blob URLs
+    customImagePreviews.forEach(preview => {
+      if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
+        URL.revokeObjectURL(preview.url);
+      }
+    });
+
+    // Clear all state
+    setCustomImageFiles([]);
+    setDroppedImageUrls([]);
+    setCustomImagePreviews([]);
+
+    // Immediately update scene settings to clear customImageInput
+    // This ensures the API Preview Panel reflects the cleared state
+    updateSceneSettings(currentSceneIndex, {
+      customImageInput: undefined,
+    });
+  };
+
   const handleDeleteGeneratedImage = async (image: GeneratedImage) => {
     try {
       // Call API to delete the image files
@@ -1392,34 +1400,18 @@ export default function EditorView() {
     saveTimeoutRef.current = setTimeout(async () => {
       let imageInputUrls: string[] = [];
 
-      // Collect all image URLs from different sources
-      const mediaUrls: string[] = [];
-      const fileUrls: string[] = [];
-
-      // Get URLs from media drawer drops
-      if (droppedImageUrls.length > 0) {
-        mediaUrls.push(...droppedImageUrls);
-      } else {
-        // Get URLs from existing media previews
-        customImagePreviews
-          .filter((p): p is { url: string; source: 'file' | 'media' } => p !== null && p.source === 'media')
-          .forEach(preview => {
-            // Extract original URL from preview (remove /api/serve-image wrapper if present)
-            const url = preview.url.startsWith('/api/serve-image?path=')
-              ? decodeURIComponent(preview.url.split('path=')[1])
-              : preview.url;
-            mediaUrls.push(url);
-          });
-      }
+      // Build image URLs array maintaining slot positions (including nulls for empty slots)
+      // This is critical for video generation to know which slot is the seed image
+      const slotUrls: (string | null)[] = [];
 
       // Upload files if any were selected (only if not skipping)
+      let uploadedFileUrls: string[] = [];
       if (!skipImages && customImageFiles.length > 0 && project) {
         setIsUploadingImage(true);
         try {
           const uploadResult = await uploadImages(customImageFiles, project.id, false);
           if (uploadResult.images && uploadResult.images.length > 0) {
-            // Use the uploaded image URLs
-            fileUrls.push(...uploadResult.images.map(img => img.url));
+            uploadedFileUrls = uploadResult.images.map(img => img.url);
             // Clean up preview URLs
             customImagePreviews.forEach(preview => {
               if (preview && preview.source === 'file' && preview.url.startsWith('blob:')) {
@@ -1437,16 +1429,42 @@ export default function EditorView() {
         }
       }
 
-      // Combine all URLs: files first (uploaded), then media (for consistent ordering)
-      imageInputUrls = [...fileUrls, ...mediaUrls];
+      // Process each slot (0-4) to maintain position
+      let fileUploadIndex = 0;
+      for (let i = 0; i < Math.max(5, customImagePreviews.length); i++) {
+        const preview = customImagePreviews[i];
 
-      // Convert to single string if only one image (for backward compatibility)
-      // Or keep as array if multiple images
-      const imageInput = imageInputUrls.length === 0 
-        ? undefined 
-        : imageInputUrls.length === 1 
-          ? imageInputUrls[0] 
-          : imageInputUrls;
+        if (!preview) {
+          // Empty slot - preserve null
+          slotUrls[i] = null;
+        } else if (preview.source === 'file') {
+          // File that was uploaded
+          if (fileUploadIndex < uploadedFileUrls.length) {
+            slotUrls[i] = uploadedFileUrls[fileUploadIndex];
+            fileUploadIndex++;
+          } else {
+            slotUrls[i] = null;
+          }
+        } else {
+          // Media from drawer - extract original URL
+          const url = preview.url.startsWith('/api/serve-image?path=')
+            ? decodeURIComponent(preview.url.split('path=')[1])
+            : preview.url;
+          slotUrls[i] = url;
+        }
+      }
+
+      // Remove trailing nulls to keep array compact, but preserve internal nulls
+      while (slotUrls.length > 0 && slotUrls[slotUrls.length - 1] === null) {
+        slotUrls.pop();
+      }
+
+      // Convert to appropriate format for storage
+      const imageInput = slotUrls.length === 0
+        ? undefined
+        : slotUrls.length === 1
+          ? slotUrls[0] // Single value (could be null)
+          : slotUrls; // Array with possible nulls
 
       // Update scene settings
       updateSceneSettings(currentSceneIndex, {
@@ -1471,7 +1489,7 @@ export default function EditorView() {
     if (isPromptExpanded && (customImageFiles.length > 0 || droppedImageUrls.length > 0 || customImagePreviews.length > 0)) {
       autoSave(false); // Include images
     }
-  }, [customImagePreviews.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
+  }, [customImagePreviews, customImageFiles.length, droppedImageUrls.length, isPromptExpanded, autoSave]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -1501,11 +1519,15 @@ export default function EditorView() {
 
     // Reset to scene's current images
     const imageInputs = currentScene.customImageInput
-      ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+      ? (Array.isArray(currentScene.customImageInput)
+          ? currentScene.customImageInput
+          : [currentScene.customImageInput])
       : [];
     setCustomImageFiles([]);
     setDroppedImageUrls([]);
-    setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+    setCustomImagePreviews(imageInputs.map(url =>
+      url ? { url, source: 'media' as const } : null
+    ) as any);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -1748,6 +1770,20 @@ export default function EditorView() {
 
             {/* Image Input - Seed, Reference, and Last Frame in same row */}
             <div className="space-y-2">
+              {/* Header with Clear All button */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-white/80">API Inputs</h3>
+                {customImagePreviews.some(p => p !== null) && (
+                  <button
+                    onClick={handleClearAllImages}
+                    className="px-2 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded transition-colors text-red-300"
+                    title="Clear all images (seed, references, and last frame)"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
               {/* Labels Row */}
               <div className="grid grid-cols-5 gap-3">
                 <div>

@@ -129,7 +129,7 @@ function validateAndAdjustDuration(duration: number, model: string): number {
  * @returns Prediction ID
  */
 export async function createVideoPrediction(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   seedFrame?: string,
   duration?: number,
@@ -137,8 +137,14 @@ export async function createVideoPrediction(
   modelParameters?: Record<string, any>
 ): Promise<string> {
   // Validate inputs
-  if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
-    throw new Error('Image URL is required and must be a non-empty string');
+  // imageUrl is optional if reference images are provided (reference-only mode)
+  if (imageUrl !== undefined && (typeof imageUrl !== 'string' || imageUrl.trim() === '')) {
+    throw new Error('Image URL must be a non-empty string if provided');
+  }
+
+  // If no imageUrl provided, require reference images
+  if (!imageUrl && (!referenceImages || referenceImages.length === 0)) {
+    throw new Error('Either imageUrl or referenceImages must be provided');
   }
 
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -170,11 +176,14 @@ export async function createVideoPrediction(
   const isVeo = REPLICATE_MODEL.includes('veo-3.1') || REPLICATE_MODEL.includes('veo') || REPLICATE_MODEL.includes('google/veo');
 
   console.log(`${logPrefix} Inputs:`);
-  if (seedFrame) {
+  if (!imageUrl && referenceImages && referenceImages.length > 0) {
+    console.log(`${logPrefix}   - Mode: Reference-only (no seed image/frame)`);
+    console.log(`${logPrefix}   - Using reference images for consistency without a starting frame`);
+  } else if (seedFrame) {
     console.log(`${logPrefix}   - Using Seed Frame as Starting Image: ${seedFrame}`);
-    console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl}`);
+    console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl || 'none'}`);
     console.log(`${logPrefix}   - Mode: Seed frame from previous scene → video`);
-  } else {
+  } else if (imageUrl) {
     console.log(`${logPrefix}   - Using Generated Image as Starting Image: ${imageUrl}`);
     console.log(`${logPrefix}   - Mode: Generated image → video (Scene 0)`);
   }
@@ -200,7 +209,7 @@ export async function createVideoPrediction(
   const replicate = createReplicateClient();
 
   // Build input parameters
-  // For Veo models, there are two modes:
+  // For Veo models, there are three modes:
   //   1. Standard mode (default):
   //      - Use 'image' parameter with seedFrame (scenes > 0) or imageUrl (scene 0)
   //      - Model generates video from this starting frame
@@ -208,9 +217,12 @@ export async function createVideoPrediction(
   //      - Use 'image' parameter with starting frame AND 'last_frame' parameter with ending frame
   //      - Model generates transition video between the two frames
   //      - Note: last_frame is mutually exclusive with standard single-frame generation
+  //   3. Reference-only mode (NEW):
+  //      - No 'image' parameter, only 'reference_images'
+  //      - Model generates video from text prompt guided by reference images
   // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
   const isVeoModel = isVeo; // Already defined above for duration
-  const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image
+  const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image (can be undefined for reference-only)
 
   // Model-specific parameter handling
   const isGen4 = REPLICATE_MODEL.includes('gen4');
@@ -229,11 +241,12 @@ export async function createVideoPrediction(
   // Start with model-specific parameters (user-provided)
   const input: ReplicateInput = {
     // Gen-4 Aleph uses 'video', others use 'image'
-    ...(isGen4Aleph ? {
+    // Only include image/video parameter if inputImageUrl is provided
+    ...(inputImageUrl ? (isGen4Aleph ? {
       video: inputImageUrl, // For Gen-4 Aleph, this should be a video URL
     } : {
       image: inputImageUrl,
-    }),
+    }) : {}),
     prompt: enhancedPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
@@ -370,7 +383,7 @@ async function retryWithBackoff<T>(
  * Creates a video prediction with retry logic
  */
 export async function createVideoPredictionWithRetry(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   seedFrame?: string,
   duration?: number,

@@ -1,4 +1,4 @@
-import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip, AudioTrack, ImageTrack, TextOverlay, NarrationTrack, NarrationVoice } from '@/lib/types';
+import { ProjectState, Scene, SceneWithState, GeneratedImage, GeneratedVideo, SeedFrame, AngleType, TimelineClip, AudioTrack, ImageTrack, TextOverlay, NarrationTrack, NarrationVoice, SplashScreen, SplashLogo, SplashText } from '@/lib/types';
 import { ViewMode, MediaDrawerState, DragDropState, ChatMessage } from '@/lib/types/components';
 import { UploadedImage } from '@/lib/storage/image-storage';
 
@@ -175,6 +175,25 @@ export interface TimelineSlice {
   updateTextOverlay: (overlayId: string, updates: Partial<TextOverlay>) => void;
   setSelectedTextOverlayId: (overlayId: string | null) => void;
   duplicateTextOverlay: (overlayId: string) => void;
+
+  // Splash screen management
+  splashScreens: SplashScreen[];
+  selectedSplashScreenId: string | null;
+  addSplashScreen: (title?: string, duration?: number) => void;
+  deleteSplashScreen: (splashId: string) => void;
+  updateSplashScreen: (splashId: string, updates: Partial<SplashScreen>) => void;
+  setSelectedSplashScreenId: (splashId: string | null) => void;
+  duplicateSplashScreen: (splashId: string) => void;
+
+  // Splash screen logo management
+  addSplashLogo: (splashId: string, imageUrl: string) => void;
+  deleteSplashLogo: (splashId: string, logoId: string) => void;
+  updateSplashLogo: (splashId: string, logoId: string, updates: Partial<SplashLogo>) => void;
+
+  // Splash screen text management
+  addSplashText: (splashId: string, text: string) => void;
+  deleteSplashText: (splashId: string, textId: string) => void;
+  updateSplashText: (splashId: string, textId: string, updates: Partial<SplashText>) => void;
 }
 
 export interface LiveEditingPrompts {
@@ -190,6 +209,7 @@ export interface UISlice {
   dragDrop: DragDropState;
   chatMessages: ChatMessage[];
   liveEditingPrompts: Record<number, LiveEditingPrompts>; // sceneIndex -> prompts being edited
+  isAutoGenerationMode: boolean; // Track if user initiated auto-generation (rocket button)
 
   setViewMode: (mode: ViewMode) => void;
   setCurrentSceneIndex: (index: number) => void;
@@ -198,6 +218,7 @@ export interface UISlice {
   updateDragDrop: (updates: Partial<DragDropState>) => void;
   setLiveEditingPrompts: (sceneIndex: number, prompts: LiveEditingPrompts) => void;
   clearLiveEditingPrompts: (sceneIndex: number) => void;
+  setIsAutoGenerationMode: (isAuto: boolean) => void;
 
   // Media organization
   toggleMediaItem: (itemId: string) => void;

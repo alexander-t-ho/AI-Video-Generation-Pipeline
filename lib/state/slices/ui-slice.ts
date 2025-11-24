@@ -17,9 +17,14 @@ export const createUISlice: StateCreator<ProjectStore, [], [], UISlice> = (set) 
   },
   chatMessages: [],
   liveEditingPrompts: {},
+  isAutoGenerationMode: false,
 
   setViewMode: (mode) => {
     set({ viewMode: mode });
+  },
+
+  setIsAutoGenerationMode: (isAuto) => {
+    set({ isAutoGenerationMode: isAuto });
   },
   
   setCurrentSceneIndex: (index) => {
