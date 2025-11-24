@@ -55,6 +55,20 @@ export async function PATCH(
       data.referenceImageUrls = updates.referenceImageUrls;
     }
 
+    // Check if the scene exists first
+    const existingScene = await prisma.scene.findUnique({
+      where: { id: sceneId },
+    });
+
+    if (!existingScene) {
+      console.warn(`[Update Scene] Scene ${sceneId} not found in database - skipping update (scene may not be persisted yet)`);
+      return NextResponse.json({
+        success: true,
+        scene: null,
+        warning: 'Scene not yet persisted to database',
+      });
+    }
+
     const updatedScene = await prisma.scene.update({
       where: { id: sceneId },
       data,

@@ -74,6 +74,16 @@ export async function PATCH(
     const body = await req.json();
     const { name, status, finalVideoUrl, finalVideoS3Key, characterDescription, targetDuration } = body;
 
+    // Check if the project exists first
+    const existingProject = await prisma.project.findUnique({
+      where: { id },
+    });
+
+    if (!existingProject) {
+      console.warn(`[Update Project] Project ${id} not found in database`);
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
     const project = await prisma.project.update({
       where: { id },
       data: {

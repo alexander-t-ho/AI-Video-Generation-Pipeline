@@ -129,7 +129,7 @@ function validateAndAdjustDuration(duration: number, model: string): number {
  * @returns Prediction ID
  */
 export async function createVideoPrediction(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   seedFrame?: string,
   duration?: number,
@@ -183,9 +183,11 @@ export async function createVideoPrediction(
     console.log(`${logPrefix}   - Reference Images: ${referenceImages.length}`);
   } else if (seedFrame) {
     console.log(`${logPrefix}   - Using Seed Frame as Starting Image: ${seedFrame}`);
-    console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl}`);
+    if (imageUrl) {
+      console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl}`);
+    }
     console.log(`${logPrefix}   - Mode: Seed frame from previous scene → video`);
-  } else {
+  } else if (imageUrl) {
     console.log(`${logPrefix}   - Using Generated Image as Starting Image: ${imageUrl}`);
     console.log(`${logPrefix}   - Mode: Generated image → video (Scene 0)`);
   }
@@ -262,7 +264,7 @@ export async function createVideoPrediction(
     } : {
       // Standard mode: include image parameter
       image: inputImageUrl,
-    }),
+    }) : {}),
     prompt: enhancedPrompt.trim(),
     // Add negative prompt if available
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
@@ -403,7 +405,7 @@ async function retryWithBackoff<T>(
  * Creates a video prediction with retry logic
  */
 export async function createVideoPredictionWithRetry(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   seedFrame?: string,
   duration?: number,

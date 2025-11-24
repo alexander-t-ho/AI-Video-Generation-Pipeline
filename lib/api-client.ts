@@ -563,7 +563,7 @@ export async function pollImageStatus(
  * Generate video for a scene or subscene
  */
 export async function generateVideo(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   projectId: string,
   sceneIndex: number,
@@ -583,7 +583,7 @@ export async function generateVideo(
           ...getRuntimeModelHeaders(),
         },
         body: JSON.stringify({
-          imageUrl,
+          ...(imageUrl ? { imageUrl } : {}), // Only include imageUrl if provided
           prompt,
           projectId,
           sceneIndex,
