@@ -7,9 +7,9 @@ import TimelineToolbar from './TimelineToolbar';
 import AudioTrackItem from './AudioTrackItem';
 import ImageTrackItem from './ImageTrackItem';
 import NarrationTrackItem from './NarrationTrackItem';
-import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus, Wand2, Mic } from 'lucide-react';
+import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus, Wand2, Mic, Sparkles } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { stitchVideos, applyClipEdits, generatePreview, generateMusicTrack, pollMusicStatus, generateNarration, NarrationVoice } from '@/lib/api-client';
+import { stitchVideos, applyClipEdits, generatePreview, generateMusicTrack, pollMusicStatus, generateNarration, generateNarrationScript, NarrationVoice, convertVoice, pollVoiceConversionStatus } from '@/lib/api-client';
 
 export default function TimelineView() {
   const {
@@ -74,14 +74,27 @@ export default function TimelineView() {
   const [musicMood, setMusicMood] = useState('cinematic');
   const [musicGenre, setMusicGenre] = useState('electronic');
   const [musicDuration, setMusicDuration] = useState(30);
+  const [musicProvider, setMusicProvider] = useState<'musicgen' | 'suno'>('musicgen');
   const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
   const [musicGenerationProgress, setMusicGenerationProgress] = useState<string>('');
+  // Voice conversion state
+  const [showVoiceConversionDialog, setShowVoiceConversionDialog] = useState(false);
+  const [voiceConversionSource, setVoiceConversionSource] = useState<'narration' | 'video' | 'audio_track'>('narration');
+  const [selectedNarrationForConversion, setSelectedNarrationForConversion] = useState<string | null>(null);
+  const [selectedAudioTrackForConversion, setSelectedAudioTrackForConversion] = useState<string | null>(null);
+  const [voiceModelUrl, setVoiceModelUrl] = useState('');
+  const [voicePitchChange, setVoicePitchChange] = useState(0);
+  const [voiceIndexRate, setVoiceIndexRate] = useState(0.5);
+  const [voiceReverbSize, setVoiceReverbSize] = useState(0.0);
+  const [isConvertingVoice, setIsConvertingVoice] = useState(false);
+  const [voiceConversionProgress, setVoiceConversionProgress] = useState<string>('');
   // Narration generation state
   const [showNarrationDialog, setShowNarrationDialog] = useState(false);
   const [narrationText, setNarrationText] = useState('');
   const [narrationVoice, setNarrationVoice] = useState<NarrationVoice>('alloy');
   const [narrationSpeed, setNarrationSpeed] = useState(1.0);
   const [isGeneratingNarration, setIsGeneratingNarration] = useState(false);
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const narrationRefs = useRef<Map<string, HTMLAudioElement>>(new Map()); // Audio elements for narration tracks
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
@@ -380,6 +393,37 @@ export default function TimelineView() {
             }
           }
         });
+        
+        // Sync narration tracks with video time
+        narrationTracks.forEach(track => {
+          const audio = narrationRefs.current.get(track.id);
+          if (!audio) return;
+
+          const isInRange = videoTime >= track.startTime && videoTime < track.endTime;
+          
+          if (isInRange) {
+            // Calculate where we should be in the audio file
+            const audioOffset = videoTime - track.startTime;
+            
+            // Only seek if we're significantly off (avoid constant seeking)
+            if (Math.abs(audio.currentTime - audioOffset) > 0.1) {
+              audio.currentTime = audioOffset;
+            }
+            
+            // Play if paused
+            if (audio.paused) {
+              audio.volume = track.volume / 100;
+              audio.play().catch(err => {
+                console.error(`[Narration] Play error for ${track.title}:`, err);
+              });
+            }
+          } else {
+            // Pause if outside range
+            if (!audio.paused) {
+              audio.pause();
+            }
+          }
+        });
       }
     };
 
@@ -448,6 +492,11 @@ export default function TimelineView() {
         lastVideoTimeRef.current = videoTime;
         lastUpdateTimeRef.current = performance.now();
       }
+      
+      // Pause all narration tracks
+      narrationRefs.current.forEach(audio => {
+        audio.pause();
+      });
     };
 
     const handleEnded = () => {
@@ -488,6 +537,19 @@ export default function TimelineView() {
             }
           }
         });
+        
+        // Seek all narration tracks to match video position
+        narrationTracks.forEach(track => {
+          const audio = narrationRefs.current.get(track.id);
+          if (audio) {
+            if (videoTime >= track.startTime && videoTime < track.endTime) {
+              const audioOffset = videoTime - track.startTime;
+              audio.currentTime = audioOffset;
+            } else {
+              audio.pause();
+            }
+          }
+        });
       }
     };
 
@@ -516,7 +578,7 @@ export default function TimelineView() {
         animationFrameRef.current = null;
       }
     };
-  }, [previewVideoUrl, isPlaying, totalDuration, audioTracks]);
+  }, [previewVideoUrl, isPlaying, totalDuration, audioTracks, narrationTracks]);
 
   // Calculate playhead position on timeline (smooth, no jumps)
   // Map video time to timeline time for accurate positioning
@@ -559,6 +621,11 @@ export default function TimelineView() {
       audioRefs.current.forEach(audio => {
         audio.pause();
       });
+      
+      // Pause all narration tracks
+      narrationRefs.current.forEach(audio => {
+        audio.pause();
+      });
     } else {
       // Start from beginning if at end - use actual video duration
       const effectiveDuration = actualVideoDuration || totalDuration;
@@ -584,6 +651,20 @@ export default function TimelineView() {
           audio.volume = track.volume / 100;
           audio.play().catch(err => {
             console.error(`[Audio] Failed to play ${track.title}:`, err);
+          });
+        }
+      });
+      
+      // Play narration tracks that should be active at current time
+      narrationTracks.forEach(track => {
+        const audio = narrationRefs.current.get(track.id);
+        if (audio && videoTime >= track.startTime && videoTime < track.endTime) {
+          // Calculate offset into the audio file
+          const audioOffset = videoTime - track.startTime;
+          audio.currentTime = audioOffset;
+          audio.volume = track.volume / 100;
+          audio.play().catch(err => {
+            console.error(`[Narration] Failed to play ${track.title}:`, err);
           });
         }
       });
@@ -859,6 +940,9 @@ export default function TimelineView() {
         requestBody.analyzeVideo = true;
       }
 
+      // Add provider to request
+      requestBody.provider = musicProvider;
+
       // Start music generation
       const response = await generateMusicTrack(requestBody);
 
@@ -868,8 +952,9 @@ export default function TimelineView() {
 
       setMusicGenerationProgress('Music generation in progress...');
 
-      // Poll for completion
+      // Poll for completion (include provider for status polling)
       const status = await pollMusicStatus(response.data.predictionId, {
+        provider: response.data.provider || musicProvider,
         projectId: project.id,
         onProgress: (progressStatus) => {
           if (progressStatus.data?.status) {
@@ -909,6 +994,167 @@ export default function TimelineView() {
       });
     } finally {
       setIsGeneratingMusic(false);
+    }
+  };
+
+  // Handle generating script from storyboard
+  const handleGenerateScriptFromStoryboard = async () => {
+    if (!project || scenes.length === 0) return;
+
+    setIsGeneratingScript(true);
+
+    try {
+      addChatMessage({
+        role: 'agent',
+        content: 'Generating narration script from storyboard...',
+        type: 'status',
+      });
+
+      const result = await generateNarrationScript({
+        scenes: scenes.map(scene => ({
+          description: scene.description,
+          imagePrompt: scene.imagePrompt,
+          videoPrompt: scene.videoPrompt,
+          suggestedDuration: scene.suggestedDuration,
+        })),
+        projectName: project.name,
+        characterDescription: project.characterDescription,
+      });
+
+      if (!result.success || !result.data?.script) {
+        throw new Error(result.error || 'Failed to generate script');
+      }
+
+      setNarrationText(result.data.script);
+
+      addChatMessage({
+        role: 'agent',
+        content: `✓ Narration script generated from ${result.data.sceneCount} scenes`,
+        type: 'status',
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate script';
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Script error: ${errorMessage}`,
+        type: 'error',
+      });
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  };
+
+  // Handle voice conversion
+  const handleConvertVoice = async () => {
+    if (!project || !voiceModelUrl.trim()) return;
+
+    setIsConvertingVoice(true);
+    setVoiceConversionProgress('Starting voice conversion...');
+
+    try {
+      addChatMessage({
+        role: 'agent',
+        content: `Converting voice using RVC model...`,
+        type: 'status',
+      });
+
+      let conversionOptions: any = {
+        sourceType: voiceConversionSource,
+        modelUrl: voiceModelUrl.trim(),
+        projectId: project.id,
+        pitchChange: voicePitchChange,
+        indexRate: voiceIndexRate,
+        reverbSize: voiceReverbSize,
+      };
+
+      // Set source-specific options
+      if (voiceConversionSource === 'narration' && selectedNarrationForConversion) {
+        const track = narrationTracks.find(t => t.id === selectedNarrationForConversion);
+        if (!track) throw new Error('Selected narration track not found');
+        conversionOptions.narrationAudioUrl = track.audioUrl;
+      } else if (voiceConversionSource === 'audio_track' && selectedAudioTrackForConversion) {
+        const track = audioTracks.find(t => t.id === selectedAudioTrackForConversion);
+        if (!track) throw new Error('Selected audio track not found');
+        conversionOptions.audioUrl = track.audioUrl;
+      } else if (voiceConversionSource === 'video' && previewVideoUrl) {
+        conversionOptions.videoUrl = previewVideoUrl;
+      } else {
+        throw new Error('Please select a source for voice conversion');
+      }
+
+      // Start voice conversion
+      const response = await convertVoice(conversionOptions);
+
+      if (!response.success || !response.data?.predictionId) {
+        throw new Error(response.error || 'Failed to start voice conversion');
+      }
+
+      setVoiceConversionProgress('Voice conversion in progress...');
+
+      // Poll for completion
+      let status;
+      const maxPolls = 60;
+      let pollCount = 0;
+
+      while (pollCount < maxPolls) {
+        status = await pollVoiceConversionStatus(response.data.predictionId, project.id);
+
+        if (status.data?.status) {
+          setVoiceConversionProgress(`Status: ${status.data.status}`);
+        }
+
+        if (status.data?.status === 'succeeded' || status.data?.status === 'failed') {
+          break;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        pollCount++;
+      }
+
+      if (!status || !status.success || !status.data?.audioUrl) {
+        throw new Error(status?.error || 'Voice conversion failed');
+      }
+
+      // Add converted audio to timeline
+      const audioUrl = status.data.localPath
+        ? `/api/serve-audio?path=${encodeURIComponent(status.data.localPath)}`
+        : status.data.audioUrl;
+
+      if (voiceConversionSource === 'narration') {
+        // Update narration track with converted audio
+        if (selectedNarrationForConversion) {
+          updateNarrationTrack(selectedNarrationForConversion, {
+            audioUrl: audioUrl,
+            audioLocalPath: status.data.localPath,
+          });
+        }
+      } else {
+        // Add as new audio track
+        addAudioTrack(audioUrl, `Voice Converted - ${voiceConversionSource}`, status.data.duration || 10);
+      }
+
+      addChatMessage({
+        role: 'agent',
+        content: `✓ Voice converted successfully!`,
+        type: 'status',
+      });
+
+      // Reset dialog state
+      setShowVoiceConversionDialog(false);
+      setVoiceModelUrl('');
+      setVoiceConversionProgress('');
+      setSelectedNarrationForConversion(null);
+      setSelectedAudioTrackForConversion(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to convert voice';
+      setVoiceConversionProgress(`Error: ${errorMessage}`);
+      addChatMessage({
+        role: 'agent',
+        content: `❌ Voice conversion error: ${errorMessage}`,
+        type: 'error',
+      });
+    } finally {
+      setIsConvertingVoice(false);
     }
   };
 
@@ -1488,23 +1734,40 @@ export default function TimelineView() {
                   <Mic className="w-4 h-4 text-purple-400" />
                   Narration
                 </h3>
-                <button
-                  onClick={() => setShowNarrationDialog(true)}
-                  disabled={isGeneratingNarration}
-                  className="flex items-center gap-1.5 px-2 py-1 text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded border border-purple-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isGeneratingNarration ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="w-3 h-3" />
-                      Generate Narration
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (narrationTracks.length > 0) {
+                        setSelectedNarrationForConversion(narrationTracks[0].id);
+                        setVoiceConversionSource('narration');
+                      }
+                      setShowVoiceConversionDialog(true);
+                    }}
+                    disabled={isConvertingVoice || narrationTracks.length === 0}
+                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded border border-blue-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Convert voice of narration tracks"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Convert Voice
+                  </button>
+                  <button
+                    onClick={() => setShowNarrationDialog(true)}
+                    disabled={isGeneratingNarration}
+                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded border border-purple-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGeneratingNarration ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3 h-3" />
+                        Generate Narration
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="relative bg-white/5 rounded-lg border border-white/10 overflow-hidden">
                 <div className="overflow-x-auto overflow-y-hidden custom-scrollbar">
@@ -2050,22 +2313,62 @@ export default function TimelineView() {
                 </div>
               )}
 
+              {/* Provider Selection */}
+              <div>
+                <label className="block text-sm text-white/80 mb-2">Music Provider</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setMusicProvider('musicgen')}
+                    disabled={isGeneratingMusic}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      musicProvider === 'musicgen'
+                        ? 'bg-purple-600/30 border-purple-500 text-purple-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    }`}
+                  >
+                    MusicGen
+                    <span className="block text-xs text-white/40 mt-0.5">Up to 30s</span>
+                  </button>
+                  <button
+                    onClick={() => setMusicProvider('suno')}
+                    disabled={isGeneratingMusic}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      musicProvider === 'suno'
+                        ? 'bg-purple-600/30 border-purple-500 text-purple-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    }`}
+                  >
+                    Suno AI
+                    <span className="block text-xs text-white/40 mt-0.5">Up to 120s</span>
+                  </button>
+                </div>
+                      {musicProvider === 'suno' && (
+                        <p className="text-xs text-yellow-400/80 mt-2">
+                          ⚠️ Requires SUNO_API key to be configured in environment
+                        </p>
+                      )}
+              </div>
+
               {/* Duration */}
               <div>
                 <label className="block text-sm text-white/80 mb-2">
-                  Duration (seconds) - Max 30s
+                  Duration (seconds) - Max {musicProvider === 'suno' ? '120s' : '30s'}
                 </label>
                 <input
                   type="number"
                   min="5"
-                  max="30"
+                  max={musicProvider === 'suno' ? 120 : 30}
                   step="1"
                   value={musicDuration}
-                  onChange={(e) => setMusicDuration(Math.min(30, Math.max(5, parseInt(e.target.value) || 30)))}
+                  onChange={(e) => setMusicDuration(Math.min(musicProvider === 'suno' ? 120 : 30, Math.max(5, parseInt(e.target.value) || 30)))}
                   disabled={isGeneratingMusic}
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-white/40 mt-1">MusicGen supports up to 30 seconds of audio</p>
+                <p className="text-xs text-white/40 mt-1">
+                  {musicProvider === 'suno' 
+                    ? 'Suno AI supports up to 120 seconds of audio' 
+                    : 'MusicGen supports up to 30 seconds of audio'}
+                </p>
               </div>
 
               {/* Progress indicator */}
@@ -2076,10 +2379,17 @@ export default function TimelineView() {
                 </div>
               )}
 
-              {/* Info about MusicGen */}
+              {/* Info about Provider */}
               <div className="text-xs text-white/50 bg-white/5 p-3 rounded">
-                <p className="font-semibold mb-1">Powered by MusicGen</p>
-                <p>AI-generated music using Meta's MusicGen model. The generated audio will be added to your audio tracks.</p>
+                <p className="font-semibold mb-1">
+                  Powered by {musicProvider === 'suno' ? 'Suno AI' : 'MusicGen'}
+                </p>
+                <p>
+                  {musicProvider === 'suno' 
+                    ? 'AI-generated music using Suno AI via sunoapi.org. Watermark-free and supports longer durations.'
+                    : 'AI-generated music using Meta\'s MusicGen model. Fast and reliable generation.'}
+                  {' '}The generated audio will be added to your audio tracks.
+                </p>
               </div>
 
               <div className="flex gap-2 justify-end pt-2">
@@ -2131,14 +2441,43 @@ export default function TimelineView() {
             </div>
 
             <div className="space-y-4">
+              {/* Generate from Storyboard Button */}
+              <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-300">Generate from Storyboard</p>
+                    <p className="text-xs text-white/50 mt-0.5">
+                      Create a cohesive narration script from your {scenes.length} scenes
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleGenerateScriptFromStoryboard}
+                    disabled={isGeneratingScript || isGeneratingNarration || scenes.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGeneratingScript ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3.5 h-3.5" />
+                        Generate Script
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               {/* Narration Text */}
               <div>
                 <label className="block text-sm text-white/80 mb-2">Narration Text</label>
                 <textarea
                   value={narrationText}
                   onChange={(e) => setNarrationText(e.target.value)}
-                  disabled={isGeneratingNarration}
-                  placeholder="Enter the text you want to be narrated... e.g., 'Welcome to our product showcase. Today we'll explore the amazing features...'"
+                  disabled={isGeneratingNarration || isGeneratingScript}
+                  placeholder="Click 'Generate Script' above to create a narration from your storyboard, or write your own text here..."
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[120px] resize-y"
                 />
                 <p className="text-xs text-white/40 mt-1">
@@ -2214,6 +2553,241 @@ export default function TimelineView() {
                     <>
                       <Mic className="w-4 h-4" />
                       Generate Narration
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Voice Conversion Dialog */}
+      {showVoiceConversionDialog && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isConvertingVoice) {
+              setShowVoiceConversionDialog(false);
+            }
+          }}
+        >
+          <div
+            className="bg-gray-900 border border-white/20 rounded-lg p-6 w-[480px] shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-400" />
+                Convert Voice
+              </h3>
+              <button
+                onClick={() => !isConvertingVoice && setShowVoiceConversionDialog(false)}
+                disabled={isConvertingVoice}
+                className="text-white/60 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Source Selection */}
+              <div>
+                <label className="block text-sm text-white/80 mb-2">Source Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => {
+                      setVoiceConversionSource('narration');
+                      if (narrationTracks.length > 0) {
+                        setSelectedNarrationForConversion(narrationTracks[0].id);
+                      }
+                    }}
+                    disabled={isConvertingVoice || narrationTracks.length === 0}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      voiceConversionSource === 'narration'
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    } ${narrationTracks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    Narration
+                  </button>
+                  <button
+                    onClick={() => {
+                      setVoiceConversionSource('audio_track');
+                      if (audioTracks.length > 0) {
+                        setSelectedAudioTrackForConversion(audioTracks[0].id);
+                      }
+                    }}
+                    disabled={isConvertingVoice || audioTracks.length === 0}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      voiceConversionSource === 'audio_track'
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    } ${audioTracks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    Audio Track
+                  </button>
+                  <button
+                    onClick={() => setVoiceConversionSource('video')}
+                    disabled={isConvertingVoice || !previewVideoUrl}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      voiceConversionSource === 'video'
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    } ${!previewVideoUrl ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={!previewVideoUrl ? 'Generate videos first' : ''}
+                  >
+                    Video Audio
+                  </button>
+                </div>
+              </div>
+
+              {/* Source Selection (Narration) */}
+              {voiceConversionSource === 'narration' && narrationTracks.length > 0 && (
+                <div>
+                  <label className="block text-sm text-white/80 mb-2">Select Narration Track</label>
+                  <select
+                    value={selectedNarrationForConversion || ''}
+                    onChange={(e) => setSelectedNarrationForConversion(e.target.value)}
+                    disabled={isConvertingVoice}
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {narrationTracks.map((track) => (
+                      <option key={track.id} value={track.id}>
+                        {track.title} ({track.voice})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Source Selection (Audio Track) */}
+              {voiceConversionSource === 'audio_track' && audioTracks.length > 0 && (
+                <div>
+                  <label className="block text-sm text-white/80 mb-2">Select Audio Track</label>
+                  <select
+                    value={selectedAudioTrackForConversion || ''}
+                    onChange={(e) => setSelectedAudioTrackForConversion(e.target.value)}
+                    disabled={isConvertingVoice}
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {audioTracks.map((track) => (
+                      <option key={track.id} value={track.id}>
+                        {track.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Voice Model URL */}
+              <div>
+                <label className="block text-sm text-white/80 mb-2">RVC Model URL</label>
+                <input
+                  type="text"
+                  value={voiceModelUrl}
+                  onChange={(e) => setVoiceModelUrl(e.target.value)}
+                  disabled={isConvertingVoice}
+                  placeholder="https://... (URL to .pth model file)"
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-white/40 mt-1">
+                  URL to a pre-trained RVC voice model (.pth file)
+                </p>
+              </div>
+
+              {/* Conversion Parameters */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-white/80 mb-2">
+                    Pitch Change: {voicePitchChange}
+                  </label>
+                  <input
+                    type="range"
+                    min="-24"
+                    max="24"
+                    step="1"
+                    value={voicePitchChange}
+                    onChange={(e) => setVoicePitchChange(parseInt(e.target.value))}
+                    disabled={isConvertingVoice}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-white/40 mt-1">0 = no change, ±12 = ±1 octave</p>
+                </div>
+                <div>
+                  <label className="block text-sm text-white/80 mb-2">
+                    Index Rate: {voiceIndexRate.toFixed(2)}
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={voiceIndexRate}
+                    onChange={(e) => setVoiceIndexRate(parseFloat(e.target.value))}
+                    disabled={isConvertingVoice}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-white/40 mt-1">0.0-1.0 (voice similarity)</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/80 mb-2">
+                  Reverb Size: {voiceReverbSize.toFixed(2)}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={voiceReverbSize}
+                  onChange={(e) => setVoiceReverbSize(parseFloat(e.target.value))}
+                  disabled={isConvertingVoice}
+                  className="w-full"
+                />
+                <p className="text-xs text-white/40 mt-1">0.0-1.0 (reverb effect)</p>
+              </div>
+
+              {/* Progress indicator */}
+              {isConvertingVoice && voiceConversionProgress && (
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                  <span className="text-sm text-blue-300">{voiceConversionProgress}</span>
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="text-xs text-white/50 bg-white/5 p-3 rounded">
+                <p className="font-semibold mb-1">Powered by RVC (Realistic Voice Cloning)</p>
+                <p>Convert voices using pre-trained RVC models. Find models on Hugging Face or train your own.</p>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  onClick={() => setShowVoiceConversionDialog(false)}
+                  disabled={isConvertingVoice}
+                  className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConvertVoice}
+                  disabled={isConvertingVoice || !voiceModelUrl.trim() || 
+                    (voiceConversionSource === 'narration' && !selectedNarrationForConversion) ||
+                    (voiceConversionSource === 'audio_track' && !selectedAudioTrackForConversion) ||
+                    (voiceConversionSource === 'video' && !previewVideoUrl)}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isConvertingVoice ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Converting...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Convert Voice
                     </>
                   )}
                 </button>

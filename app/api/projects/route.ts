@@ -28,6 +28,12 @@ export async function GET(req: NextRequest) {
             email: true,
           },
         },
+        company: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         _count: {
           select: {
             scenes: true,

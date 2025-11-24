@@ -10,6 +10,7 @@ const initialCoreState = {
   selectedStylePrompt: null,
   needsCharacterValidation: false,
   hasUploadedImages: false,
+  isProjectSavedToBackend: false,
 };
 
 /**
@@ -245,6 +246,7 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
 
     set({
       project,
+      isProjectSavedToBackend: false, // New local project, not saved to backend yet
       chatMessages: [
         {
           id: uuidv4(),
@@ -257,6 +259,10 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     });
   },
 
+  setIsProjectSavedToBackend: (saved) => {
+    set({ isProjectSavedToBackend: saved });
+  },
+
   saveProjectToBackend: async (name, prompt, targetDuration = 15, characterDescription) => {
     try {
       const { saveProject } = await import('@/lib/api-client');
@@ -264,6 +270,7 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
 
       set((state) => ({
         project: state.project ? { ...state.project, id: backendProject.id } : null,
+        isProjectSavedToBackend: true, // Mark as saved to backend
       }));
 
       return backendProject.id;
@@ -455,13 +462,61 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
       const { loadProject: loadProjectAPI } = await import('@/lib/api-client');
       const backendProject = await loadProjectAPI(projectId);
 
+      // Map database status enum back to frontend status
+      const mapDbStatusToFrontend = (dbStatus: string): SceneWithState['status'] => {
+        const statusMap: Record<string, SceneWithState['status']> = {
+          'PENDING': 'pending',
+          'GENERATING_IMAGE': 'generating_image',
+          'IMAGE_READY': 'image_ready',
+          'GENERATING_VIDEO': 'generating_video',
+          'VIDEO_READY': 'video_ready',
+          'COMPLETED': 'completed',
+        };
+        return statusMap[dbStatus] || 'pending';
+      };
+
+      // Determine scene status based on what's available
+      const determineSceneStatus = (scene: any): SceneWithState['status'] => {
+        // If scene has a saved status, use it (mapped from DB enum)
+        if (scene.status) {
+          return mapDbStatusToFrontend(scene.status);
+        }
+        // Otherwise, infer from available content
+        if (scene.generatedVideos && scene.generatedVideos.length > 0) {
+          return 'video_ready';
+        }
+        if (scene.generatedImages && scene.generatedImages.length > 0) {
+          return 'image_ready';
+        }
+        return 'pending';
+      };
+
       const scenesWithState: SceneWithState[] = (backendProject.scenes || []).map((scene: any) => ({
         ...scene,
         generatedImages: scene.generatedImages || [],
         generatedVideos: scene.generatedVideos || [],
         seedFrames: scene.seedFrames || [],
-        status: 'image_ready' as const,
+        status: determineSceneStatus(scene),
       }));
+
+      // Map uploaded images from backend format to frontend UploadedImage format
+      const uploadedImages = (backendProject.uploadedImages || []).map((img: any) => ({
+        id: img.id,
+        url: img.url,
+        s3Key: img.s3Key,
+        originalName: img.originalName,
+        mimeType: img.mimeType,
+        size: img.size,
+        localPath: img.url, // For compatibility with components expecting localPath
+      }));
+
+      console.log('[loadProject] Loaded project:', {
+        id: backendProject.id,
+        scenesCount: scenesWithState.length,
+        uploadedImagesCount: uploadedImages.length,
+        timelineClipsCount: backendProject.timelineClips?.length || 0,
+        textOverlaysCount: backendProject.textOverlays?.length || 0,
+      });
 
       set({
         project: {
@@ -476,8 +531,12 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
           currentSceneIndex: 0,
           finalVideoUrl: backendProject.finalVideoUrl,
           finalVideoS3Key: backendProject.finalVideoS3Key,
+          uploadedImages: uploadedImages,
         },
         scenes: scenesWithState,
+        timelineClips: backendProject.timelineClips || [],
+        textOverlays: backendProject.textOverlays || [],
+        isProjectSavedToBackend: true, // Loaded from backend, so it exists
       });
     } catch (error) {
       console.error('Failed to load project:', error);

@@ -1,12 +1,12 @@
 /**
  * Narration Generator Service
  *
- * Generates narration audio using OpenAI TTS HD via OpenRouter API.
+ * Generates narration audio using OpenAI TTS HD API directly.
  * Supports multiple voices and provides high-quality text-to-speech for video narration.
  */
 
-// OpenRouter API endpoint for OpenAI TTS
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/audio/speech';
+// OpenAI API endpoint for TTS (OpenRouter doesn't support audio endpoints)
+const OPENAI_TTS_API_URL = 'https://api.openai.com/v1/audio/speech';
 
 // Available OpenAI TTS HD voices
 export type NarrationVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
@@ -29,15 +29,15 @@ export interface NarrationResult {
 }
 
 /**
- * Generate narration audio using OpenAI TTS HD via OpenRouter
+ * Generate narration audio using OpenAI TTS HD API directly
  */
 export async function generateNarration(
   request: NarrationRequest
 ): Promise<NarrationResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is required for narration generation');
+    throw new Error('OPENAI_API_KEY is required for narration generation');
   }
 
   const voice = request.voice || 'alloy';
@@ -51,16 +51,14 @@ export async function generateNarration(
   });
 
   try {
-    const response = await fetch(OPENROUTER_API_URL, {
+    const response = await fetch(OPENAI_TTS_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'AI Video Generation Pipeline - Narration',
       },
       body: JSON.stringify({
-        model: 'openai/tts-1-hd',
+        model: 'tts-1-hd',
         input: request.text,
         voice: voice,
         speed: speed,
@@ -70,7 +68,7 @@ export async function generateNarration(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[NarrationGenerator] OpenRouter API error:', response.status, errorText);
+      console.error('[NarrationGenerator] OpenAI API error:', response.status, errorText);
 
       // Try to parse error for more details
       try {
@@ -113,13 +111,13 @@ export async function generateNarration(
 export async function generateNarrationBuffer(
   request: NarrationRequest
 ): Promise<{ success: boolean; buffer?: ArrayBuffer; voice: NarrationVoice; error?: string }> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     return {
       success: false,
       voice: request.voice || 'alloy',
-      error: 'OPENROUTER_API_KEY is required for narration generation',
+      error: 'OPENAI_API_KEY is required for narration generation',
     };
   }
 
@@ -134,16 +132,14 @@ export async function generateNarrationBuffer(
   });
 
   try {
-    const response = await fetch(OPENROUTER_API_URL, {
+    const response = await fetch(OPENAI_TTS_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'AI Video Generation Pipeline - Narration',
       },
       body: JSON.stringify({
-        model: 'openai/tts-1-hd',
+        model: 'tts-1-hd',
         input: request.text,
         voice: voice,
         speed: speed,
@@ -153,7 +149,7 @@ export async function generateNarrationBuffer(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[NarrationGenerator] OpenRouter API error:', response.status, errorText);
+      console.error('[NarrationGenerator] OpenAI API error:', response.status, errorText);
 
       try {
         const errorJson = JSON.parse(errorText);

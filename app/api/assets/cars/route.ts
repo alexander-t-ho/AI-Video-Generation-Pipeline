@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth/auth-utils';
+import { getSession, ExtendedSession } from '@/lib/auth/auth-utils';
 import prisma from '@/lib/db/prisma';
 
 // Force dynamic rendering for routes that use headers/cookies

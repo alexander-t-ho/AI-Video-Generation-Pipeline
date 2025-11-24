@@ -113,10 +113,31 @@ export async function generateMusicWithMusicGen(
 
 /**
  * Check the status of a music generation prediction
+ * Automatically detects provider based on predictionId format or uses provider parameter
  */
 export async function getMusicGenerationStatus(
-  predictionId: string
+  predictionId: string,
+  provider?: MusicProvider
 ): Promise<MusicGenerationStatus> {
+  // Auto-detect provider if not specified
+  if (!provider) {
+    // Replicate prediction IDs are UUIDs, Suno might have different format
+    // For now, check if SUNO_API is set and try Suno first, then fallback
+    if (process.env.SUNO_API) {
+      try {
+        return await getSunoGenerationStatus(predictionId);
+      } catch {
+        // Fall through to MusicGen
+      }
+    }
+    provider = 'musicgen';
+  }
+
+  if (provider === 'suno') {
+    return getSunoGenerationStatus(predictionId);
+  }
+
+  // Default to MusicGen
   const apiToken = process.env.REPLICATE_API_TOKEN;
 
   if (!apiToken) {
@@ -197,22 +218,254 @@ export async function waitForMusicGeneration(
 }
 
 /**
+ * Generate music using Suno AI (via sunoapi.org third-party API)
+ */
+export async function generateMusicWithSuno(
+  request: MusicGenerationRequest
+): Promise<{ predictionId: string; status: string }> {
+  const sunoApiKey = process.env.SUNO_API;
+
+  if (!sunoApiKey) {
+    throw new Error('SUNO_API is required for Suno music generation. Set it in .env.local or use MusicGen instead.');
+  }
+
+  // Suno supports longer durations (up to 2 minutes with Pro account)
+  const duration = Math.floor(Math.min(Math.max(request.duration, 1), 120));
+  
+  console.log('[MusicGenerator] Starting Suno generation via sunoapi.org:', {
+    promptLength: request.prompt.length,
+    promptPreview: request.prompt.substring(0, 100) + '...',
+    duration,
+  });
+
+  // Use sunoapi.org API endpoint
+  const response = await fetch('https://api.sunoapi.org/v1/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${sunoApiKey}`,
+    },
+    body: JSON.stringify({
+      prompt: request.prompt,
+      duration: duration,
+      title: 'AI Generated Music',
+      instrumental: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[MusicGenerator] Suno API error:', response.status, errorText);
+    
+    // If Suno API fails, we can fallback to MusicGen
+    if (process.env.MUSIC_PROVIDER_FALLBACK !== 'false') {
+      console.log('[MusicGenerator] Suno failed, falling back to MusicGen');
+      return generateMusicWithMusicGen(request);
+    }
+    
+    throw new Error(`Failed to start Suno generation: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  
+  // sunoapi.org API response format
+  const predictionId = result.id || result.task_id || result.prediction_id;
+  const status = result.status || 'starting';
+
+  console.log('[MusicGenerator] Suno generation started:', {
+    predictionId,
+    status,
+  });
+
+  return {
+    predictionId,
+    status,
+  };
+}
+
+/**
+ * Check Suno generation status (via sunoapi.org)
+ */
+export async function getSunoGenerationStatus(
+  predictionId: string
+): Promise<MusicGenerationStatus> {
+  const sunoApiKey = process.env.SUNO_API;
+
+  if (!sunoApiKey) {
+    throw new Error('SUNO_API is required');
+  }
+
+  const response = await fetch(
+    `https://api.sunoapi.org/v1/status/${predictionId}`,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sunoApiKey}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Suno status: ${response.status}`);
+  }
+
+  const result = await response.json();
+  
+  // Map sunoapi.org status to our status format
+  return {
+    status: mapSunoStatus(result.status || result.state),
+    audioUrl: result.audio_url || result.music_url || result.output || result.url,
+    error: result.error,
+  };
+}
+
+/**
+ * Map Suno status to our status format
+ */
+function mapSunoStatus(sunoStatus: string): MusicGenerationStatus['status'] {
+  const statusMap: Record<string, MusicGenerationStatus['status']> = {
+    'pending': 'starting',
+    'generating': 'processing',
+    'complete': 'succeeded',
+    'completed': 'succeeded',
+    'succeeded': 'succeeded',
+    'failed': 'failed',
+    'error': 'failed',
+    'canceled': 'canceled',
+  };
+  return statusMap[sunoStatus?.toLowerCase()] || 'processing';
+}
+
+/**
+ * Extract tags/genre from prompt for Suno
+ */
+function extractTagsFromPrompt(prompt: string): string[] {
+  const tags: string[] = [];
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Common genre keywords
+  const genreKeywords: Record<string, string> = {
+    'electronic': 'electronic',
+    'rock': 'rock',
+    'pop': 'pop',
+    'jazz': 'jazz',
+    'classical': 'classical',
+    'cinematic': 'cinematic',
+    'ambient': 'ambient',
+    'hip hop': 'hip hop',
+    'country': 'country',
+    'blues': 'blues',
+    'metal': 'metal',
+    'folk': 'folk',
+    'reggae': 'reggae',
+    'latin': 'latin',
+  };
+  
+  for (const [keyword, tag] of Object.entries(genreKeywords)) {
+    if (lowerPrompt.includes(keyword)) {
+      tags.push(tag);
+    }
+  }
+  
+  // If no tags found, default to instrumental
+  if (tags.length === 0) {
+    tags.push('instrumental');
+  }
+  
+  return tags;
+}
+
+/**
+ * Wait for Suno generation to complete (with polling)
+ */
+export async function waitForSunoGeneration(
+  predictionId: string,
+  options: {
+    pollInterval?: number;
+    timeout?: number;
+    onProgress?: (status: MusicGenerationStatus) => void;
+  } = {}
+): Promise<MusicGenerationResult> {
+  const { pollInterval = 3000, timeout = 300000, onProgress } = options; // Suno can take longer
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeout) {
+    const status = await getSunoGenerationStatus(predictionId);
+
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    if (status.status === 'succeeded') {
+      return {
+        success: true,
+        audioUrl: status.audioUrl,
+        provider: 'suno',
+        predictionId,
+      };
+    }
+
+    if (status.status === 'failed' || status.status === 'canceled') {
+      return {
+        success: false,
+        provider: 'suno',
+        predictionId,
+        error: status.error || 'Generation failed',
+      };
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  return {
+    success: false,
+    provider: 'suno',
+    predictionId,
+    error: 'Generation timed out',
+  };
+}
+
+/**
  * High-level function to generate music from a prompt
  * Handles the full flow: start generation → poll → return result
+ * Supports both MusicGen and Suno with automatic fallback
  */
 export async function generateMusic(
   request: MusicGenerationRequest
 ): Promise<MusicGenerationResult> {
-  const provider = request.provider || 'musicgen';
+  // Determine provider: use request provider, env var, or default to MusicGen
+  const defaultProvider = (process.env.MUSIC_PROVIDER as MusicProvider) || 'musicgen';
+  const provider = request.provider || defaultProvider;
 
   if (provider === 'musicgen') {
-    const { predictionId } = await generateMusicWithMusicGen(request);
-    return waitForMusicGeneration(predictionId);
+    try {
+      const { predictionId } = await generateMusicWithMusicGen(request);
+      return waitForMusicGeneration(predictionId);
+    } catch (error) {
+      console.error('[MusicGenerator] MusicGen failed:', error);
+      // If fallback enabled and Suno is available, try Suno
+      if (process.env.MUSIC_PROVIDER_FALLBACK !== 'false' && process.env.SUNO_API) {
+        console.log('[MusicGenerator] Falling back to Suno');
+        return generateMusic({ ...request, provider: 'suno' });
+      }
+      throw error;
+    }
   }
 
-  // Future: Add Suno support here
   if (provider === 'suno') {
-    throw new Error('Suno provider not yet implemented');
+    try {
+      const { predictionId } = await generateMusicWithSuno(request);
+      return waitForSunoGeneration(predictionId);
+    } catch (error) {
+      console.error('[MusicGenerator] Suno failed:', error);
+      // If fallback enabled and MusicGen is available, try MusicGen
+      if (process.env.MUSIC_PROVIDER_FALLBACK !== 'false' && process.env.REPLICATE_API_TOKEN) {
+        console.log('[MusicGenerator] Falling back to MusicGen');
+        return generateMusic({ ...request, provider: 'musicgen' });
+      }
+      throw error;
+    }
   }
 
   throw new Error(`Unknown music provider: ${provider}`);

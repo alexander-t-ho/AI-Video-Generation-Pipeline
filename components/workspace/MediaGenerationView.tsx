@@ -677,7 +677,13 @@ export default function MediaGenerationView() {
                     : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                Scene {scene.order % 1 === 0 ? scene.order + 1 : (Math.floor(scene.order) + 1) + '.' + Math.round((scene.order % 1) * 10)}
+                Scene {(() => {
+                  const order = scene.order;
+                  if (typeof order !== 'number' || isNaN(order) || order < 0) {
+                    return index + 1;
+                  }
+                  return order % 1 === 0 ? order + 1 : (Math.floor(order) + 1) + '.' + Math.round((order % 1) * 10);
+                })()}
               </button>
             ))}
           </div>
@@ -690,7 +696,13 @@ export default function MediaGenerationView() {
         <div className="mb-4 pb-4 border-b border-white/20">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-white">
-              Scene {currentScene.order % 1 === 0 ? currentScene.order + 1 : (Math.floor(currentScene.order) + 1) + '.' + Math.round((currentScene.order % 1) * 10)}: {currentScene.description}
+              Scene {(() => {
+                const order = currentScene.order;
+                if (typeof order !== 'number' || isNaN(order) || order < 0) {
+                  return currentSceneIndex + 1;
+                }
+                return order % 1 === 0 ? order + 1 : (Math.floor(order) + 1) + '.' + Math.round((order % 1) * 10);
+              })()}: {currentScene.description}
             </h3>
             <button
               onClick={handleDuplicateScene}

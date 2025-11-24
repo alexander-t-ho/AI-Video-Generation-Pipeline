@@ -27,16 +27,16 @@ function logAPICall(method: string, url: string, statusCode?: number) {
     // Dynamically import to avoid circular dependencies
     import("@/lib/state/project-store")
       .then(({ useProjectStore }) => {
-        const addChatMessage = useProjectStore.getState().addChatMessage;
-        addChatMessage({
+      const addChatMessage = useProjectStore.getState().addChatMessage;
+      addChatMessage({
           role: "agent",
           type: "status",
-          content: `${method} ${endpoint}${status}`,
-        });
+        content: `${method} ${endpoint}${status}`,
+      });
       })
       .catch((error) => {
         console.warn("[API Logger] Failed to log API call:", error);
-      });
+    });
   } catch (error) {
     console.warn("[API Logger] Failed to log API call:", error);
   }
@@ -94,7 +94,7 @@ function createAPIError(
       context,
     };
   }
-
+  
   if (error instanceof Error) {
     return {
       message: error.message,
@@ -102,7 +102,7 @@ function createAPIError(
       context,
     };
   }
-
+  
   return {
     message: String(error),
     retryable: false,
@@ -184,28 +184,28 @@ export async function generateStoryboard(
   const url = `${API_BASE_URL}/api/storyboard`;
   return retryRequest(
     async () => {
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "POST",
-        headers: {
+      headers: {
           "Content-Type": "application/json",
-          ...getRuntimeModelHeaders(),
-        },
+        ...getRuntimeModelHeaders(),
+      },
         credentials: "include", // Ensure cookies are sent with the request
-        body: JSON.stringify({
-          prompt,
-          targetDuration,
-          referenceImageUrls,
-        } as StoryboardRequest),
-      });
+      body: JSON.stringify({
+        prompt,
+        targetDuration,
+        referenceImageUrls,
+      } as StoryboardRequest),
+    });
 
-      if (!response.ok) {
+    if (!response.ok) {
         const error = await response
           .json()
           .catch(() => ({ error: "Failed to generate storyboard" }));
         throw new Error(error.error || "Failed to generate storyboard");
-      }
+    }
 
-      return response.json();
+    return response.json();
     },
     DEFAULT_RETRY_CONFIG,
     { method: "POST", url },
@@ -250,7 +250,7 @@ export async function uploadImages(
     formData.append("images", file);
   });
   formData.append("projectId", projectId);
-
+  
   // Get background removal setting from runtime config if not provided
   if (enableBackgroundRemoval === undefined) {
     try {
@@ -266,7 +266,7 @@ export async function uploadImages(
     "enableBackgroundRemoval",
     enableBackgroundRemoval ? "true" : "false",
   );
-
+  
   // Get edge cleanup iterations from runtime config
   try {
     const { getRuntimeConfig } = await import("@/lib/config/model-runtime");
@@ -281,52 +281,52 @@ export async function uploadImages(
   const url = `${API_BASE_URL}/api/upload-images`;
   return retryRequest(
     async () => {
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "POST",
         credentials: "include", // Ensure cookies are sent with the request
-        body: formData,
-      });
+      body: formData,
+    });
 
-      if (!response.ok) {
+    if (!response.ok) {
         const error = await response
           .json()
           .catch(() => ({ error: "Failed to upload images" }));
         throw new Error(error.error || "Failed to upload images");
-      }
+    }
 
-      const result = await response.json();
-
-      // Extract URLs from uploaded images
-      // Prefer the last processed version (most refined background removal) if available
+    const result = await response.json();
+    
+    // Extract URLs from uploaded images
+    // Prefer the last processed version (most refined background removal) if available
       const urls =
         result.images?.map((img: any) => {
-          // If background-removed versions exist, use the last one (most iterations)
-          if (img.processedVersions && img.processedVersions.length > 0) {
+      // If background-removed versions exist, use the last one (most iterations)
+      if (img.processedVersions && img.processedVersions.length > 0) {
             const lastProcessed =
               img.processedVersions[img.processedVersions.length - 1];
-            return lastProcessed.url;
-          }
-          // Otherwise use original
-          return img.url;
-        }) || [];
+        return lastProcessed.url;
+      }
+      // Otherwise use original
+      return img.url;
+    }) || [];
 
       const paths =
         result.images?.map((img: any) => {
-          // Same logic for paths
-          if (img.processedVersions && img.processedVersions.length > 0) {
+      // Same logic for paths
+      if (img.processedVersions && img.processedVersions.length > 0) {
             const lastProcessed =
               img.processedVersions[img.processedVersions.length - 1];
-            return lastProcessed.localPath;
-          }
-          return img.localPath;
-        }) || [];
+        return lastProcessed.localPath;
+      }
+      return img.localPath;
+    }) || [];
 
-      return {
-        ...result,
-        urls,
-        paths,
-        images: result.images, // Include full image objects with processed versions
-      };
+    return {
+      ...result,
+      urls,
+      paths,
+      images: result.images, // Include full image objects with processed versions
+    };
     },
     DEFAULT_RETRY_CONFIG,
     { method: "POST", url },
@@ -343,32 +343,32 @@ export async function generateImage(
   const url = `${API_BASE_URL}/api/generate-image`;
   return retryRequest(
     async () => {
-      const headers: Record<string, string> = {
+    const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        ...getRuntimeModelHeaders(),
-      };
+      ...getRuntimeModelHeaders(),
+    };
 
-      // Override with specific model if provided
-      if (options?.model) {
+    // Override with specific model if provided
+    if (options?.model) {
         headers["X-Model-I2I"] = options.model;
         headers["X-Model-T2I"] = options.model;
-      }
+    }
 
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "POST",
-        headers,
+      headers,
         credentials: "include", // Ensure cookies are sent with the request
-        body: JSON.stringify(request),
-      });
+      body: JSON.stringify(request),
+    });
 
-      if (!response.ok) {
+    if (!response.ok) {
         const error = await response
           .json()
           .catch(() => ({ error: "Failed to generate image" }));
         throw new Error(error.error || "Failed to generate image");
-      }
+    }
 
-      return response.json();
+    return response.json();
     },
     DEFAULT_RETRY_CONFIG,
     { method: "POST", url },
@@ -544,38 +544,38 @@ export async function generateVideo(
   const url = `${API_BASE_URL}/api/generate-video`;
   return retryRequest(
     async () => {
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "POST",
-        headers: {
+      headers: {
           "Content-Type": "application/json",
-          ...getRuntimeModelHeaders(),
-        },
-        body: JSON.stringify({
-          imageUrl,
-          prompt,
-          projectId,
-          sceneIndex,
-          seedFrame,
-          duration, // Pass duration if provided
-          subsceneIndex, // Pass subscene index if provided
-          modelParameters, // Pass model parameters if provided
-          referenceImageUrls, // Pass reference images if provided
-        }),
-      });
+        ...getRuntimeModelHeaders(),
+      },
+      body: JSON.stringify({
+        imageUrl,
+        prompt,
+        projectId,
+        sceneIndex,
+        seedFrame,
+        duration, // Pass duration if provided
+        subsceneIndex, // Pass subscene index if provided
+        modelParameters, // Pass model parameters if provided
+        referenceImageUrls, // Pass reference images if provided
+      }),
+    });
 
-      if (!response.ok) {
+    if (!response.ok) {
         const error = await response
           .json()
           .catch(() => ({ error: "Failed to generate video" }));
         throw new Error(error.error || "Failed to generate video");
-      }
+    }
 
-      const result = await response.json();
+    const result = await response.json();
 
-      // Extract predictionId from the nested data structure
-      if (result.success && result.data?.predictionId) {
-        return {
-          predictionId: result.data.predictionId,
+    // Extract predictionId from the nested data structure
+    if (result.success && result.data?.predictionId) {
+      return {
+        predictionId: result.data.predictionId,
           status: "starting",
         };
       }
@@ -925,17 +925,17 @@ export async function fetchProjects(
   const url = `${API_BASE_URL}/api/projects?scope=${scope}`;
   return retryRequest(
     async () => {
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "GET",
         credentials: "include",
-      });
+    });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
 
-      const data = await response.json();
-      return data.projects || [];
+    const data = await response.json();
+    return data.projects || [];
     },
     DEFAULT_RETRY_CONFIG,
     { method: "GET", url },
@@ -954,29 +954,29 @@ export async function saveProject(
   const url = `${API_BASE_URL}/api/projects`;
   return retryRequest(
     async () => {
-      const response = await fetch(url, {
+    const response = await fetch(url, {
         method: "POST",
         credentials: "include",
-        headers: {
+      headers: {
           "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name,
-          prompt,
-          targetDuration,
-          characterDescription,
-        }),
-      });
+      },
+      body: JSON.stringify({
+        name,
+        prompt,
+        targetDuration,
+        characterDescription,
+      }),
+    });
 
-      if (!response.ok) {
+    if (!response.ok) {
         const error = await response
           .json()
           .catch(() => ({ error: "Failed to create project" }));
         throw new Error(error.error || "Failed to create project");
-      }
+    }
 
-      const data = await response.json();
-      return data.project;
+    const data = await response.json();
+    return data.project;
     },
     DEFAULT_RETRY_CONFIG,
     { method: "POST", url },
@@ -1011,6 +1011,31 @@ export async function updateProject(
         .json()
         .catch(() => ({ error: "Failed to update project" }));
       throw new Error(error.error || "Failed to update project");
+    }
+
+    const data = await response.json();
+    return data.project;
+  });
+}
+
+/**
+ * Save full project state (metadata, scenes, timeline, etc.)
+ * Excludes large media files - only saves references
+ */
+export async function saveFullProject(projectId: string, projectData?: any): Promise<any> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/save`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(projectData || {}),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to save project' }));
+      throw new Error(error.error || 'Failed to save project');
     }
 
     const data = await response.json();
@@ -1244,6 +1269,7 @@ export interface MusicGenerationOptions {
   genre?: string;
   duration?: number;
   temperature?: number;
+  provider?: 'musicgen' | 'suno'; // Music provider selection
   modelVersion?:
     | "stereo-melody-large"
     | "stereo-large"
@@ -1257,6 +1283,7 @@ export interface MusicGenerationResponse {
   data?: {
     predictionId: string;
     status: string;
+    provider?: 'musicgen' | 'suno'; // Provider used for generation
     prompt: string;
     duration: number;
     analysis?: any;
@@ -1299,6 +1326,7 @@ export async function generateMusicTrack(
         genre: options.genre,
         duration: options.duration,
         temperature: options.temperature,
+        provider: options.provider, // Include provider selection
         modelVersion: options.modelVersion,
       }),
     });
@@ -1308,6 +1336,215 @@ export async function generateMusicTrack(
         .json()
         .catch(() => ({ error: "Failed to generate music" }));
       throw new Error(error.error || "Failed to generate music");
+    }
+
+    return response.json();
+  });
+}
+
+/**
+ * Poll music generation status
+ * Supports both simple signature and options object for backward compatibility
+ */
+export async function pollMusicStatus(
+  predictionId: string,
+  providerOrOptions?: 'musicgen' | 'suno' | {
+    interval?: number;
+    timeout?: number;
+    projectId?: string;
+    provider?: 'musicgen' | 'suno';
+    onProgress?: (status: MusicStatusResponse) => void;
+  },
+  projectId?: string
+): Promise<MusicStatusResponse> {
+  // Handle options object (backward compatible)
+  if (typeof providerOrOptions === 'object' && providerOrOptions !== null) {
+    const { interval = 3000, timeout = 180000, projectId: optProjectId, provider, onProgress } = providerOrOptions;
+    const startTime = Date.now();
+
+    return new Promise((resolve, reject) => {
+      const poll = async () => {
+        try {
+          if (Date.now() - startTime > timeout) {
+            reject(new Error("Music generation timeout"));
+            return;
+          }
+
+          const params = new URLSearchParams();
+          if (provider) params.set('provider', provider);
+          if (optProjectId) params.set('projectId', optProjectId);
+          const queryString = params.toString();
+
+          const url = `${API_BASE_URL}/api/generate-music/${predictionId}${queryString ? `?${queryString}` : ""}`;
+          const response = await fetch(url, { credentials: "include" });
+
+          if (!response.ok) {
+            throw new Error("Failed to fetch music status");
+          }
+
+          const status: MusicStatusResponse = await response.json();
+
+          if (onProgress) {
+            onProgress(status);
+          }
+
+          if (status.data?.status === "succeeded") {
+            resolve(status);
+            return;
+          }
+
+          if (
+            status.data?.status === "failed" ||
+            status.data?.status === "canceled"
+          ) {
+            reject(new Error(status.data?.error || "Music generation failed"));
+            return;
+          }
+
+          setTimeout(poll, interval);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      poll();
+    });
+  }
+
+  // Handle simple signature (provider string, projectId)
+  const provider = providerOrOptions as 'musicgen' | 'suno' | undefined;
+  return retryRequest(async () => {
+    const params = new URLSearchParams();
+    if (provider) params.set('provider', provider);
+    if (projectId) params.set('projectId', projectId);
+    
+    const url = `${API_BASE_URL}/api/generate-music/${predictionId}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Failed to get music status" }));
+      throw new Error(error.error || "Failed to get music status");
+    }
+
+    return response.json();
+  });
+}
+
+/**
+ * Voice Conversion Types and Functions
+ */
+export type VoiceConversionSourceType = 'narration' | 'video' | 'audio_track' | 'direct';
+
+export interface VoiceConversionOptions {
+  // Source type
+  sourceType?: VoiceConversionSourceType;
+  
+  // Direct audio input
+  audioUrl?: string;
+  audioPath?: string;
+  
+  // Narration source
+  narrationTrackId?: string;
+  narrationAudioUrl?: string;
+  
+  // Video source
+  videoUrl?: string;
+  videoPath?: string;
+  timelineClipId?: string;
+  
+  // Audio track source
+  audioTrackId?: string;
+  
+  // Voice model
+  modelUrl?: string;
+  modelPath?: string;
+  customModelId?: string;
+  
+  // Conversion parameters
+  pitchChange?: number;
+  indexRate?: number;
+  reverbSize?: number;
+  protect?: number;
+  
+  projectId: string;
+}
+
+export interface VoiceConversionResponse {
+  success: boolean;
+  data?: {
+    predictionId: string;
+    status: string;
+  };
+  error?: string;
+}
+
+export interface VoiceConversionStatusResponse {
+  success: boolean;
+  data?: {
+    status: "starting" | "processing" | "succeeded" | "failed" | "canceled";
+    audioUrl?: string;
+    localPath?: string;
+    s3Url?: string;
+    error?: string;
+  };
+  error?: string;
+}
+
+/**
+ * Convert voice using RVC model
+ */
+export async function convertVoice(
+  options: VoiceConversionOptions
+): Promise<VoiceConversionResponse> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/voice-convert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(options),
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Failed to convert voice" }));
+      throw new Error(error.error || "Failed to convert voice");
+    }
+
+    return response.json();
+  });
+}
+
+/**
+ * Poll voice conversion status
+ */
+export async function pollVoiceConversionStatus(
+  predictionId: string,
+  projectId?: string
+): Promise<VoiceConversionStatusResponse> {
+  return retryRequest(async () => {
+    const params = new URLSearchParams();
+    if (projectId) params.set('projectId', projectId);
+    
+    const url = `${API_BASE_URL}/api/voice-convert/${predictionId}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Failed to get voice conversion status" }));
+      throw new Error(error.error || "Failed to get voice conversion status");
     }
 
     return response.json();
@@ -1352,10 +1589,10 @@ export async function createTextOverlay(
       {
         method: "POST",
         credentials: "include",
-        headers: {
+      headers: {
           "Content-Type": "application/json",
-        },
-        body: JSON.stringify(overlayData),
+      },
+      body: JSON.stringify(overlayData),
       },
     );
 
@@ -1385,10 +1622,10 @@ export async function updateTextOverlay(
       {
         method: "PATCH",
         credentials: "include",
-        headers: {
+      headers: {
           "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ overlayId, ...updates }),
+      },
+      body: JSON.stringify({ overlayId, ...updates }),
       },
     );
 
@@ -1429,68 +1666,6 @@ export async function deleteTextOverlay(
   });
 }
 
-/**
- * Poll for music generation status
- */
-export async function pollMusicStatus(
-  predictionId: string,
-  options: {
-    interval?: number;
-    timeout?: number;
-    projectId?: string;
-    onProgress?: (status: MusicStatusResponse) => void;
-  } = {},
-): Promise<MusicStatusResponse> {
-  const { interval = 3000, timeout = 180000, projectId, onProgress } = options;
-  const startTime = Date.now();
-
-  return new Promise((resolve, reject) => {
-    const poll = async () => {
-      try {
-        if (Date.now() - startTime > timeout) {
-          reject(new Error("Music generation timeout"));
-          return;
-        }
-
-        const params = new URLSearchParams();
-        if (projectId) params.set("projectId", projectId);
-        const queryString = params.toString();
-
-        const url = `${API_BASE_URL}/api/generate-music/${predictionId}${queryString ? `?${queryString}` : ""}`;
-        const response = await fetch(url, { credentials: "include" });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch music status");
-        }
-
-        const status: MusicStatusResponse = await response.json();
-
-        if (onProgress) {
-          onProgress(status);
-        }
-
-        if (status.data?.status === "succeeded") {
-          resolve(status);
-          return;
-        }
-
-        if (
-          status.data?.status === "failed" ||
-          status.data?.status === "canceled"
-        ) {
-          reject(new Error(status.data?.error || "Music generation failed"));
-          return;
-        }
-
-        setTimeout(poll, interval);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    poll();
-  });
-}
 
 /**
  * Generate music and wait for completion
@@ -1510,6 +1685,7 @@ export async function generateMusicAndWait(
 
   const status = await pollMusicStatus(result.data.predictionId, {
     projectId: options.projectId,
+    provider: result.data.provider,
   });
 
   if (!status.success || !status.data?.audioUrl) {
@@ -1648,3 +1824,55 @@ export async function updateScene(
     return response.json();
   });
 }
+// Narration script generation from storyboard
+
+export interface NarrationScriptScene {
+  description: string;
+  imagePrompt?: string;
+  videoPrompt?: string;
+  suggestedDuration?: number;
+}
+
+export interface NarrationScriptOptions {
+  scenes: NarrationScriptScene[];
+  projectName?: string;
+  characterDescription?: string;
+  targetDuration?: number;
+  mood?: string;
+}
+
+export interface NarrationScriptResponse {
+  success: boolean;
+  data?: {
+    script: string;
+    sceneCount: number;
+    estimatedDuration: number;
+  };
+  error?: string;
+}
+
+/**
+ * Generate a narration script from storyboard scenes using Claude Sonnet
+ */
+export async function generateNarrationScript(
+  options: NarrationScriptOptions
+): Promise<NarrationScriptResponse> {
+  const url = `${API_BASE_URL}/api/generate-narration-script`;
+  return retryRequest(async () => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(options),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to generate narration script' }));
+      throw new Error(error.error || 'Failed to generate narration script');
+    }
+
+    return response.json();
+  }, DEFAULT_RETRY_CONFIG, { method: 'POST', url });
+}
+

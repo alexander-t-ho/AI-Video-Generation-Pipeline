@@ -1,10 +1,23 @@
-import { getServerSession } from 'next-auth';
+import { getServerSession, Session } from 'next-auth';
 import { authOptions } from './auth-options';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 
-export async function getSession() {
-  return await getServerSession(authOptions);
+// Extended session type with company info
+export interface ExtendedSession extends Session {
+  user: {
+    id: string;
+    companyId: string;
+    companyName: string;
+    role: string;
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+  };
+}
+
+export async function getSession(): Promise<ExtendedSession | null> {
+  return await getServerSession(authOptions) as ExtendedSession | null;
 }
 
 export async function getCurrentUser() {

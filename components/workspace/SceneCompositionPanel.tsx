@@ -1,12 +1,19 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, X, Loader2, ChevronDown } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { GeneratedImage } from '@/lib/types';
 import { generateComposite, generateImage, pollImageStatus } from '@/lib/api-client';
 import { getPublicBackgrounds, publicBackgroundToUploadedImage, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
+
+type CompositionMode = 'scene' | 'character';
+
+const COMPOSITION_MODE_OPTIONS: { value: CompositionMode; label: string }[] = [
+  { value: 'scene', label: 'Scene Composition' },
+  { value: 'character', label: 'Character Composition' },
+];
 
 interface SceneCompositionPanelProps {
   sceneIndex: number;
@@ -110,7 +117,10 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
   const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
   const [backgroundPrompt, setBackgroundPrompt] = useState('');
   const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>('scene');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isGeneratingFaceSwap, setIsGeneratingFaceSwap] = useState(false);
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
 
   // Load public backgrounds on mount
   useEffect(() => {
@@ -123,12 +133,31 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
   // Helper function to find image URL from ID
   const findImageUrl = useCallback((itemId: string) => {
-    // Search in uploaded images
+    // Search in uploaded images (including processed versions)
     if (project?.uploadedImages) {
       for (const uploadedImage of project.uploadedImages) {
-        if (uploadedImage.id === itemId) return uploadedImage.url;
+        // Check original image
+        if (uploadedImage.id === itemId) {
+          // Return the URL, handling both local paths and S3 URLs
+          if (uploadedImage.url.startsWith('http://') || uploadedImage.url.startsWith('https://')) {
+            return uploadedImage.url;
+          } else if (uploadedImage.localPath) {
+            return `/api/serve-image?path=${encodeURIComponent(uploadedImage.localPath)}`;
+          } else {
+            return uploadedImage.url;
+          }
+        }
+        // Check processed versions
         const processed = uploadedImage.processedVersions?.find(p => p.id === itemId);
-        if (processed) return processed.url;
+        if (processed) {
+          if (processed.url.startsWith('http://') || processed.url.startsWith('https://')) {
+            return processed.url;
+          } else if (processed.localPath) {
+            return `/api/serve-image?path=${encodeURIComponent(processed.localPath)}`;
+          } else {
+            return processed.url;
+          }
+        }
       }
     }
 
@@ -136,6 +165,20 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     for (const scn of scenes) {
       const img = scn.generatedImages?.find((i: GeneratedImage) => i.id === itemId);
       if (img) return img.url;
+    }
+
+    // Search in saved images
+    if (project?.savedImages) {
+      const savedImg = project.savedImages.find((s: any) => s.id === itemId);
+      if (savedImg) {
+        if (savedImg.url.startsWith('http://') || savedImg.url.startsWith('https://')) {
+          return savedImg.url;
+        } else if (savedImg.localPath) {
+          return `/api/serve-image?path=${encodeURIComponent(savedImg.localPath)}`;
+        } else {
+          return savedImg.url;
+        }
+      }
     }
 
     return null;
@@ -383,6 +426,41 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     updateSceneSettings(sceneIndex, { backgroundImageId: imageId });
   };
 
+  // Get available reference images for the reference selection modal
+  const getAvailableReferences = () => {
+    const refs: Array<{ id: string; url: string; label?: string; originalName?: string }> = [];
+
+    // Add uploaded images
+    if (project?.uploadedImages) {
+      project.uploadedImages.forEach((img) => {
+        refs.push({
+          id: img.id,
+          url: getImageUrl(img),
+          label: 'Uploaded',
+          originalName: img.originalName,
+        });
+      });
+    }
+
+    // Add generated images from all scenes
+    scenes.forEach((scn, idx) => {
+      scn.generatedImages?.forEach((img: GeneratedImage) => {
+        refs.push({
+          id: img.id,
+          url: getImageUrl(img),
+          label: `Scene ${idx + 1}`,
+          originalName: img.prompt?.substring(0, 30),
+        });
+      });
+    });
+
+    return refs;
+  };
+
+  const handleReferenceSelect = (imageId: string) => {
+    updateSceneSettings(sceneIndex, { referenceImageId: imageId });
+  };
+
   const handleGenerateBackground = async () => {
     if (!backgroundPrompt.trim() || !project) {
       alert('Please enter a background prompt');
@@ -490,6 +568,62 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
     }
   };
 
+  // Character Composition: Face swap using Nano Banana Pro
+  const handleGenerateFaceSwap = async () => {
+    if (!referenceImage1 || !backgroundImage || !project) {
+      alert('Please select both Image 1 (face to swap) and Image 2 (target image) first');
+      return;
+    }
+
+    setIsGeneratingFaceSwap(true);
+    try {
+      console.log('[SceneComposition] Generating face swap with:', {
+        image1: referenceImage1,
+        image2: backgroundImage,
+      });
+
+      // Get the URLs for the images
+      const image1Url = getImageUrl(referenceImage1);
+      const image2Url = getImageUrl(backgroundImage);
+
+      // Call the face swap API
+      const response = await fetch('/api/generate-face-swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image1Url,
+          image2Url,
+          projectId: project.id,
+          sceneIndex,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.image) {
+        // Add the face swap result to generated images
+        addGeneratedImage(sceneIndex, result.image);
+
+        // Update scene to mark this as the composite image
+        updateSceneSettings(sceneIndex, {
+          compositeImageId: result.image.id,
+        });
+
+        // Select the face swap result
+        selectImage(sceneIndex, result.image.id);
+
+        console.log('[SceneComposition] Face swap generated successfully:', result.image);
+      } else {
+        throw new Error(result.error || 'Failed to generate face swap');
+      }
+    } catch (err) {
+      console.error('[SceneComposition] Error generating face swap:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate face swap';
+      alert(`Error: ${errorMessage}`);
+    } finally {
+      setIsGeneratingFaceSwap(false);
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'reference' | 'background') => {
     const files = e.target.files;
@@ -504,24 +638,44 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
   return (
     <div className="space-y-3">
-      {/* Collapsible Header */}
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
-      >
-        <span className="text-sm font-medium text-white">Scene Composition</span>
-        {isCollapsed ? (
-          <ChevronDown className="w-4 h-4 text-white/60" />
-        ) : (
-          <ChevronUp className="w-4 h-4 text-white/60" />
-        )}
-      </button>
+      {/* Composition Mode Dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10"
+        >
+          <span className="text-sm font-medium text-white">
+            {COMPOSITION_MODE_OPTIONS.find(o => o.value === compositionMode)?.label}
+          </span>
+          <ChevronDown className={`w-4 h-4 text-white/60 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
 
-      {/* Collapsible Content */}
-      {!isCollapsed && (
-        <>
-          {/* Use Seed Frame Toggle (only for scenes > 0) */}
-          {sceneIndex > 0 && scenes[sceneIndex - 1]?.seedFrames && scenes[sceneIndex - 1].seedFrames!.length > 0 && (
+        {isDropdownOpen && (
+          <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-black/90 border border-white/20 rounded-lg overflow-hidden">
+            {COMPOSITION_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => {
+                  setCompositionMode(option.value);
+                  setIsDropdownOpen(false);
+                }}
+                className={`w-full px-3 py-2 text-sm text-left transition-colors ${
+                  compositionMode === option.value
+                    ? 'bg-blue-500/20 text-blue-300'
+                    : 'text-white/80 hover:bg-white/10'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Composition Content */}
+      <div className="space-y-3">
+          {/* Use Seed Frame Toggle (only for scenes > 0 and Scene Composition mode) */}
+          {compositionMode === 'scene' && sceneIndex > 0 && scenes[sceneIndex - 1]?.seedFrames && scenes[sceneIndex - 1].seedFrames!.length > 0 && (
             <div className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-lg border border-white/10">
               <div className="flex-1">
                 <label className="text-sm font-medium text-white cursor-pointer" htmlFor={`use-seed-frame-${sceneIndex}`}>
@@ -543,11 +697,21 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
             </div>
           )}
 
-          {/* Reference Images (3), Background & Composite (5 total) */}
-          <div className="grid grid-cols-5 gap-3">
-            {/* Reference Image 1 */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-white/80">Reference 1</label>
+          {/* Character Composition Description */}
+          {compositionMode === 'character' && (
+            <div className="px-3 py-2 bg-purple-500/10 border border-purple-400/30 rounded-lg">
+              <p className="text-xs text-purple-300">
+                Swap the face of the person in Image 1 to the face of the person in Image 2
+              </p>
+            </div>
+          )}
+
+          {/* Scene Composition: Reference Images (3), Background & Composite (5 total) */}
+          {compositionMode === 'scene' && (
+            <div className="grid grid-cols-5 gap-3">
+              {/* Reference Image 1 */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-white/80">Reference 1</label>
               <div
                 onDrop={referenceDropZone1.handleDrop}
                 onDragOver={referenceDropZone1.handleDragOver}
@@ -668,9 +832,9 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
               </div>
             </div>
 
-            {/* Background Box */}
+            {/* Image 2 Box (Background) */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-white/80">Background</label>
+              <label className="text-xs font-medium text-white/80">Image 2</label>
               <div
                 onClick={() => setShowBackgroundModal(true)}
                 onDrop={backgroundDropZone.handleDrop}
@@ -706,7 +870,7 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
               </div>
             </div>
 
-            {/* Composite Box */}
+            {/* Result Box (Composite/Face Swap) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-white/80">Composite</label>
@@ -762,49 +926,210 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
               </div>
             </div>
           </div>
+          )}
 
-          {/* Background Generation */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-white/80">Generate Background</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={backgroundPrompt}
-                onChange={(e) => setBackgroundPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isGeneratingBackground) {
-                    handleGenerateBackground();
-                  }
-                }}
-                placeholder="Describe the background scene..."
-                className="flex-1 px-3 py-2 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400/30 text-white placeholder-white/40"
-                disabled={isGeneratingBackground}
-              />
+          {/* Background Generation (Scene Composition only) */}
+          {compositionMode === 'scene' && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-white/80">Generate Background</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={backgroundPrompt}
+                  onChange={(e) => setBackgroundPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isGeneratingBackground) {
+                      handleGenerateBackground();
+                    }
+                  }}
+                  placeholder="Describe the background scene..."
+                  className="flex-1 px-3 py-2 text-xs bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400/30 text-white placeholder-white/40"
+                  disabled={isGeneratingBackground}
+                />
+                <button
+                  onClick={handleGenerateBackground}
+                  disabled={isGeneratingBackground || !backgroundPrompt.trim()}
+                  className="px-4 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isGeneratingBackground ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Generate Button - Conditional based on mode */}
+          {referenceImage1 && backgroundImage && !compositeImage && (
+            compositionMode === 'scene' ? (
               <button
-                onClick={handleGenerateBackground}
-                disabled={isGeneratingBackground || !backgroundPrompt.trim()}
-                className="px-4 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                onClick={handleGenerateComposite}
+                disabled={isGeneratingComposite}
+                className="w-full px-3 py-2 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isGeneratingBackground ? (
+                {isGeneratingComposite ? 'Generating Composite...' : 'Generate Composite'}
+              </button>
+            ) : (
+              <button
+                onClick={handleGenerateFaceSwap}
+                disabled={isGeneratingFaceSwap}
+                className="w-full px-3 py-2 text-xs font-medium bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-400/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isGeneratingFaceSwap ? (
                   <>
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    Generating...
+                    Swapping Faces...
                   </>
                 ) : (
-                  'Generate'
+                  'Swap Faces'
                 )}
               </button>
-            </div>
-          </div>
-        </>
-      )}
+            )
+          )}
 
-      {/* Modals - outside collapsible section */}
-      {/* Background Selection Modal */}
+          {/* Character Composition: Image 1, Image 2 & Result (3 columns) */}
+          {compositionMode === 'character' && (
+            <div className="grid grid-cols-3 gap-3">
+              {/* Image 1 Box (Reference) */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-white/80">Image 1</label>
+                <div
+                  onDrop={referenceDropZone1.handleDrop}
+                  onDragOver={referenceDropZone1.handleDragOver}
+                  onDragLeave={referenceDropZone1.handleDragLeave}
+                  className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                    referenceDropZone1.isOverDropZone
+                      ? 'border-blue-400 bg-blue-500/10'
+                      : referenceImage1
+                      ? 'border-yellow-400/50 hover:border-yellow-400/80'
+                      : 'border-white/20 hover:border-white/40 bg-white/5'
+                  }`}
+                >
+                  {referenceImage1 ? (
+                    <>
+                      <img
+                        src={getImageUrl(referenceImage1)}
+                        alt="Image 1"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeReferenceImage(0);
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                      <Upload className="w-5 h-5 text-white/40" />
+                      <p className="text-xs text-white/40">Drag here</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Image 2 Box (Background) */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-white/80">Image 2</label>
+                <div
+                  onClick={() => setShowBackgroundModal(true)}
+                  onDrop={backgroundDropZone.handleDrop}
+                  onDragOver={backgroundDropZone.handleDragOver}
+                  onDragLeave={backgroundDropZone.handleDragLeave}
+                  className={`relative aspect-video rounded-lg border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+                    backgroundDropZone.isOverDropZone
+                      ? 'border-blue-400 bg-blue-500/10'
+                      : backgroundImage
+                      ? 'border-white/20 hover:border-white/40'
+                      : 'border-white/20 hover:border-white/40 bg-white/5'
+                  }`}
+                >
+                  {backgroundImage ? (
+                    <img
+                      src={getImageUrl(backgroundImage)}
+                      alt="Image 2"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      <Upload className="w-6 h-6 text-white/40" />
+                      <p className="text-xs text-white/40">Click or drag</p>
+                    </div>
+                  )}
+                  <input
+                    ref={backgroundInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileSelect(e, 'background')}
+                  />
+                </div>
+              </div>
+
+              {/* Result Box (Face Swap) */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-white/80">Result</label>
+                <div
+                  className="relative aspect-video rounded-lg border-2 border-white/20 overflow-hidden bg-white/5"
+                >
+                  {compositeImage ? (
+                    <img
+                      src={getImageUrl(compositeImage)}
+                      alt="Face Swap Result"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      {isGeneratingFaceSwap ? (
+                        <>
+                          <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+                          <p className="text-xs text-white/40">Swapping...</p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-6 h-6 text-white/20">
+                            <svg viewBox="0 0 24 24" fill="none" className="w-full h-full">
+                              <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.5" />
+                              <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.3" />
+                              <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.3" />
+                              <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.5" />
+                            </svg>
+                          </div>
+                          <p className="text-xs text-white/30">No result</p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+      </div>
+
+      {/* Modals */}
+      {/* Image 1 Selection Modal */}
+      <ImageSelectionModal
+        isOpen={showReferenceModal}
+        onClose={() => setShowReferenceModal(false)}
+        title={compositionMode === 'character' ? 'Select Image 1 (Face to Swap)' : 'Select Image 1 (Reference)'}
+        images={getAvailableReferences()}
+        onSelect={handleReferenceSelect}
+        selectedImageId={scene.referenceImageId}
+      />
+
+      {/* Image 2 Selection Modal */}
       <ImageSelectionModal
         isOpen={showBackgroundModal}
         onClose={() => setShowBackgroundModal(false)}
-        title="Select Background Image"
+        title={compositionMode === 'character' ? 'Select Image 2 (Target Image)' : 'Select Image 2 (Background)'}
         images={getAvailableBackgrounds()}
         onSelect={handleBackgroundSelect}
         selectedImageId={scene.backgroundImageId}

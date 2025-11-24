@@ -161,7 +161,15 @@ export function findImageUrlById(
  * formatSceneNumber(0) => "1"
  * formatSceneNumber(1.5) => "2.5"
  */
-export function formatSceneNumber(order: number): string {
+export function formatSceneNumber(order: number, fallbackIndex?: number): string {
+  // Handle NaN, undefined, or invalid values
+  if (typeof order !== 'number' || isNaN(order) || order < 0) {
+    if (fallbackIndex !== undefined) {
+      return String(fallbackIndex + 1);
+    }
+    return '?';
+  }
+  
   if (order % 1 === 0) {
     return String(order + 1);
   }

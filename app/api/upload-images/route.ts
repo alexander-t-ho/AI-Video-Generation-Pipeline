@@ -360,6 +360,40 @@ export async function POST(request: NextRequest) {
       console.warn(`[Upload Images API] Partial success: ${uploadedImages.length}/${imageFiles.length} images uploaded`);
     }
 
+    // Save uploaded images to database immediately
+    if (uploadedImages.length > 0) {
+      try {
+        const prisma = (await import('@/lib/db/prisma')).default;
+        const validImages = uploadedImages
+          .map((img) => {
+            const url = img.url ?? img.localPath ?? '';
+            if (!url || url.trim().length === 0) {
+              return null;
+            }
+            return {
+              projectId: projectId,
+              url: url.trim(),
+              s3Key: img.s3Key ? String(img.s3Key) : null,
+              originalName: img.originalName ?? 'image',
+              mimeType: img.mimeType ?? 'image/png',
+              size: typeof img.size === 'number' && !isNaN(img.size) ? img.size : 0,
+            };
+          })
+          .filter((img): img is NonNullable<typeof img> => img !== null);
+
+        if (validImages.length > 0) {
+          await prisma.uploadedImage.createMany({
+            data: validImages,
+            skipDuplicates: true, // Skip if already exists
+          });
+          console.log(`[Upload Images API] Saved ${validImages.length} image(s) to database`);
+        }
+      } catch (dbError) {
+        console.error('[Upload Images API] Failed to save images to database:', dbError);
+        // Don't fail the request if database save fails - images are still uploaded
+      }
+    }
+
     const duration = Date.now() - startTime;
     console.log(`[Upload Images API] Successfully uploaded ${uploadedImages.length} image(s) in ${duration}ms`);
 

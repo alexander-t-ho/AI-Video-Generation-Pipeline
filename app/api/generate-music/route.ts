@@ -11,7 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   generateMusicWithMusicGen,
+  generateMusicWithSuno,
   MusicGenerationRequest,
+  MusicProvider,
 } from '@/lib/ai/music-generator';
 import {
   analyzeVideoForMusic,
@@ -19,7 +21,7 @@ import {
   createSimpleMusicPrompt,
 } from '@/lib/ai/video-music-analyzer';
 
-export const maxDuration = 120; // Allow up to 2 minutes for video analysis + music generation
+export const maxDuration = 300; // Allow up to 5 minutes for video analysis + music generation (Suno can take longer)
 
 interface GenerateMusicBody {
   // Direct prompt mode
@@ -33,6 +35,9 @@ interface GenerateMusicBody {
   // Simple prompt mode
   mood?: string;
   genre?: string;
+
+  // Provider selection
+  provider?: MusicProvider; // 'musicgen' | 'suno'
 
   // MusicGen options
   temperature?: number;
@@ -80,24 +85,45 @@ export async function POST(request: NextRequest) {
         duration,
       });
 
-      // Return analysis along with starting the generation
-      const { predictionId, status } = await generateMusicWithMusicGen({
-        prompt: musicPrompt,
-        duration,
-        temperature: body.temperature,
-        modelVersion: body.modelVersion,
-        outputFormat: body.outputFormat,
-      });
+      // Determine provider
+      const defaultProvider = (process.env.MUSIC_PROVIDER as MusicProvider) || 'musicgen';
+      const provider = body.provider || defaultProvider;
+
+      // Start generation with selected provider
+      let predictionId: string;
+      let status: string;
+      
+      if (provider === 'suno') {
+        const result = await generateMusicWithSuno({
+          prompt: musicPrompt,
+          duration,
+          provider: 'suno',
+        });
+        predictionId = result.predictionId;
+        status = result.status;
+      } else {
+        const result = await generateMusicWithMusicGen({
+          prompt: musicPrompt,
+          duration,
+          temperature: body.temperature,
+          modelVersion: body.modelVersion,
+          outputFormat: body.outputFormat,
+          provider: 'musicgen',
+        });
+        predictionId = result.predictionId;
+        status = result.status;
+      }
 
       return NextResponse.json({
         success: true,
-        data: {
-          predictionId,
-          status,
-          analysis, // Include the full analysis
-          prompt: musicPrompt,
-          duration,
-        },
+      data: {
+        predictionId,
+        status,
+        provider: provider,
+        analysis, // Include the full analysis
+        prompt: musicPrompt,
+        duration,
+      },
       });
     }
 
@@ -120,20 +146,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Start music generation
-    const { predictionId, status } = await generateMusicWithMusicGen({
-      prompt: musicPrompt,
-      duration,
-      temperature: body.temperature,
-      modelVersion: body.modelVersion,
-      outputFormat: body.outputFormat,
-    });
+    // Determine provider
+    const defaultProvider = (process.env.MUSIC_PROVIDER as MusicProvider) || 'musicgen';
+    const provider = body.provider || defaultProvider;
+
+    // Start music generation with selected provider
+    let predictionId: string;
+    let status: string;
+    
+    if (provider === 'suno') {
+      const result = await generateMusicWithSuno({
+        prompt: musicPrompt,
+        duration,
+        provider: 'suno',
+      });
+      predictionId = result.predictionId;
+      status = result.status;
+    } else {
+      const result = await generateMusicWithMusicGen({
+        prompt: musicPrompt,
+        duration,
+        temperature: body.temperature,
+        modelVersion: body.modelVersion,
+        outputFormat: body.outputFormat,
+        provider: 'musicgen',
+      });
+      predictionId = result.predictionId;
+      status = result.status;
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         predictionId,
         status,
+        provider: provider,
         prompt: musicPrompt,
         duration,
       },
@@ -173,8 +220,9 @@ export async function GET() {
         model: 'google/gemini-2.5-pro',
       },
       suno: {
-        available: false,
-        status: 'coming soon',
+        available: !!process.env.SUNO_API,
+        via: 'sunoapi.org',
+        configured: !!process.env.SUNO_API,
       },
     },
   });

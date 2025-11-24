@@ -18,8 +18,10 @@ export interface ProjectCoreSlice {
   selectedStylePrompt: string | null;
   needsCharacterValidation: boolean;
   hasUploadedImages: boolean;
+  isProjectSavedToBackend: boolean;
 
   createProject: (name: string, prompt: string, targetDuration?: number, characterDescription?: string) => Promise<void>;
+  setIsProjectSavedToBackend: (saved: boolean) => void;
   saveProjectToBackend: (name: string, prompt: string, targetDuration?: number, characterDescription?: string) => Promise<string>;
   updateProject: (updates: Partial<ProjectState>) => void;
   updateProjectMetadata: (updates: {

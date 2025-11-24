@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useSession, signOut, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Building2, LogOut, Settings, ChevronDown, Mail, Lock } from 'lucide-react';
+import { User, Building2, LogOut, Settings, ChevronDown, Mail, Lock, FolderKanban } from 'lucide-react';
 
 interface UserMenuProps {
   showFullButton?: boolean;
@@ -201,6 +201,14 @@ export default function UserMenu({ showFullButton = false }: UserMenuProps) {
             >
               <User className="w-4 h-4 mr-3" />
               Edit Profile
+            </Link>
+            <Link
+              href="/projects"
+              className="flex items-center px-4 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+              onClick={() => setIsOpen(false)}
+            >
+              <FolderKanban className="w-4 h-4 mr-3" />
+              Projects
             </Link>
             <Link
               href="/company"

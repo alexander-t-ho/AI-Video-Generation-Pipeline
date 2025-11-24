@@ -55,6 +55,9 @@ export async function GET(
         uploadedImages: {
           orderBy: { createdAt: 'desc' },
         },
+        textOverlays: {
+          orderBy: { startTime: 'asc' },
+        },
       },
     });
 
@@ -94,6 +97,16 @@ export async function PATCH(
     const body = await req.json();
     const { name, status, finalVideoUrl, finalVideoS3Key, characterDescription, targetDuration } = body;
 
+    // First check if project exists
+    const existingProject = await prisma.project.findUnique({
+      where: { id },
+    });
+
+    if (!existingProject) {
+      console.error('[PATCH /api/projects] Project not found:', id);
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
     const project = await prisma.project.update({
       where: { id },
       data: {
@@ -120,8 +133,9 @@ export async function PATCH(
 
     return NextResponse.json({ project });
   } catch (error) {
-    console.error('Error updating project:', error);
-    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 });
+    console.error('[PATCH /api/projects] Error updating project:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: `Failed to update project: ${errorMessage}` }, { status: 500 });
   }
 }
 

@@ -86,24 +86,8 @@ export default function MediaDrawer() {
     loadPublicBackgrounds();
   }, []);
 
-  // Auto-filter by scene when on video or images tab
-  useEffect(() => {
-    if (viewMode === 'video' || viewMode === 'images') {
-      // Automatically set scene filter to current scene
-      setFilter({
-        ...mediaDrawer.filters,
-        scene: currentSceneIndex,
-      });
-    } else {
-      // Clear scene filter when not on video/images tabs
-      if (mediaDrawer.filters.scene !== undefined) {
-        setFilter({
-          ...mediaDrawer.filters,
-          scene: undefined,
-        });
-      }
-    }
-  }, [viewMode, currentSceneIndex]);
+  // Note: Removed auto-filtering by scene to allow access to all scenes' assets
+  // Users can manually filter by scene using the filter dropdown if needed
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const thumbnailRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);

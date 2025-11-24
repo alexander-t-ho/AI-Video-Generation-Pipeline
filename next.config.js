@@ -2,7 +2,7 @@
 const nextConfig = {
   // Railway compatibility
   output: 'standalone',
-  
+
   // Image optimization
   images: {
     remotePatterns: [
@@ -12,6 +12,7 @@ const nextConfig = {
       },
     ],
   },
+
 };
 
 module.exports = nextConfig;

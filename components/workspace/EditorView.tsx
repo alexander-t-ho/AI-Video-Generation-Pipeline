@@ -882,13 +882,27 @@ export default function EditorView() {
         mode: lastFrameUrl ? 'interpolation' : 'standard',
       });
 
+      // Validate and prepare duration
+      let validDuration: number | undefined;
+      if (editedDuration) {
+        const numDuration = Number(editedDuration);
+        if (!isNaN(numDuration) && numDuration >= 1 && numDuration <= 30) {
+          validDuration = numDuration;
+        }
+      } else if (currentScene.customDuration) {
+        const numDuration = Number(currentScene.customDuration);
+        if (!isNaN(numDuration) && numDuration >= 1 && numDuration <= 30) {
+          validDuration = numDuration;
+        }
+      }
+
       const videoResponse = await generateVideo(
         s3Url, // Base image from selected image
         editedVideoPrompt || currentScene.videoPrompt || currentScene.imagePrompt, // Use edited value, fallback to imagePrompt for backward compatibility
         project.id,
         currentSceneIndex,
         undefined, // seedFrameUrl removed - users manually save last frame when needed
-        (editedDuration ? Number(editedDuration) : currentScene.customDuration), // Use edited duration if set
+        validDuration, // Only pass valid duration (1-30 seconds)
         undefined, // subsceneIndex not used
         modelParameters, // Pass model-specific parameters (including last_frame if provided)
         referenceImageUrls.length > 0 ? referenceImageUrls : undefined // Pass reference images if provided
@@ -1562,7 +1576,13 @@ export default function EditorView() {
                     : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                Scene {scene.order % 1 === 0 ? scene.order + 1 : (Math.floor(scene.order) + 1) + '.' + Math.round((scene.order % 1) * 10)}
+                Scene {(() => {
+                  const order = scene.order;
+                  if (typeof order !== 'number' || isNaN(order) || order < 0) {
+                    return index + 1;
+                  }
+                  return order % 1 === 0 ? order + 1 : (Math.floor(order) + 1) + '.' + Math.round((order % 1) * 10);
+                })()}
               </button>
             ))}
           </div>
@@ -1575,7 +1595,13 @@ export default function EditorView() {
         <div className="mb-4 pb-4 border-b border-white/20">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-white">
-              Scene {currentScene.order % 1 === 0 ? currentScene.order + 1 : (Math.floor(currentScene.order) + 1) + '.' + Math.round((currentScene.order % 1) * 10)}: {currentScene.description}
+              Scene {(() => {
+                const order = currentScene.order;
+                if (typeof order !== 'number' || isNaN(order) || order < 0) {
+                  return currentSceneIndex + 1;
+                }
+                return order % 1 === 0 ? order + 1 : (Math.floor(order) + 1) + '.' + Math.round((order % 1) * 10);
+              })()}: {currentScene.description}
             </h3>
             <button
               onClick={handleDuplicateScene}

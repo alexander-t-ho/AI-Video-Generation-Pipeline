@@ -16,6 +16,10 @@ export interface ProjectSummary {
     name: string;
     email: string;
   };
+  company?: {
+    id: string;
+    name: string;
+  };
   _count?: {
     scenes: number;
   };
@@ -31,8 +35,9 @@ export interface UseProjectsReturn {
 
 /**
  * Hook to fetch and manage user's projects
+ * Supports 'mine', 'company', or 'all' scope
  */
-export function useProjects(scope: 'mine' | 'company' = 'mine'): UseProjectsReturn {
+export function useProjects(scope: 'mine' | 'company' | 'all' = 'mine'): UseProjectsReturn {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,8 +46,25 @@ export function useProjects(scope: 'mine' | 'company' = 'mine'): UseProjectsRetu
     try {
       setIsLoading(true);
       setError(null);
-      const data = await fetchProjects(scope);
-      setProjects(data);
+      
+      if (scope === 'all') {
+        // Fetch both mine and company projects, then combine and deduplicate
+        const [mineProjects, companyProjects] = await Promise.all([
+          fetchProjects('mine'),
+          fetchProjects('company'),
+        ]);
+        
+        // Combine and deduplicate by project ID
+        const projectMap = new Map<string, ProjectSummary>();
+        [...mineProjects, ...companyProjects].forEach((proj) => {
+          projectMap.set(proj.id, proj);
+        });
+        
+        setProjects(Array.from(projectMap.values()));
+      } else {
+        const data = await fetchProjects(scope);
+        setProjects(data);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch projects';
       setError(message);

@@ -648,7 +648,7 @@ export default function SceneCard({
       <div className="flex items-center gap-2 mb-2">
         <div className="relative flex-shrink-0">
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20">
-            {formatSceneNumber(scene.order)}
+            {formatSceneNumber(scene.order, sceneIndex)}
           </span>
           {/* Duplicate button - appears on hover */}
           <button
@@ -661,7 +661,7 @@ export default function SceneCard({
           </button>
         </div>
         <h3 className="text-sm font-medium text-white flex-1 truncate">
-          {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
+          {scene.description ? (scene.description.charAt(0).toUpperCase() + scene.description.slice(1)) : 'Untitled Scene'}
         </h3>
         <span className="text-xs text-white/50 flex-shrink-0">
           {scene.suggestedDuration}s

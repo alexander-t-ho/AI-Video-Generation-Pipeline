@@ -2,7 +2,7 @@
  * Narration Generation API Route
  *
  * POST /api/generate-narration
- * Generates narration audio using OpenAI TTS HD via OpenRouter
+ * Generates narration audio using OpenAI TTS HD API directly
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,8 +18,8 @@ import {
 
 export const maxDuration = 60; // Allow up to 60 seconds for TTS generation
 
-// OpenRouter API endpoint for OpenAI TTS
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/audio/speech';
+// OpenAI API endpoint for TTS (OpenRouter doesn't support audio endpoints)
+const OPENAI_TTS_API_URL = 'https://api.openai.com/v1/audio/speech';
 
 interface GenerateNarrationBody {
   text: string;
@@ -51,11 +51,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
-        { success: false, error: 'OpenRouter API key not configured' },
+        { success: false, error: 'OpenAI API key not configured' },
         { status: 500 }
       );
     }
@@ -71,17 +71,15 @@ export async function POST(request: NextRequest) {
       projectId: body.projectId,
     });
 
-    // Call OpenRouter API directly
-    const response = await fetch(OPENROUTER_API_URL, {
+    // Call OpenAI TTS API directly
+    const response = await fetch(OPENAI_TTS_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'AI Video Generation Pipeline - Narration',
       },
       body: JSON.stringify({
-        model: 'openai/tts-1-hd',
+        model: 'tts-1-hd',
         input: body.text,
         voice: voice,
         speed: speed,
@@ -91,7 +89,7 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[GenerateNarration API] OpenRouter error:', response.status, errorText);
+      console.error('[GenerateNarration API] OpenAI error:', response.status, errorText);
 
       try {
         const errorJson = JSON.parse(errorText);
@@ -164,9 +162,9 @@ export async function GET() {
   return NextResponse.json({
     status: 'ok',
     service: 'narration-generation',
-    model: 'openai/tts-1-hd',
-    via: 'openrouter',
-    available: !!process.env.OPENROUTER_API_KEY,
+    model: 'tts-1-hd',
+    via: 'openai',
+    available: !!process.env.OPENAI_API_KEY,
     voices: VOICE_DESCRIPTIONS,
     supportedSpeeds: {
       min: 0.25,

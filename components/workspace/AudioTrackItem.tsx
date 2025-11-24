@@ -1,8 +1,8 @@
 'use client';
 
 import { AudioTrack } from '@/lib/types';
-import { Trash2, Volume2, VolumeX } from 'lucide-react';
-import { useState } from 'react';
+import { Trash2, Volume2, VolumeX, GripVertical } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 
 interface AudioTrackItemProps {
   track: AudioTrack;
@@ -25,10 +25,29 @@ export default function AudioTrackItem({
 }: AudioTrackItemProps) {
   const [showControls, setShowControls] = useState(false);
   const [volume, setVolume] = useState(track.volume);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragStartTime, setDragStartTime] = useState(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Apply zoom to width and position calculations
   const widthPercent = (track.duration / totalDuration) * 100 * zoomLevel;
   const leftPercent = (track.startTime / totalDuration) * 100 * zoomLevel;
+
+  // Find the timeline container for calculating positions
+  useEffect(() => {
+    if (trackRef.current) {
+      // Find the scrollable container (the one with overflow-x-auto)
+      const scrollableContainer = trackRef.current.closest('.overflow-x-auto');
+      if (scrollableContainer) {
+        containerRef.current = scrollableContainer as HTMLDivElement;
+      } else {
+        // Fallback to the relative container
+        containerRef.current = trackRef.current.closest('.relative') as HTMLDivElement;
+      }
+    }
+  }, []);
 
   const handleDelete = () => {
     if (confirm(`Delete audio track "${track.title}"?`)) {
@@ -41,9 +60,66 @@ export default function AudioTrackItem({
     onUpdate(track.id, { volume: newVolume });
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only start dragging if clicking on the track itself (not controls)
+    if ((e.target as HTMLElement).closest('.absolute.-top-10')) {
+      return;
+    }
+    
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragStartX(e.clientX);
+    setDragStartTime(track.startTime);
+    onSelect?.();
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const deltaX = e.clientX - dragStartX;
+      
+      // Calculate the actual timeline width (accounting for zoom)
+      const timelineWidth = containerRect.width;
+      const actualTimelineWidth = timelineWidth / zoomLevel;
+      
+      // Convert pixel movement to time
+      const deltaTime = (deltaX / timelineWidth) * totalDuration;
+      
+      let newStartTime = dragStartTime + deltaTime;
+      
+      // Constrain to timeline bounds
+      newStartTime = Math.max(0, Math.min(newStartTime, totalDuration - track.duration));
+      
+      // Update the track position
+      onUpdate(track.id, { startTime: newStartTime });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragStartX, dragStartTime, totalDuration, zoomLevel, track.duration, track.id, onUpdate]);
+
   return (
     <div
-      className={`absolute top-2 h-16 rounded-md border transition-all cursor-pointer group ${
+      ref={trackRef}
+      className={`absolute top-2 h-16 rounded-md border transition-all group ${
+        isDragging
+          ? 'cursor-grabbing z-50'
+          : 'cursor-grab'
+      } ${
         isSelected
           ? 'border-green-400 bg-green-500/20 shadow-lg shadow-green-500/30 ring-2 ring-green-400/30'
           : 'border-white/20 bg-gradient-to-br from-green-900/30 to-green-950/20 hover:border-white/30 hover:from-green-900/40 hover:to-green-950/30'
@@ -52,14 +128,20 @@ export default function AudioTrackItem({
         left: `${leftPercent}%`,
         width: `${Math.max(widthPercent, 2)}%`,
       }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect?.();
-      }}
+      onMouseDown={handleMouseDown}
       onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
+      onMouseLeave={() => {
+        if (!isDragging) {
+          setShowControls(false);
+        }
+      }}
     >
       <div className="h-full flex flex-col p-2 relative overflow-hidden">
+        {/* Drag Handle */}
+        <div className="absolute top-1 right-1 bg-green-600/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+          <GripVertical className="w-3 h-3" />
+        </div>
+        
         {/* Audio Icon Badge */}
         <div className="absolute top-1 left-1 bg-green-600/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10 flex items-center gap-1">
           {volume > 0 ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
