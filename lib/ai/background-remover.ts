@@ -83,7 +83,17 @@ export async function removeBackground(
   // OPTIMIZED: Read file once, no redundant access() call
   let imageBuffer: Buffer;
   try {
-    imageBuffer = await fs.readFile(imagePath);
+    const { imageCache } = await import('@/lib/storage/cache');
+
+    // Check cache first
+    const cached = imageCache.get(imagePath);
+    if (cached) {
+      imageBuffer = cached.buffer;
+    } else {
+      imageBuffer = await fs.readFile(imagePath);
+      const mimeType = path.extname(imagePath).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+      imageCache.set(imagePath, imageBuffer, mimeType);
+    }
   } catch (error) {
     // Handle both "file not found" and other read errors
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {

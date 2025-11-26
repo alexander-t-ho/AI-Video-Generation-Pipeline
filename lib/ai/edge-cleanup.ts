@@ -64,7 +64,17 @@ export async function cleanupImageEdges(imagePath: string): Promise<string> {
   // Read image file
   let imageBuffer: Buffer;
   try {
-    imageBuffer = await fs.readFile(imagePath);
+    const { imageCache } = await import('@/lib/storage/cache');
+
+    // Check cache first
+    const cached = imageCache.get(imagePath);
+    if (cached) {
+      imageBuffer = cached.buffer;
+    } else {
+      imageBuffer = await fs.readFile(imagePath);
+      const mimeType = path.extname(imagePath).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+      imageCache.set(imagePath, imageBuffer, mimeType);
+    }
   } catch (error) {
     throw new Error(`Failed to read image file: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
