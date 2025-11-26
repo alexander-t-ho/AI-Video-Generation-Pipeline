@@ -19,9 +19,9 @@ export const SCENE_CONSTANTS = {
   LAZY_LOAD_THRESHOLD: 0.01,
   MAX_REFERENCE_IMAGES: 3,
   IMAGE_POLL_INTERVAL: 2000,
-  IMAGE_GENERATION_TIMEOUT: 300000, // 5 minutes
+  IMAGE_GENERATION_TIMEOUT: 600000, // 10 minutes
   VIDEO_POLL_INTERVAL: 5000,
-  VIDEO_GENERATION_TIMEOUT: 600000, // 10 minutes
+  VIDEO_GENERATION_TIMEOUT: 1200000, // 20 minutes
 } as const;
 
 // ============================================================================

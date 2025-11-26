@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import { Scene, StoryboardResponse } from '../types';
+import { convertUrlForAI } from '@/lib/utils/url-to-data-converter';
 
 // ============================================================================
 // Constants
@@ -228,53 +229,24 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
   // Add reference images if provided
   if (referenceImageUrls && referenceImageUrls.length > 0) {
     for (const imageUrl of referenceImageUrls) {
-      // OpenRouter needs publicly accessible URLs or base64 data URLs
-      // We need to convert both local paths AND S3 URLs to base64 because:
-      // 1. S3 URLs may not be publicly accessible (403 errors)
-      // 2. Local paths need to be read from filesystem
-      let imageUrlForAPI = imageUrl;
-      
-      // Check if it's a local file path OR an S3 URL
-      if (imageUrl.startsWith('/tmp') || imageUrl.startsWith('./') || !imageUrl.startsWith('http')) {
-        // Local paths: read directly from filesystem
-        try {
-          const imageBuffer = fs.readFileSync(imageUrl);
-          const base64Image = imageBuffer.toString('base64');
-          const mimeType = imageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
-          imageUrlForAPI = `data:${mimeType};base64,${base64Image}`;
-          console.log(`[Storyboard] Converted local path to base64: ${imageUrl.substring(0, 50)}...`);
-        } catch (error) {
-          console.warn(`[Storyboard] Failed to read local image ${imageUrl}, skipping:`, error);
-          continue; // Skip this image if we can't read it
-        }
-      } else if (imageUrl.includes('s3.amazonaws.com') || imageUrl.includes('s3.')) {
-        // S3 URLs: download and convert to base64 to avoid 403 errors
-        try {
-          console.log(`[Storyboard] Downloading S3 image for base64 conversion: ${imageUrl.substring(0, 50)}...`);
-          const response = await fetch(imageUrl);
-          if (!response.ok) {
-            console.warn(`[Storyboard] Failed to download S3 image (${response.status}), skipping: ${imageUrl}`);
-            continue;
-          }
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const base64Image = buffer.toString('base64');
-          const mimeType = imageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
-          imageUrlForAPI = `data:${mimeType};base64,${base64Image}`;
-          console.log(`[Storyboard] Successfully converted S3 image to base64`);
-        } catch (error) {
-          console.warn(`[Storyboard] Failed to download S3 image ${imageUrl}, skipping:`, error);
-          continue;
-        }
+      // Convert URL to AI-accessible format
+      // Strategy: Try presigned URL first (for S3), fall back to base64
+      try {
+        console.log(`[Storyboard] Converting image URL for AI: ${imageUrl.substring(0, 50)}...`);
+        const converted = await convertUrlForAI(imageUrl);
+        
+        console.log(`[Storyboard] Converted using method: ${converted.method}`);
+        
+        userMessageContent.push({
+          type: 'image_url',
+          image_url: {
+            url: converted.url,
+          },
+        });
+      } catch (error) {
+        console.warn(`[Storyboard] Failed to convert image ${imageUrl}, skipping:`, error);
+        continue; // Skip this image if we can't convert it
       }
-      // Otherwise, use the URL as-is (for publicly accessible URLs)
-      
-      userMessageContent.push({
-        type: 'image_url',
-        image_url: {
-          url: imageUrlForAPI,
-        },
-      });
     }
   }
 

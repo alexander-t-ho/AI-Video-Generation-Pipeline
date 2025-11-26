@@ -2,13 +2,16 @@
  * URL Converter - Advanced URL Processing for AI Services
  *
  * This module handles URL conversion for AI image generation services,
- * including S3 to base64 conversion, local file handling, and parallel processing.
+ * including S3 presigned URLs with base64 fallback, local file handling, and parallel processing.
+ * 
+ * BACKWARD COMPATIBLE: Maintains existing API while adding presigned URL support
  */
 
 import path from 'path';
-import { uploadToS3, getS3Url } from '../storage/s3-uploader';
+import { uploadToS3, getS3Url, getPresignedUrl } from '../storage/s3-uploader';
 
 const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
+const USE_PRESIGNED_URLS = process.env.USE_PRESIGNED_URLS !== 'false'; // Default to true
 
 // ============================================================================
 // MIME Type Detection
@@ -35,23 +38,64 @@ export function getContentType(url: string): string {
 // ============================================================================
 
 /**
- * Converts local paths to public URLs (S3 or ngrok)
+ * Helper to extract S3 key from S3 URL
+ */
+function extractS3Key(s3Url: string): string | null {
+  try {
+    const url = new URL(s3Url);
+    
+    // Pattern: bucket.s3.region.amazonaws.com/key
+    if (url.hostname.includes('.s3.') && url.hostname.includes('.amazonaws.com')) {
+      return url.pathname.substring(1); // Remove leading slash
+    }
+    
+    // Pattern: s3.region.amazonaws.com/bucket/key
+    if (url.hostname.startsWith('s3.') && url.hostname.includes('.amazonaws.com')) {
+      const parts = url.pathname.substring(1).split('/');
+      if (parts.length > 1) {
+        return parts.slice(1).join('/'); // Remove bucket name
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Converts local paths to public URLs (S3 presigned or base64)
  * OPTIMIZATION: Extracted from handler to avoid recreation on every request
+ * BACKWARD COMPATIBLE: Falls back to base64 if presigned URL fails
  *
  * @param url Original URL or local path
  * @param projectId Project ID for S3 organization
  * @returns Public URL accessible by external services (Replicate, etc.)
  */
 export async function convertToPublicUrl(url: string, projectId: string): Promise<string> {
-  // S3 URLs may not be publicly accessible (403 errors)
-  // Download and convert to base64 data URL for Replicate
+  // S3 URLs - try presigned URL first, fall back to base64
   if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    // Try presigned URL first (if enabled)
+    if (USE_PRESIGNED_URLS) {
+      try {
+        const s3Key = extractS3Key(url);
+        if (s3Key) {
+          console.log(`[URL Converter] Generating presigned URL for S3 key: ${s3Key.substring(0, 50)}...`);
+          const presignedUrl = await getPresignedUrl(s3Key, 3600); // 1 hour
+          console.log(`[URL Converter] Successfully generated presigned URL`);
+          return presignedUrl;
+        }
+      } catch (presignedError: any) {
+        console.warn(`[URL Converter] Failed to generate presigned URL, falling back to base64:`, presignedError.message);
+      }
+    }
+    
+    // Fall back to base64 conversion
     try {
       console.log(`[URL Converter] Downloading S3 image for base64 conversion: ${url.substring(0, 80)}...`);
       const response = await fetch(url);
       if (!response.ok) {
         console.warn(`[URL Converter] Failed to download S3 image (${response.status}), will try ngrok fallback`);
-        // Fallback to ngrok URL if available
         return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
       }
       const arrayBuffer = await response.arrayBuffer();
@@ -63,7 +107,6 @@ export async function convertToPublicUrl(url: string, projectId: string): Promis
       return dataUrl;
     } catch (error: any) {
       console.error(`[URL Converter] Failed to convert S3 URL to base64:`, error.message);
-      // Last resort: try ngrok URL
       return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
     }
   }

@@ -6,7 +6,7 @@
     "outputQuality": 90,
     "safetyTolerance": 2,
     "pollInterval": 2000,
-    "pollTimeout": 300000,
+    "pollTimeout": 600000,
     "maxRetries": 3
   },
   "video": {
@@ -14,8 +14,8 @@
     "duration": 5,
     "resolution": "720p",
     "pollInterval": 2000,
-    "pollTimeout": 600000,
-    "maxPollAttempts": 300,
+    "pollTimeout": 1200000,
+    "maxPollAttempts": 600,
     "maxRetries": 2,
     "downloadRetries": 3
   },

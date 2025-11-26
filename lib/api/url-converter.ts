@@ -1,12 +1,15 @@
 /**
  * URL Converter - Unified URL conversion for API routes
- * Handles conversion of local paths, S3 URLs, and API URLs to formats suitable for external services
+ * Handles conversion of local paths, S3 URLs (presigned with base64 fallback), and API URLs
+ * 
+ * BACKWARD COMPATIBLE: Maintains existing API while adding presigned URL support
  */
 
-import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
+import { uploadToS3, getS3Url, getPresignedUrl } from '@/lib/storage/s3-uploader';
 import path from 'path';
 
 const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
+const USE_PRESIGNED_URLS = process.env.USE_PRESIGNED_URLS !== 'false'; // Default to true
 
 // ============================================================================
 // MIME Type Detection
@@ -29,12 +32,54 @@ export function getContentType(url: string): string {
 // ============================================================================
 
 /**
+ * Helper to extract S3 key from S3 URL
+ */
+function extractS3Key(s3Url: string): string | null {
+  try {
+    const url = new URL(s3Url);
+    
+    // Pattern: bucket.s3.region.amazonaws.com/key
+    if (url.hostname.includes('.s3.') && url.hostname.includes('.amazonaws.com')) {
+      return url.pathname.substring(1);
+    }
+    
+    // Pattern: s3.region.amazonaws.com/bucket/key
+    if (url.hostname.startsWith('s3.') && url.hostname.includes('.amazonaws.com')) {
+      const parts = url.pathname.substring(1).split('/');
+      if (parts.length > 1) {
+        return parts.slice(1).join('/');
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Converts any URL/path to a publicly accessible format
- * Prioritizes base64 data URLs for maximum compatibility with external services
+ * BACKWARD COMPATIBLE: Tries presigned URL first, falls back to base64
  */
 export async function convertToPublicUrl(url: string, projectId: string): Promise<string> {
-  // S3 URLs - convert to base64 for reliability
+  // S3 URLs - try presigned URL first, fall back to base64
   if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    // Try presigned URL first (if enabled)
+    if (USE_PRESIGNED_URLS) {
+      try {
+        const s3Key = extractS3Key(url);
+        if (s3Key) {
+          console.log(`[URL Converter] Generating presigned URL for S3 key: ${s3Key.substring(0, 50)}...`);
+          const presignedUrl = await getPresignedUrl(s3Key, 3600);
+          console.log(`[URL Converter] Successfully generated presigned URL`);
+          return presignedUrl;
+        }
+      } catch (presignedError: any) {
+        console.warn(`[URL Converter] Failed to generate presigned URL, falling back to base64:`, presignedError.message);
+      }
+    }
+    
+    // Fall back to base64 conversion
     try {
       console.log(`[URL Converter] Downloading S3 image for base64 conversion: ${url.substring(0, 80)}...`);
       const response = await fetch(url);
