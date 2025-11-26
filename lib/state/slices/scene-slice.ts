@@ -631,14 +631,21 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
           updatedStoryboard.sort((a, b) => a.order - b.order);
 
           // Create scene state for the duplicated scene
+          const duplicatedImages = response.duplicatedImages || [];
+          const duplicatedVideos = response.duplicatedVideos || [];
+          
+          // Find selected image/video (marked as isSelected) or fallback to first one
+          const selectedImage = duplicatedImages.find(img => img.isSelected) || duplicatedImages[0];
+          const selectedVideo = duplicatedVideos.find(vid => vid.isSelected) || duplicatedVideos[0];
+          
           const duplicatedSceneState: any = {
             ...duplicatedScene,
-            generatedImages: response.duplicatedImages || [],
-            selectedImageId: response.duplicatedImages?.[0]?.id,
-            generatedVideos: response.duplicatedVideos || [],
-            selectedVideoId: response.duplicatedVideos?.[0]?.id,
-            videoLocalPath: response.duplicatedVideos?.[0]?.localPath,
-            actualDuration: response.duplicatedVideos?.[0]?.actualDuration,
+            generatedImages: duplicatedImages,
+            selectedImageId: selectedImage?.id,
+            generatedVideos: duplicatedVideos,
+            selectedVideoId: selectedVideo?.id,
+            videoLocalPath: selectedVideo?.localPath,
+            actualDuration: selectedVideo?.actualDuration,
             seedFrames: response.duplicatedSeedFrames || [],
             selectedSeedFrameIndex: sceneState.selectedSeedFrameIndex,
             status: 'pending',
