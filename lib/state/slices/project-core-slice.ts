@@ -289,26 +289,40 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     const state = get();
     if (!state.project) return;
 
+    // Always update local state first for immediate UI feedback
+    set((state) => {
+      if (!state.project) return state;
+      const updatedProject = { ...state.project };
+      if (updates.name !== undefined) updatedProject.name = updates.name;
+      if (updates.characterDescription !== undefined) updatedProject.characterDescription = updates.characterDescription;
+      if (updates.status !== undefined) updatedProject.status = updates.status;
+      if (updates.finalVideoUrl !== undefined) updatedProject.finalVideoUrl = updates.finalVideoUrl;
+      if (updates.finalVideoS3Key !== undefined) updatedProject.finalVideoS3Key = updates.finalVideoS3Key;
+      if (updates.targetDuration !== undefined) updatedProject.targetDuration = updates.targetDuration;
+      return { project: updatedProject };
+    });
+
+    // Try to sync to backend
     try {
       const { updateProject } = await import('@/lib/api-client');
       await updateProject(state.project.id, updates);
-
-      set((state) => {
-        if (!state.project) return state;
-        const updatedProject = { ...state.project };
-        if (updates.name !== undefined) updatedProject.name = updates.name;
-        if (updates.characterDescription !== undefined) updatedProject.characterDescription = updates.characterDescription;
-        if (updates.status !== undefined) updatedProject.status = updates.status;
-        if (updates.finalVideoUrl !== undefined) updatedProject.finalVideoUrl = updates.finalVideoUrl;
-        if (updates.finalVideoS3Key !== undefined) updatedProject.finalVideoS3Key = updates.finalVideoS3Key;
-        if (updates.targetDuration !== undefined) updatedProject.targetDuration = updates.targetDuration;
-        return { project: updatedProject };
-      });
-
-      console.log('[Store] Project metadata saved to backend');
-    } catch (error) {
-      console.error('[Store] Failed to update project metadata:', error);
-      throw error;
+      console.log('[Store] Project metadata synced to backend');
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      
+      // If project not found (it's local-only), that's expected - don't throw
+      if (errorMessage.includes('not found') || errorMessage.includes('No record was found')) {
+        console.log('[Store] Project is local-only (not yet saved to backend)');
+        return; // Success - local update is sufficient
+      }
+      
+      // For other errors, log as warning but don't throw
+      // This allows work to continue even if backend is temporarily unavailable
+      console.warn('[Store] Failed to sync project metadata to backend:', errorMessage);
+      console.warn('[Store] Changes saved locally only - will sync when backend is available');
+      
+      // Don't throw - we've successfully updated local state
+      // The project will sync when saveProjectToBackend is called
     }
   },
 

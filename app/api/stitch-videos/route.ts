@@ -35,14 +35,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { videoPaths, projectId, uploadToS3: shouldUploadToS3 = false, style } = body;
 
-    // Get session to fetch company logo
+    // Get session to fetch company logo (optional)
     const session = await getServerSession(authOptions);
-    if (!session?.user?.companyId) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized: No company ID in session' },
-        { status: 401 }
-      );
-    }
 
     // Validate required fields
     if (!Array.isArray(videoPaths) || videoPaths.length === 0) {
@@ -91,50 +85,54 @@ export async function POST(request: NextRequest) {
       absoluteVideoPaths.push(absolutePath);
     }
 
-    // Fetch company logo
+    // Fetch company logo (only if session with companyId exists)
     let companyLogoPath: string | undefined;
-    try {
-      const company = await prisma.company.findUnique({
-        where: { id: session.user.companyId },
-        include: {
-          assets: {
-            where: { type: 'LOGO' },
-            select: {
-              id: true,
-              s3Key: true,
-              filename: true,
+    if (session?.user?.companyId) {
+      try {
+        const company = await prisma.company.findUnique({
+          where: { id: session.user.companyId },
+          include: {
+            assets: {
+              where: { type: 'LOGO' },
+              select: {
+                id: true,
+                s3Key: true,
+                filename: true,
+              },
+              take: 1, // Get the first logo
             },
-            take: 1, // Get the first logo
           },
-        },
-      });
+        });
 
-      if (company?.assets && company.assets.length > 0) {
-        const logoAsset = company.assets[0];
-        if (logoAsset.s3Key) {
-          // Download logo from S3 to local temp directory
-          const storageService = getStorageService();
-          const tempLogoPath = path.join('/tmp', 'projects', projectId, 'temp', `logo_${Date.now()}.png`);
-          await fs.mkdir(path.dirname(tempLogoPath), { recursive: true });
+        if (company?.assets && company.assets.length > 0) {
+          const logoAsset = company.assets[0];
+          if (logoAsset.s3Key) {
+            // Download logo from S3 to local temp directory
+            const storageService = getStorageService();
+            const tempLogoPath = path.join('/tmp', 'projects', projectId, 'temp', `logo_${Date.now()}.png`);
+            await fs.mkdir(path.dirname(tempLogoPath), { recursive: true });
 
-          // Download from S3 using pre-signed URL
-          const logoUrl = await storageService.getPreSignedUrl(logoAsset.s3Key, 3600);
-          const response = await fetch(logoUrl);
-          if (response.ok) {
-            const buffer = await response.arrayBuffer();
-            await fs.writeFile(tempLogoPath, Buffer.from(buffer));
-            companyLogoPath = tempLogoPath;
-            console.log(`[API] Company logo downloaded to: ${companyLogoPath}`);
-          } else {
-            console.warn(`[API] Failed to download company logo from S3: ${response.statusText}`);
+            // Download from S3 using pre-signed URL
+            const logoUrl = await storageService.getPreSignedUrl(logoAsset.s3Key, 3600);
+            const response = await fetch(logoUrl);
+            if (response.ok) {
+              const buffer = await response.arrayBuffer();
+              await fs.writeFile(tempLogoPath, Buffer.from(buffer));
+              companyLogoPath = tempLogoPath;
+              console.log(`[API] Company logo downloaded to: ${companyLogoPath}`);
+            } else {
+              console.warn(`[API] Failed to download company logo from S3: ${response.statusText}`);
+            }
           }
+        } else {
+          console.log('[API] No company logo found, proceeding without logo transition');
         }
-      } else {
-        console.log('[API] No company logo found, proceeding without logo transition');
+      } catch (logoError) {
+        console.error('[API] Error fetching company logo:', logoError);
+        // Continue without logo if fetch fails
       }
-    } catch (logoError) {
-      console.error('[API] Error fetching company logo:', logoError);
-      // Continue without logo if fetch fails
+    } else {
+      console.log('[API] No session or companyId, proceeding without logo transition');
     }
 
     // Stitch videos (stitcher creates its own output path and uploads to S3)

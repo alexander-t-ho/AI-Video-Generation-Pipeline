@@ -208,14 +208,18 @@ export async function createVideoPrediction(
   const replicate = createReplicateClient();
 
   // Build input parameters
-  // For Veo models, there are two modes:
-  //   1. Standard mode (default):
+  // For Veo models, there are THREE modes:
+  //   1. Standard mode (first/last frame):
   //      - Use 'image' parameter with seedFrame (scenes > 0) or imageUrl (scene 0)
-  //      - Model generates video from this starting frame
-  //   2. Interpolation mode (optional):
-  //      - Use 'image' parameter with starting frame AND 'last_frame' parameter with ending frame
+  //      - Optionally use 'last_frame' for interpolation between two frames
+  //   2. Reference images mode:
+  //      - Use ONLY 'reference_images' parameter (array of image URLs)
+  //      - Do NOT include 'image' parameter
+  //      - Model generates video using reference images for consistency
+  //   3. Interpolation mode:
+  //      - Use 'image' + 'last_frame' parameters
   //      - Model generates transition video between the two frames
-  //      - Note: last_frame is mutually exclusive with standard single-frame generation
+  //      - Note: reference_images and last_frame are MUTUALLY EXCLUSIVE
   // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
   const isVeoModel = isVeo; // Already defined above for duration
   const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image
@@ -237,12 +241,19 @@ export async function createVideoPrediction(
   // Start with model-specific parameters (user-provided)
   // Check if we're using last_frame (interpolation mode)
   const hasLastFrame = modelParameters?.last_frame !== undefined;
+  
+  // Check if we're using reference images mode (for Google Veo)
+  const useReferenceImagesMode = isVeoModel && !hasLastFrame && referenceImages && referenceImages.length > 0;
 
   const input: ReplicateInput = {
     // Gen-4 Aleph uses 'video', others use 'image'
+    // IMPORTANT: For Google Veo in reference images mode, we should NOT include the image parameter
     ...(isGen4Aleph ? {
       video: inputImageUrl, // For Gen-4 Aleph, this should be a video URL
+    } : useReferenceImagesMode ? {
+      // Reference images mode: NO image parameter, only reference_images
     } : {
+      // Standard mode: include image parameter
       image: inputImageUrl,
     }),
     prompt: enhancedPrompt.trim(),
@@ -250,11 +261,13 @@ export async function createVideoPrediction(
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     // Add reference images for Google Veo models if provided
     // IMPORTANT: Cannot use reference_images when last_frame is set (mutually exclusive modes)
-    ...(isVeoModel && !hasLastFrame && referenceImages && referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
+    ...(useReferenceImagesMode ? { reference_images: referenceImages } : {}),
     // NOTE: last_frame parameter is handled via modelParameters (user-controlled)
-    // - When last_frame is NOT provided: Standard mode OR reference images mode
-    // - When last_frame IS provided: Interpolation mode (generates transition between image and last_frame)
-    // - last_frame and reference_images are MUTUALLY EXCLUSIVE
+    // GOOGLE VEO HAS THREE MODES:
+    // 1. Standard mode (first/last frame): Uses 'image' parameter (and optionally 'last_frame' for interpolation)
+    // 2. Reference images mode: Uses ONLY 'reference_images' parameter (NO 'image' parameter)
+    // 3. Interpolation mode: Uses 'image' + 'last_frame' parameters
+    // - reference_images and last_frame are MUTUALLY EXCLUSIVE
     // Model-specific parameters
     ...(isVeoModel ? {
       // Google Veo 3.1 parameters
