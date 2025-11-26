@@ -374,7 +374,7 @@ function buildTransitionFilter(
     // xfade requires inputs to have the same resolution and frame rate
     // Note: If minterpolate fails, fallback to fps filter (handled by FFmpeg error handling)
     filters.push(
-      `[${i}:v]setpts=PTS-STARTPTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1:scd=none,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v${i}]`
+      `[${i}:v]setpts=PTS-STARTPTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1:scd=none,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[v${i}]`
     );
     
     // Only process audio if this video has an audio stream
