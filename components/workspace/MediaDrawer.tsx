@@ -283,42 +283,22 @@ export default function MediaDrawer() {
       return `/api/serve-image?path=${encodeURIComponent(pathToServe)}`;
     };
     
-    // Show seed frames from the current scene (captured frames)
-    const currentScene = scenes[currentSceneIndex];
-    currentScene?.seedFrames?.forEach((frame) => {
-      const frameUrl = getFrameUrl(frame);
-      allFrames.push({
-        id: frame.id,
-        type: 'frame' as const,
-        url: frameUrl,
-        sceneIndex: currentSceneIndex,
-        timestamp: frame.timestamp?.toString() || '0',
-        metadata: {
-          fullUrl: frameUrl,
-        },
-      });
-    });
-    
-    // Also show seed frames from the previous scene (for use in current scene)
-    if (currentSceneIndex > 0) {
-      const previousScene = scenes[currentSceneIndex - 1];
-      previousScene?.seedFrames?.forEach((frame) => {
-        // Don't add duplicates
-        if (allFrames.some(f => f.id === frame.id)) return;
-        
+    // Show seed frames from ALL scenes (not just current and previous)
+    scenes.forEach((scene, sceneIdx) => {
+      scene?.seedFrames?.forEach((frame) => {
         const frameUrl = getFrameUrl(frame);
         allFrames.push({
           id: frame.id,
           type: 'frame' as const,
           url: frameUrl,
-          sceneIndex: currentSceneIndex - 1,
+          sceneIndex: sceneIdx,  // Mark which scene it came from
           timestamp: frame.timestamp?.toString() || '0',
           metadata: {
             fullUrl: frameUrl,
           },
         });
       });
-    }
+    });
 
     return allFrames;
   }, [scenes, currentSceneIndex]);
