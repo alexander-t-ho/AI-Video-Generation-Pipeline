@@ -143,6 +143,7 @@ export interface TimelineSlice {
   splitAtPlayhead: (time: number) => void;
   deleteClip: (clipId: string) => void;
   cropClip: (clipId: string, trimStart: number, trimEnd: number) => void;
+  reorderClip: (clipId: string, newIndex: number) => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;

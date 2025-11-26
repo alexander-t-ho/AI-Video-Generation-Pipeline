@@ -20,6 +20,7 @@ export default function TimelineView() {
     splitClip,
     deleteClip,
     cropClip,
+    reorderClip,
     setFinalVideo,
     addChatMessage,
     selectedClipId,
@@ -88,6 +89,10 @@ export default function TimelineView() {
   const preservedTimeRef = useRef<number | null>(null); // Track position to preserve after preview regeneration
   const isRestoringPositionRef = useRef(false); // Prevent seeking event from overriding restored position
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map()); // Audio elements for each track
+  
+  // Drag and drop state
+  const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Get selected clip for crop dialog
   const selectedClip = selectedClipId ? timelineClips.find(c => c.id === selectedClipId) : null;
@@ -640,6 +645,108 @@ export default function TimelineView() {
       content: 'Clip cropped successfully. Regenerating preview...',
       type: 'status',
     });
+  };
+
+  const handleDragStart = (clipId: string) => {
+    setDraggedClipId(clipId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedClipId(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, clipId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    if (!draggedClipId || draggedClipId === clipId) {
+      setDragOverIndex(null);
+      return;
+    }
+    
+    const draggedIndex = timelineClips.findIndex(c => c.id === draggedClipId);
+    const targetIndex = timelineClips.findIndex(c => c.id === clipId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDragOverIndex(null);
+      return;
+    }
+    
+    // Determine if we should insert before or after based on mouse position
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.left + rect.width / 2;
+    const mouseX = e.clientX;
+    
+    // If mouse is on right half, show indicator after; left half, before
+    if (mouseX > midpoint) {
+      setDragOverIndex(targetIndex + 1);
+    } else {
+      setDragOverIndex(targetIndex);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetClipId: string) => {
+    e.preventDefault();
+    
+    if (!draggedClipId || draggedClipId === targetClipId) {
+      setDraggedClipId(null);
+      setDragOverIndex(null);
+      return;
+    }
+    
+    const draggedIndex = timelineClips.findIndex(c => c.id === draggedClipId);
+    const targetIndex = timelineClips.findIndex(c => c.id === targetClipId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedClipId(null);
+      setDragOverIndex(null);
+      return;
+    }
+    
+    // Determine if we should insert before or after the target based on mouse position
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.left + rect.width / 2;
+    const mouseX = e.clientX;
+    
+    let newIndex: number;
+    if (mouseX > midpoint) {
+      // Insert after the target
+      newIndex = targetIndex;
+      // If dragging from before target, we want to place it right after
+      if (draggedIndex < targetIndex) {
+        newIndex = targetIndex;
+      } else {
+        // If dragging from after target, place after
+        newIndex = targetIndex + 1;
+      }
+    } else {
+      // Insert before the target
+      newIndex = targetIndex;
+      // If dragging from after target, we want to place it right before
+      if (draggedIndex > targetIndex) {
+        newIndex = targetIndex;
+      } else {
+        // If dragging from before target, place before (which means current position)
+        newIndex = targetIndex - 1;
+      }
+    }
+    
+    // Clamp to valid range
+    newIndex = Math.max(0, Math.min(newIndex, timelineClips.length - 1));
+    
+    // Only reorder if position actually changes
+    if (newIndex !== draggedIndex) {
+      reorderClip(draggedClipId, newIndex);
+      addChatMessage({
+        role: 'agent',
+        content: 'Clip reordered. Regenerating preview...',
+        type: 'status',
+      });
+    }
+    
+    setDraggedClipId(null);
+    setDragOverIndex(null);
   };
 
   const handleStitchVideos = async () => {
@@ -1374,7 +1481,7 @@ export default function TimelineView() {
                     data-timeline-track="true"
                   >
                     {timelineClips.length > 0 ? (
-                      timelineClips.map((clip) => (
+                      timelineClips.map((clip, index) => (
                         <TimelineClip
                           key={clip.id}
                           clip={clip}
@@ -1385,6 +1492,12 @@ export default function TimelineView() {
                           onCrop={handleCrop}
                           onSelect={() => handleClipSelect(clip.id)}
                           isSelected={selectedClipId === clip.id}
+                          onDragStart={handleDragStart}
+                          onDragEnd={handleDragEnd}
+                          onDragOver={(e) => handleDragOver(e, clip.id)}
+                          onDrop={(e) => handleDrop(e, clip.id)}
+                          isDragging={draggedClipId === clip.id}
+                          isDragOver={dragOverIndex === index}
                         />
                       ))
                     ) : (

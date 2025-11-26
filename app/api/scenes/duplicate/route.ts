@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
         customImageInput: originalScene.customImageInput,
         useSeedFrame: originalScene.useSeedFrame,
         modelParameters: originalScene.modelParameters as any,
+        referenceImageUrls: originalScene.referenceImageUrls as any,
         status: 'PENDING',
         isDuplicate: true,
         parentSceneId: originalScene.id,
@@ -183,6 +184,7 @@ export async function POST(req: NextRequest) {
         customImageInput: duplicatedScene.customImageInput,
         useSeedFrame: duplicatedScene.useSeedFrame,
         modelParameters: duplicatedScene.modelParameters,
+        referenceImageUrls: duplicatedScene.referenceImageUrls,
       },
       duplicatedImages: duplicatedImages.map(img => ({
         id: img.id,
@@ -191,6 +193,7 @@ export async function POST(req: NextRequest) {
         s3Key: img.s3Key,
         prompt: img.prompt,
         replicateId: img.replicateId,
+        isSelected: img.isSelected,
         createdAt: img.createdAt.toISOString(),
       })),
       duplicatedVideos: duplicatedVideos.map(vid => ({
@@ -199,6 +202,7 @@ export async function POST(req: NextRequest) {
         localPath: vid.localPath,
         s3Key: vid.s3Key,
         actualDuration: vid.duration,
+        isSelected: vid.isSelected,
         timestamp: vid.createdAt.toISOString(),
       })),
       duplicatedSeedFrames: duplicatedSeedFrames.map(frame => ({
