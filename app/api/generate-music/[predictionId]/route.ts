@@ -1,12 +1,16 @@
 /**
  * Music Generation Status API Route
  *
- * GET /api/generate-music/[predictionId]
- * Check the status of a music generation prediction
+ * GET /api/generate-music/[predictionId]?provider=musicgen|suno
+ * Check the status of a music generation prediction/task
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getMusicGenerationStatus } from '@/lib/ai/music-generator';
+import {
+  getMusicGenerationStatus,
+  getSunoGenerationStatus,
+  MusicProvider,
+} from '@/lib/ai/music-generator';
 import { getStorageService } from '@/lib/storage/storage-service';
 import fs from 'fs';
 import path from 'path';
@@ -18,26 +22,30 @@ interface RouteParams {
 }
 
 /**
- * GET /api/generate-music/[predictionId]
+ * GET /api/generate-music/[predictionId]?provider=musicgen|suno
  *
- * Returns the current status of a music generation prediction.
+ * Returns the current status of a music generation prediction/task.
  * If completed, downloads the audio to local storage and S3.
  */
 export async function GET(request: NextRequest, context: RouteParams) {
   try {
     const { predictionId } = await context.params;
     const projectId = request.nextUrl.searchParams.get('projectId');
+    const provider = (request.nextUrl.searchParams.get('provider') || 'musicgen') as MusicProvider;
 
     if (!predictionId) {
       return NextResponse.json(
-        { success: false, error: 'Missing predictionId' },
+        { success: false, error: 'Missing predictionId/taskId' },
         { status: 400 }
       );
     }
 
-    console.log('[MusicStatus API] Checking status:', { predictionId });
+    console.log('[MusicStatus API] Checking status:', { predictionId, provider });
 
-    const status = await getMusicGenerationStatus(predictionId);
+    // Get status based on provider
+    const status = provider === 'suno'
+      ? await getSunoGenerationStatus(predictionId)
+      : await getMusicGenerationStatus(predictionId);
 
     // If succeeded and we have a project ID, download and save the audio
     if (status.status === 'succeeded' && status.audioUrl && projectId) {

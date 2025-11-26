@@ -996,13 +996,18 @@ export default function EditorView() {
         });
       }
 
+      // Determine video duration: use edited value, then custom duration, then suggested duration, finally default to 5s
+      const videoDuration = editedDuration
+        ? Number(editedDuration)
+        : (currentScene.customDuration || currentScene.suggestedDuration || 5);
+
       const videoResponse = await generateVideo(
         s3Url, // Base image from selected image
         editedVideoPrompt || currentScene.videoPrompt || currentScene.imagePrompt, // Use edited value, fallback to imagePrompt for backward compatibility
         project.id,
         currentSceneIndex,
         undefined, // seedFrameUrl removed - users manually save last frame when needed
-        (editedDuration ? Number(editedDuration) : currentScene.customDuration), // Use edited duration if set
+        videoDuration, // Use determined duration (always a valid number)
         undefined, // subsceneIndex not used
         modelParameters, // Pass model-specific parameters (including last_frame if in frame mode)
         referenceImageUrls.length > 0 ? referenceImageUrls : undefined // Pass reference images if in reference mode

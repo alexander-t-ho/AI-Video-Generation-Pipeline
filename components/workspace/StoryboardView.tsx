@@ -3,10 +3,10 @@
 import { useProjectStore } from '@/lib/state/project-store';
 import SceneCard from './SceneCard';
 import { RefreshCw } from 'lucide-react';
-import { generateStoryboard } from '@/lib/api-client';
+import { generateStoryboard, replaceScenes } from '@/lib/api-client';
 
 export default function StoryboardView() {
-  const { project, currentSceneIndex, scenes, setStoryboard, addChatMessage } = useProjectStore();
+  const { project, currentSceneIndex, scenes, setStoryboard, persistStoryboard, addChatMessage } = useProjectStore();
 
   if (!project || !project.storyboard || project.storyboard.length === 0) {
     return (
@@ -29,7 +29,32 @@ export default function StoryboardView() {
       const response = await generateStoryboard(project.prompt, project.targetDuration);
 
       if (response.success && response.scenes) {
+        // Set storyboard in local state
         setStoryboard(response.scenes);
+
+        // Replace scenes in database (this uses PUT to delete old scenes and create new ones)
+        const scenesToPersist = response.scenes.map((scene: any, index: number) => ({
+          sceneNumber: index + 1,
+          sceneTitle: scene.sceneTitle || scene.title || `Scene ${index + 1}`,
+          sceneSummary: scene.sceneSummary || scene.description,
+          imagePrompt: scene.imagePrompt,
+          videoPrompt: scene.videoPrompt || scene.imagePrompt,
+          suggestedDuration: scene.suggestedDuration || scene.duration,
+          negativePrompt: scene.negativePrompt,
+          referenceImageUrls: scene.referenceImageUrls,
+        }));
+
+        try {
+          const result = await replaceScenes(project.id, scenesToPersist);
+          // Update local state with database-generated IDs
+          if (result.scenes && result.scenes.length > 0) {
+            setStoryboard(result.scenes);
+          }
+          console.log('[StoryboardView] ✅ Scenes replaced in database');
+        } catch (persistError) {
+          console.error('[StoryboardView] Failed to persist scenes:', persistError);
+        }
+
         const sceneCount = response.scenes.length;
         addChatMessage({
           role: 'agent',

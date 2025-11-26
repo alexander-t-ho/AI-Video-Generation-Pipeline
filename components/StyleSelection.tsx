@@ -37,7 +37,7 @@ const STYLE_OPTIONS: StyleOption[] = [
 export default function StyleSelection() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { selectedStyle, setSelectedStyle, setStoryboard, createProject } = useProjectStore();
+  const { selectedStyle, setSelectedStyle, setStoryboard, createProject, saveProjectToBackend, persistStoryboard } = useProjectStore();
   const [localSelectedStyle, setLocalSelectedStyle] = useState<string | null>(selectedStyle);
   const [loadingVideos, setLoadingVideos] = useState<Record<string, boolean>>({
     whimsical: true,
@@ -109,8 +109,21 @@ export default function StyleSelection() {
       console.log('[StyleSelection] API response received:', { success: response.success, sceneCount: response.scenes?.length });
 
       if (response.success && response.scenes) {
+        // 1. Save project to backend first
+        console.log('[StyleSelection] Saving project to backend...');
+        await saveProjectToBackend('My Video Project', initialPrompt, targetDuration);
+        console.log('[StyleSelection] ✅ Project saved to backend');
+
+        // 2. Set storyboard in local state
         setStoryboard(response.scenes);
-        console.log('[StyleSelection] Storyboard generated in background:', response.scenes.length, 'scenes');
+        console.log('[StyleSelection] Storyboard set in state:', response.scenes.length, 'scenes');
+
+        // 3. Persist scenes to database
+        console.log('[StyleSelection] Persisting scenes to backend...');
+        await persistStoryboard();
+        console.log('[StyleSelection] ✅ Scenes persisted to backend');
+
+        console.log('[StyleSelection] Storyboard generated successfully:', response.scenes.length, 'scenes');
       } else {
         console.error('[StyleSelection] Storyboard generation failed:', response.error || 'No error message');
         // Reset ref so user can retry

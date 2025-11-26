@@ -9,7 +9,7 @@ import ImageTrackItem from './ImageTrackItem';
 import NarrationTrackItem from './NarrationTrackItem';
 import { Clock, Play, Download, Loader2, AlertCircle, RefreshCw, Film, ZoomIn, ZoomOut, X, Music, Image as ImageIcon, Plus, Wand2, Mic } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { stitchVideos, applyClipEdits, generatePreview, generateMusicTrack, pollMusicStatus, generateNarration, NarrationVoice } from '@/lib/api-client';
+import { stitchVideos, applyClipEdits, generatePreview, generateMusicTrack, pollMusicStatus, generateNarration, NarrationVoice, MusicProvider } from '@/lib/api-client';
 
 export default function TimelineView() {
   const {
@@ -77,6 +77,9 @@ export default function TimelineView() {
   const [musicDuration, setMusicDuration] = useState(30);
   const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
   const [musicGenerationProgress, setMusicGenerationProgress] = useState<string>('');
+  const [musicProvider, setMusicProvider] = useState<'musicgen' | 'suno'>('suno'); // Default to Suno
+  const [sunoStyle, setSunoStyle] = useState('cinematic, film score, ambient');
+  const [sunoInstrumental, setSunoInstrumental] = useState(true);
   // Narration generation state
   const [showNarrationDialog, setShowNarrationDialog] = useState(false);
   const [narrationText, setNarrationText] = useState('');
@@ -935,19 +938,28 @@ export default function TimelineView() {
     if (!project) return;
 
     setIsGeneratingMusic(true);
-    setMusicGenerationProgress('Starting music generation...');
+    const providerLabel = musicProvider === 'suno' ? 'Suno' : 'MusicGen';
+    setMusicGenerationProgress(`Starting ${providerLabel} music generation...`);
 
     try {
       addChatMessage({
         role: 'agent',
-        content: `Generating AI music (${musicGenerationMode} mode)...`,
+        content: `Generating AI music with ${providerLabel} (${musicGenerationMode} mode)...`,
         type: 'status',
       });
 
       // Build request based on mode
       let requestBody: any = {
         duration: musicDuration,
+        provider: musicProvider,
       };
+
+      // Add Suno-specific options
+      if (musicProvider === 'suno') {
+        requestBody.style = sunoStyle;
+        requestBody.instrumental = sunoInstrumental;
+        requestBody.title = `AI Generated - ${musicMood} ${musicGenre}`;
+      }
 
       if (musicGenerationMode === 'prompt') {
         if (!musicPrompt.trim()) {
@@ -957,6 +969,11 @@ export default function TimelineView() {
       } else if (musicGenerationMode === 'simple') {
         requestBody.mood = musicMood;
         requestBody.genre = musicGenre;
+        // For Suno with simple mode, create a prompt from mood/genre
+        if (musicProvider === 'suno') {
+          requestBody.prompt = `${musicMood} ${musicGenre} music, professional production`;
+          requestBody.style = `${musicMood}, ${musicGenre}`;
+        }
       } else if (musicGenerationMode === 'video') {
         // Use the preview video URL for analysis
         if (!previewVideoUrl) {
@@ -969,15 +986,21 @@ export default function TimelineView() {
       // Start music generation
       const response = await generateMusicTrack(requestBody);
 
-      if (!response.success || !response.data?.predictionId) {
+      // Get the appropriate ID based on provider
+      const taskOrPredictionId = musicProvider === 'suno'
+        ? response.data?.taskId
+        : response.data?.predictionId;
+
+      if (!response.success || !taskOrPredictionId) {
         throw new Error(response.error || 'Failed to start music generation');
       }
 
-      setMusicGenerationProgress('Music generation in progress...');
+      setMusicGenerationProgress(`${providerLabel} generation in progress...`);
 
-      // Poll for completion
-      const status = await pollMusicStatus(response.data.predictionId, {
+      // Poll for completion with provider
+      const status = await pollMusicStatus(taskOrPredictionId, {
         projectId: project.id,
+        provider: musicProvider,
         onProgress: (progressStatus) => {
           if (progressStatus.data?.status) {
             setMusicGenerationProgress(`Status: ${progressStatus.data.status}`);
@@ -994,11 +1017,11 @@ export default function TimelineView() {
         ? `/api/serve-audio?path=${encodeURIComponent(status.data.localPath)}`
         : status.data.audioUrl;
 
-      addAudioTrack(audioUrl, `AI Generated - ${musicGenre} ${musicMood}`, musicDuration);
+      addAudioTrack(audioUrl, `${providerLabel} - ${musicGenre} ${musicMood}`, musicDuration);
 
       addChatMessage({
         role: 'agent',
-        content: `✓ Music generated successfully and added to timeline!`,
+        content: `✓ Music generated with ${providerLabel} and added to timeline!`,
         type: 'status',
       });
 
@@ -2050,6 +2073,37 @@ export default function TimelineView() {
             </div>
 
             <div className="space-y-4">
+              {/* Provider Selection */}
+              <div>
+                <label className="block text-sm text-white/80 mb-2">Music Provider</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setMusicProvider('suno')}
+                    disabled={isGeneratingMusic}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      musicProvider === 'suno'
+                        ? 'bg-green-600/30 border-green-500 text-green-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="font-medium">Suno</div>
+                    <div className="text-xs opacity-70">Higher quality, longer</div>
+                  </button>
+                  <button
+                    onClick={() => setMusicProvider('musicgen')}
+                    disabled={isGeneratingMusic}
+                    className={`px-3 py-2 text-sm rounded border transition-colors ${
+                      musicProvider === 'musicgen'
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                        : 'bg-white/5 border-white/20 text-white/60 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="font-medium">MusicGen</div>
+                    <div className="text-xs opacity-70">Faster, up to 30s</div>
+                  </button>
+                </div>
+              </div>
+
               {/* Mode Selection */}
               <div>
                 <label className="block text-sm text-white/80 mb-2">Generation Mode</label>
@@ -2163,22 +2217,58 @@ export default function TimelineView() {
                 </div>
               )}
 
+              {/* Suno-specific options */}
+              {musicProvider === 'suno' && musicGenerationMode === 'prompt' && (
+                <>
+                  <div>
+                    <label className="block text-sm text-white/80 mb-2">Music Style</label>
+                    <input
+                      type="text"
+                      value={sunoStyle}
+                      onChange={(e) => setSunoStyle(e.target.value)}
+                      disabled={isGeneratingMusic}
+                      placeholder="e.g., cinematic, epic orchestral, ambient electronic"
+                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sunoInstrumental}
+                        onChange={(e) => setSunoInstrumental(e.target.checked)}
+                        disabled={isGeneratingMusic}
+                        className="w-4 h-4 rounded border-white/20 bg-white/10 text-green-500 focus:ring-green-500"
+                      />
+                      <span className="text-sm text-white/80">Instrumental only (no vocals)</span>
+                    </label>
+                  </div>
+                </>
+              )}
+
               {/* Duration */}
               <div>
                 <label className="block text-sm text-white/80 mb-2">
-                  Duration (seconds) - Max 30s
+                  Duration (seconds) {musicProvider === 'musicgen' ? '- Max 30s' : ''}
                 </label>
                 <input
                   type="number"
                   min="5"
-                  max="30"
+                  max={musicProvider === 'musicgen' ? 30 : 240}
                   step="1"
                   value={musicDuration}
-                  onChange={(e) => setMusicDuration(Math.min(30, Math.max(5, parseInt(e.target.value) || 30)))}
+                  onChange={(e) => {
+                    const maxDuration = musicProvider === 'musicgen' ? 30 : 240;
+                    setMusicDuration(Math.min(maxDuration, Math.max(5, parseInt(e.target.value) || 30)));
+                  }}
                   disabled={isGeneratingMusic}
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-white/40 mt-1">MusicGen supports up to 30 seconds of audio</p>
+                <p className="text-xs text-white/40 mt-1">
+                  {musicProvider === 'musicgen'
+                    ? 'MusicGen supports up to 30 seconds of audio'
+                    : 'Suno can generate longer tracks (up to 4 minutes)'}
+                </p>
               </div>
 
               {/* Progress indicator */}
@@ -2189,10 +2279,19 @@ export default function TimelineView() {
                 </div>
               )}
 
-              {/* Info about MusicGen */}
-              <div className="text-xs text-white/50 bg-white/5 p-3 rounded">
-                <p className="font-semibold mb-1">Powered by MusicGen</p>
-                <p>AI-generated music using Meta's MusicGen model. The generated audio will be added to your audio tracks.</p>
+              {/* Info about provider */}
+              <div className={`text-xs p-3 rounded ${musicProvider === 'suno' ? 'text-green-400/70 bg-green-500/10' : 'text-white/50 bg-white/5'}`}>
+                {musicProvider === 'suno' ? (
+                  <>
+                    <p className="font-semibold mb-1">Powered by Suno</p>
+                    <p>AI-generated music with high quality audio. Generation may take 1-2 minutes. Perfect for professional video soundtracks.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold mb-1">Powered by MusicGen</p>
+                    <p>AI-generated music using Meta's MusicGen model. Fast generation for quick iterations.</p>
+                  </>
+                )}
               </div>
 
               <div className="flex gap-2 justify-end pt-2">

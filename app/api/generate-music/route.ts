@@ -11,7 +11,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   generateMusicWithMusicGen,
+  generateMusicWithSuno,
   MusicGenerationRequest,
+  MusicProvider,
+  SunoModel,
 } from '@/lib/ai/music-generator';
 import {
   analyzeVideoForMusic,
@@ -34,10 +37,19 @@ interface GenerateMusicBody {
   mood?: string;
   genre?: string;
 
+  // Provider selection
+  provider?: MusicProvider;
+
   // MusicGen options
   temperature?: number;
   modelVersion?: 'stereo-melody-large' | 'stereo-large' | 'melody-large' | 'large';
   outputFormat?: 'wav' | 'mp3';
+
+  // Suno options
+  sunoModel?: SunoModel;
+  style?: string;
+  title?: string;
+  instrumental?: boolean;
 }
 
 /**
@@ -52,6 +64,7 @@ export async function POST(request: NextRequest) {
   try {
     const body: GenerateMusicBody = await request.json();
     const analyzeVideo = request.nextUrl.searchParams.get('analyze') === 'true';
+    const provider: MusicProvider = body.provider || 'musicgen';
 
     console.log('[GenerateMusic API] Request received:', {
       hasPrompt: !!body.prompt,
@@ -59,6 +72,7 @@ export async function POST(request: NextRequest) {
       hasVideoBase64: !!body.videoBase64,
       hasMood: !!body.mood,
       analyzeVideo,
+      provider,
     });
 
     let musicPrompt: string;
@@ -78,9 +92,34 @@ export async function POST(request: NextRequest) {
         overallMood: analysis.overallMood,
         scenes: analysis.scenes.length,
         duration,
+        provider,
       });
 
-      // Return analysis along with starting the generation
+      // Use the appropriate provider for generation
+      if (provider === 'suno') {
+        const { taskId, status } = await generateMusicWithSuno({
+          prompt: musicPrompt,
+          duration,
+          sunoModel: body.sunoModel,
+          style: body.style,
+          title: body.title,
+          instrumental: body.instrumental,
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            taskId,
+            status,
+            provider: 'suno',
+            analysis,
+            prompt: musicPrompt,
+            duration,
+          },
+        });
+      }
+
+      // Default to MusicGen
       const { predictionId, status } = await generateMusicWithMusicGen({
         prompt: musicPrompt,
         duration,
@@ -94,7 +133,8 @@ export async function POST(request: NextRequest) {
         data: {
           predictionId,
           status,
-          analysis, // Include the full analysis
+          provider: 'musicgen',
+          analysis,
           prompt: musicPrompt,
           duration,
         },
@@ -120,7 +160,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Start music generation
+    // Start music generation with the appropriate provider
+    if (provider === 'suno') {
+      const { taskId, status } = await generateMusicWithSuno({
+        prompt: musicPrompt,
+        duration,
+        sunoModel: body.sunoModel,
+        style: body.style,
+        title: body.title,
+        instrumental: body.instrumental,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          taskId,
+          status,
+          provider: 'suno',
+          prompt: musicPrompt,
+          duration,
+        },
+      });
+    }
+
+    // Default to MusicGen
     const { predictionId, status } = await generateMusicWithMusicGen({
       prompt: musicPrompt,
       duration,
@@ -134,6 +197,7 @@ export async function POST(request: NextRequest) {
       data: {
         predictionId,
         status,
+        provider: 'musicgen',
         prompt: musicPrompt,
         duration,
       },
@@ -173,8 +237,9 @@ export async function GET() {
         model: 'google/gemini-2.5-pro',
       },
       suno: {
-        available: false,
-        status: 'coming soon',
+        available: !!process.env.SUNO_API,
+        via: 'sunoapi.org',
+        models: ['V3_5', 'V4', 'V4_5', 'V4_5PLUS', 'V5'],
       },
     },
   });

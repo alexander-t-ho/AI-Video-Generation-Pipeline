@@ -31,6 +31,7 @@ export interface ProjectCoreSlice {
     targetDuration?: number;
   }) => Promise<void>;
   setStoryboard: (scenes: Scene[]) => void;
+  persistStoryboard: () => Promise<void>;
   updateScene: (sceneId: string, updates: Partial<Scene>) => void;
   reorderScenes: (scenes: Scene[]) => void;
   moveScene: (sceneIndex: number, direction: 'up' | 'down') => void;

@@ -9,7 +9,7 @@ export default function ProjectCreationForm() {
   const [duration, setDuration] = useState(30);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  const { createProject, setStoryboard } = useProjectStore();
+  const { createProject, setStoryboard, saveProjectToBackend, persistStoryboard } = useProjectStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,9 +38,19 @@ export default function ProjectCreationForm() {
       }
 
       const data = await response.json();
-      
-      // 3. Update store with storyboard
+
+      // 3. Save project to backend first
+      console.log('[ProjectCreationForm] Saving project to backend...');
+      await saveProjectToBackend(name, prompt, duration);
+      console.log('[ProjectCreationForm] ✅ Project saved to backend');
+
+      // 4. Update store with storyboard
       setStoryboard(data.scenes);
+
+      // 5. Persist scenes to database
+      console.log('[ProjectCreationForm] Persisting scenes to backend...');
+      await persistStoryboard();
+      console.log('[ProjectCreationForm] ✅ Scenes persisted to backend');
 
       // Navigate to scene generation page
       window.location.href = '/generate';

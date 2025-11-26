@@ -17,6 +17,7 @@ import {
   stitchVideos,
   generateStoryboard,
   uploadImages,
+  replaceScenes,
 } from '@/lib/api-client';
 import { ImageGenerationRequest, GeneratedImage, GeneratedVideo, SceneWithState } from '@/lib/types';
 import { getActiveModel } from '@/lib/config/model-runtime';
@@ -750,7 +751,32 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       );
 
       if (response.success && response.scenes) {
+        // Set storyboard in local state
         setStoryboard(response.scenes);
+
+        // Replace scenes in database (this uses PUT to delete old scenes and create new ones)
+        const scenesToPersist = response.scenes.map((scene: any, index: number) => ({
+          sceneNumber: index + 1,
+          sceneTitle: scene.sceneTitle || scene.title || `Scene ${index + 1}`,
+          sceneSummary: scene.sceneSummary || scene.description,
+          imagePrompt: scene.imagePrompt,
+          videoPrompt: scene.videoPrompt || scene.imagePrompt,
+          suggestedDuration: scene.suggestedDuration || scene.duration,
+          negativePrompt: scene.negativePrompt,
+          referenceImageUrls: scene.referenceImageUrls,
+        }));
+
+        try {
+          const result = await replaceScenes(project.id, scenesToPersist);
+          // Update local state with database-generated IDs
+          if (result.scenes && result.scenes.length > 0) {
+            setStoryboard(result.scenes);
+          }
+          console.log('[LeftPanel] ✅ Scenes replaced in database');
+        } catch (persistError) {
+          console.error('[LeftPanel] Failed to persist scenes:', persistError);
+        }
+
         addChatMessage({
           role: 'agent',
           content: '✓ Storyboard regenerated successfully!',

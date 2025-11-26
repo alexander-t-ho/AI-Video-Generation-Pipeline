@@ -1241,6 +1241,9 @@ export async function enhancePrompt(
 // Music Generation
 // ============================================================================
 
+export type MusicProvider = "musicgen" | "suno";
+export type SunoModel = "V3_5" | "V4" | "V4_5" | "V4_5PLUS" | "V5";
+
 export interface MusicGenerationOptions {
   prompt?: string;
   videoUrl?: string;
@@ -1254,15 +1257,24 @@ export interface MusicGenerationOptions {
     | "melody-large"
     | "large";
   analyzeVideo?: boolean;
+  // Provider selection
+  provider?: MusicProvider;
+  // Suno-specific options
+  sunoModel?: SunoModel;
+  style?: string;
+  title?: string;
+  instrumental?: boolean;
 }
 
 export interface MusicGenerationResponse {
   success: boolean;
   data?: {
-    predictionId: string;
+    predictionId?: string; // MusicGen
+    taskId?: string; // Suno
     status: string;
     prompt: string;
     duration: number;
+    provider?: MusicProvider;
     analysis?: any;
   };
   error?: string;
@@ -1304,6 +1316,13 @@ export async function generateMusicTrack(
         duration: options.duration,
         temperature: options.temperature,
         modelVersion: options.modelVersion,
+        // Provider selection
+        provider: options.provider,
+        // Suno-specific options
+        sunoModel: options.sunoModel,
+        style: options.style,
+        title: options.title,
+        instrumental: options.instrumental,
       }),
     });
 
@@ -1437,15 +1456,24 @@ export async function deleteTextOverlay(
  * Poll for music generation status
  */
 export async function pollMusicStatus(
-  predictionId: string,
+  idOrTaskId: string,
   options: {
     interval?: number;
     timeout?: number;
     projectId?: string;
+    provider?: MusicProvider;
     onProgress?: (status: MusicStatusResponse) => void;
   } = {},
 ): Promise<MusicStatusResponse> {
-  const { interval = 3000, timeout = 180000, projectId, onProgress } = options;
+  // Suno takes longer, so use a longer default timeout and interval
+  const isSuno = options.provider === "suno";
+  const {
+    interval = isSuno ? 5000 : 3000,
+    timeout = isSuno ? 300000 : 180000,
+    projectId,
+    provider = "musicgen",
+    onProgress,
+  } = options;
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -1458,9 +1486,10 @@ export async function pollMusicStatus(
 
         const params = new URLSearchParams();
         if (projectId) params.set("projectId", projectId);
+        params.set("provider", provider);
         const queryString = params.toString();
 
-        const url = `${API_BASE_URL}/api/generate-music/${predictionId}${queryString ? `?${queryString}` : ""}`;
+        const url = `${API_BASE_URL}/api/generate-music/${idOrTaskId}${queryString ? `?${queryString}` : ""}`;
         const response = await fetch(url, { credentials: "include" });
 
         if (!response.ok) {
@@ -1508,12 +1537,18 @@ export async function generateMusicAndWait(
 }> {
   const result = await generateMusicTrack(options);
 
-  if (!result.success || !result.data?.predictionId) {
+  // Determine which ID to use based on provider
+  const provider = options.provider || "musicgen";
+  const idOrTaskId =
+    provider === "suno" ? result.data?.taskId : result.data?.predictionId;
+
+  if (!result.success || !idOrTaskId) {
     throw new Error(result.error || "Failed to start music generation");
   }
 
-  const status = await pollMusicStatus(result.data.predictionId, {
+  const status = await pollMusicStatus(idOrTaskId, {
     projectId: options.projectId,
+    provider,
   });
 
   if (!status.success || !status.data?.audioUrl) {
@@ -1647,6 +1682,78 @@ export async function updateScene(
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Failed to update scene' }));
       throw new Error(error.error || 'Failed to update scene');
+    }
+
+    return response.json();
+  });
+}
+
+/**
+ * Persist scenes to the database for a project
+ * This creates scenes in the database and returns them with their database-generated IDs
+ */
+export async function persistScenes(
+  projectId: string,
+  scenes: Array<{
+    sceneNumber: number;
+    sceneTitle?: string;
+    sceneSummary?: string;
+    imagePrompt: string;
+    videoPrompt?: string;
+    suggestedDuration?: number;
+    negativePrompt?: string;
+    referenceImageUrls?: string[];
+  }>
+): Promise<{ scenes: any[] }> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/scenes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(scenes),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to create scenes' }));
+      throw new Error(error.error || 'Failed to create scenes');
+    }
+
+    return response.json();
+  });
+}
+
+/**
+ * Replace all scenes for a project (used when regenerating storyboard)
+ * This deletes existing scenes and creates new ones
+ */
+export async function replaceScenes(
+  projectId: string,
+  scenes: Array<{
+    sceneNumber: number;
+    sceneTitle?: string;
+    sceneSummary?: string;
+    imagePrompt: string;
+    videoPrompt?: string;
+    suggestedDuration?: number;
+    negativePrompt?: string;
+    referenceImageUrls?: string[];
+  }>
+): Promise<{ scenes: any[] }> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/scenes`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(scenes),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to replace scenes' }));
+      throw new Error(error.error || 'Failed to replace scenes');
     }
 
     return response.json();

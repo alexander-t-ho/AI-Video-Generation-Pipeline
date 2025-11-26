@@ -451,6 +451,66 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     }
   },
 
+  persistStoryboard: async () => {
+    const state = get();
+    if (!state.project || !state.project.storyboard || state.project.storyboard.length === 0) {
+      console.warn('[persistStoryboard] No storyboard to persist');
+      return;
+    }
+
+    try {
+      const { persistScenes } = await import('@/lib/api-client');
+
+      // Map storyboard scenes to the format expected by the API
+      const scenesToPersist = state.project.storyboard.map((scene, index) => ({
+        sceneNumber: index + 1,
+        sceneTitle: scene.sceneTitle || scene.title || `Scene ${index + 1}`,
+        sceneSummary: scene.sceneSummary || scene.description,
+        imagePrompt: scene.imagePrompt,
+        videoPrompt: scene.videoPrompt || scene.imagePrompt,
+        suggestedDuration: scene.suggestedDuration || scene.duration,
+        negativePrompt: scene.negativePrompt,
+        referenceImageUrls: scene.referenceImageUrls,
+      }));
+
+      console.log('[persistStoryboard] Persisting', scenesToPersist.length, 'scenes to database');
+
+      const result = await persistScenes(state.project.id, scenesToPersist);
+
+      if (result.scenes && result.scenes.length > 0) {
+        console.log('[persistStoryboard] ✅ Scenes persisted successfully, updating local IDs');
+
+        // Update local state with database-generated IDs
+        set((s) => {
+          if (!s.project) return s;
+
+          const updatedStoryboard = s.project.storyboard.map((scene, index) => ({
+            ...scene,
+            id: result.scenes[index]?.id || scene.id,
+          }));
+
+          const updatedScenes = s.scenes.map((sceneWithState, index) => ({
+            ...sceneWithState,
+            id: result.scenes[index]?.id || sceneWithState.id,
+          }));
+
+          return {
+            project: {
+              ...s.project,
+              storyboard: updatedStoryboard,
+            },
+            scenes: updatedScenes,
+          };
+        });
+
+        console.log('[persistStoryboard] ✅ Local state updated with database IDs');
+      }
+    } catch (error) {
+      console.error('[persistStoryboard] ❌ Failed to persist storyboard:', error);
+      throw error;
+    }
+  },
+
   updateScene: (sceneId, updates) => {
     set((state) => {
       if (!state.project || !state.project.storyboard) return state;

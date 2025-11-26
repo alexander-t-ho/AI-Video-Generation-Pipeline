@@ -709,17 +709,17 @@ export default function SceneCard({
           </button>
         </div>
         <h3 className="text-sm font-medium text-white flex-1 truncate">
-          {scene.description.charAt(0).toUpperCase() + scene.description.slice(1)}
+          {scene.description ? scene.description.charAt(0).toUpperCase() + scene.description.slice(1) : `Scene ${formatSceneNumber(scene.order)}`}
         </h3>
         <span className="text-xs text-white/50 flex-shrink-0">
-          {scene.suggestedDuration}s
+          {scene.suggestedDuration ?? 5}s
         </span>
         {getStatusBadge()}
       </div>
 
       {/* Image Prompt Preview */}
       <p className="text-xs text-white/50 line-clamp-2">
-        {scene.imagePrompt}
+        {scene.imagePrompt || 'No prompt'}
       </p>
 
       {/* Error Display with Retry (compact) */}
