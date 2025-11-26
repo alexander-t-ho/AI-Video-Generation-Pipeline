@@ -213,20 +213,50 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
 
         const imageTasks = project.storyboard.map((scene, sceneIndex) => {
           return async () => {
-            try {
-              console.log(`[useAutoGenerate] Scene ${sceneIndex}: Starting image generation`);
-              const generatedImage = await generateImageForScene(sceneIndex);
-              console.log(`[useAutoGenerate] Scene ${sceneIndex}: ✓ Image generated`);
-              return { sceneIndex, image: generatedImage };
-            } catch (error) {
-              console.error(`[useAutoGenerate] Scene ${sceneIndex} image failed:`, error);
-              addChatMessage({
-                role: 'agent',
-                content: `❌ Scene ${sceneIndex + 1} image failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                type: 'error',
-              });
-              throw error;
+            // Attempt image generation with 1 retry
+            let lastError: Error | null = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              try {
+                console.log(`[useAutoGenerate] Scene ${sceneIndex}: Starting image generation (attempt ${attempt}/2)`);
+                const generatedImage = await generateImageForScene(sceneIndex);
+                console.log(`[useAutoGenerate] Scene ${sceneIndex}: ✓ Image generated`);
+                
+                if (attempt > 1) {
+                  addChatMessage({
+                    role: 'agent',
+                    content: `✓ Scene ${sceneIndex + 1} image generated (retry succeeded)`,
+                    type: 'status',
+                  });
+                }
+                
+                return { sceneIndex, image: generatedImage };
+              } catch (error) {
+                lastError = error instanceof Error ? error : new Error('Unknown error');
+                console.error(`[useAutoGenerate] Scene ${sceneIndex} image failed (attempt ${attempt}/2):`, lastError);
+                
+                if (attempt === 1) {
+                  // First attempt failed, notify user we're retrying
+                  addChatMessage({
+                    role: 'agent',
+                    content: `⚠️ Scene ${sceneIndex + 1} image failed, retrying...`,
+                    type: 'error',
+                  });
+                  // Small delay before retry
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                  // Second attempt failed, give up
+                  addChatMessage({
+                    role: 'agent',
+                    content: `❌ Scene ${sceneIndex + 1} image failed after retry: ${lastError.message}`,
+                    type: 'error',
+                  });
+                  throw lastError;
+                }
+              }
             }
+            
+            // Should never reach here, but TypeScript needs it
+            throw lastError || new Error('Image generation failed');
           };
         });
 
@@ -244,16 +274,20 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
           const errors = error.errors || [];
           const results = error.results || [];
           const successCount = results.filter((r: any) => r !== undefined).length;
+          const failedSceneNumbers = project.storyboard
+            .map((_, idx) => idx)
+            .filter(idx => !results[idx])
+            .map(idx => idx + 1);
 
           console.error(`[useAutoGenerate] Image generation partially failed: ${successCount}/${project.storyboard.length} succeeded`);
           addChatMessage({
             role: 'agent',
-            content: `⚠️ Image generation completed with errors: ${successCount}/${project.storyboard.length} scenes succeeded`,
+            content: `⚠️ Image generation completed with errors: ${successCount}/${project.storyboard.length} scenes succeeded. Scene${failedSceneNumbers.length > 1 ? 's' : ''} ${failedSceneNumbers.join(', ')} failed after retry.`,
             type: 'error',
           });
 
           // Stop the workflow - we can't proceed without images
-          throw new Error(`Image generation failed: Only ${successCount}/${project.storyboard.length} images generated successfully`);
+          throw new Error(`Image generation failed: Only ${successCount}/${project.storyboard.length} images generated successfully. Scene${failedSceneNumbers.length > 1 ? 's' : ''} ${failedSceneNumbers.join(', ')} failed.`);
         }
 
         const successfulImages = imageResults.filter((r: any) => r !== undefined).length;
