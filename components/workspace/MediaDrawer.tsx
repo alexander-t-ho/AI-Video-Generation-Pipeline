@@ -193,6 +193,10 @@ export default function MediaDrawer() {
         });
       });
     });
+    console.log('[MediaDrawer] Generated images loaded:', {
+      totalImages: allImages.length,
+      byScene: scenes.map((s, i) => ({ scene: i, count: s.generatedImages?.length || 0 })),
+    });
     return allImages;
   }, [scenes]);
 

@@ -46,6 +46,7 @@ const initialState = {
   isWorkflowPaused: false,
   processingSceneIndex: null as number | null,
   sceneErrors: {} as Record<number, { message: string; timestamp: string; retryable: boolean }>,
+  generationStates: {} as Record<number, import('./types').GenerationState>,
   
   // Timeline
   timelineClips: [] as TimelineClip[],

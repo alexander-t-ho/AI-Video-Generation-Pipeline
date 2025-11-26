@@ -7,12 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, uploadImages } from '@/lib/api-client';
 import { GeneratedImage } from '@/lib/types';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
-
-interface GeneratingImage {
-  predictionId: string;
-  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
-  image?: GeneratedImage;
-}
+import type { GeneratingImage } from '@/lib/state/types';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -50,11 +45,30 @@ function ImagePreviewModal({ image, isOpen, onClose }: ImagePreviewModalProps) {
 
 export default function MediaGenerationView() {
   const { project, currentSceneIndex } = useProjectStore();
-  const { scenes, setSceneStatus, addGeneratedImage, selectImage, deleteGeneratedImage: removeGeneratedImage, updateScenePrompt, updateSceneSettings, duplicateScene } = useSceneStore();
+  const { 
+    scenes, 
+    setSceneStatus, 
+    addGeneratedImage, 
+    selectImage, 
+    deleteGeneratedImage: removeGeneratedImage, 
+    updateScenePrompt, 
+    updateSceneSettings, 
+    duplicateScene,
+    generationStates,
+    setGenerationState,
+    updateGeneratingImages,
+  } = useSceneStore();
   const { mediaDrawer, addChatMessage, setLiveEditingPrompts } = useUIStore();
 
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
+  // Get generation state from Zustand store (persisted across navigation)
+  const generationState = generationStates[currentSceneIndex] || {
+    isGeneratingImage: false,
+    isGeneratingVideo: false,
+    generatingImages: [],
+  };
+  const isGeneratingImage = generationState.isGeneratingImage;
+  const generatingImages = generationState.generatingImages;
+
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
@@ -167,8 +181,11 @@ export default function MediaGenerationView() {
       return;
     }
 
-    setIsGeneratingImage(true);
-    setGeneratingImages([]);
+    // Update generation state in Zustand store
+    setGenerationState(currentSceneIndex, {
+      isGeneratingImage: true,
+      generatingImages: [],
+    });
 
     // Set debounce timeout to prevent rapid re-clicks
     imageGenerationTimeoutRef.current = setTimeout(() => {
@@ -188,7 +205,7 @@ export default function MediaGenerationView() {
       predictionId: '',
       status: 'starting',
     }));
-    setGeneratingImages(initialGenerating);
+    updateGeneratingImages(currentSceneIndex, initialGenerating);
 
     try {
       setSceneStatus(currentSceneIndex, 'generating_image');
@@ -352,14 +369,14 @@ export default function MediaGenerationView() {
               throw new Error('Failed to get prediction ID from image generation response');
             }
 
-            setGeneratingImages(prev => {
-              const updated = [...prev];
-              updated[index] = {
-                predictionId: response.predictionId || '',
-                status: response.status || 'starting',
-              };
-              return updated;
-            });
+            // Update generation state in Zustand store
+            const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+            const updated = [...currentGenState.generatingImages];
+            updated[index] = {
+              predictionId: response.predictionId || '',
+              status: response.status || 'starting',
+            };
+            updateGeneratingImages(currentSceneIndex, updated);
 
             const statusResponse = await pollImageStatus(
               response.predictionId || '',
@@ -369,14 +386,14 @@ export default function MediaGenerationView() {
                 sceneIndex: currentSceneIndex,
                 prompt: editedPrompt || currentScene.imagePrompt,
                 onProgress: (status) => {
-                  setGeneratingImages(prev => {
-                    const updated = [...prev];
-                    updated[index] = {
-                      ...updated[index],
-                      status: status.status === 'canceled' ? 'failed' : status.status,
-                    };
-                    return updated;
-                  });
+                  // Update generation state in Zustand store
+                  const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+                  const updated = [...currentGenState.generatingImages];
+                  updated[index] = {
+                    ...updated[index],
+                    status: status.status === 'canceled' ? 'failed' : status.status,
+                  };
+                  updateGeneratingImages(currentSceneIndex, updated);
                 },
               }
             );
@@ -391,16 +408,16 @@ export default function MediaGenerationView() {
                 setSelectedImageId(currentSelectedImageBeforeClear.id);
               }
 
-              setGeneratingImages(prev => {
-                const updated = [...prev];
-                updated[index] = {
-                  ...updated[index],
-                  status: 'succeeded',
-                  // Don't store image here - it causes placeholder to disappear
-                  // The image is already in sceneImages via addGeneratedImage above
-                };
-                return updated;
-              });
+              // Update generation state in Zustand store
+              const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+              const updated = [...currentGenState.generatingImages];
+              updated[index] = {
+                ...updated[index],
+                status: 'succeeded',
+                // Don't store image here - it causes placeholder to disappear
+                // The image is already in sceneImages via addGeneratedImage above
+              };
+              updateGeneratingImages(currentSceneIndex, updated);
 
               // Success - exit retry loop
               return;
@@ -433,14 +450,14 @@ export default function MediaGenerationView() {
           await generateSingleImage(index, 2); // Max 2 retries per image
         } catch (error) {
           console.error(`Failed to generate image ${index + 1}:`, error);
-          setGeneratingImages(prev => {
-            const updated = [...prev];
-            updated[index] = {
-              ...updated[index],
-              status: 'failed',
-            };
-            return updated;
-          });
+          // Update generation state in Zustand store
+          const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+          const updated = [...currentGenState.generatingImages];
+          updated[index] = {
+            ...updated[index],
+            status: 'failed',
+          };
+          updateGeneratingImages(currentSceneIndex, updated);
         }
       });
 
@@ -450,13 +467,13 @@ export default function MediaGenerationView() {
       // After all images are done, clear the generating state
       // This allows the newly generated images from sceneImages to be displayed
       console.log('[MediaGenerationView] All images generated, clearing generatingImages state');
-      setGeneratingImages([]);
+      updateGeneratingImages(currentSceneIndex, []);
     } catch (error) {
       console.error('Error generating images:', error);
       // Also clear on error
-      setGeneratingImages([]);
+      updateGeneratingImages(currentSceneIndex, []);
     } finally {
-      setIsGeneratingImage(false);
+      setGenerationState(currentSceneIndex, { isGeneratingImage: false });
     }
   };
 

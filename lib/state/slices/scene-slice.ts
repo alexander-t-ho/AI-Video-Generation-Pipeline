@@ -9,6 +9,7 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
   isWorkflowPaused: false,
   processingSceneIndex: null,
   sceneErrors: {},
+  generationStates: {},
 
   updateScenePrompt: (sceneIndex, imagePrompt) => {
     set((state) => {
@@ -757,6 +758,46 @@ export const createSceneSlice: StateCreator<ProjectStore, [], [], SceneSlice> = 
 
       return duplicatedScene;
     }
+  },
+
+  setGenerationState: (sceneIndex, state) => {
+    set((currentState) => ({
+      generationStates: {
+        ...currentState.generationStates,
+        [sceneIndex]: {
+          ...(currentState.generationStates[sceneIndex] || {
+            isGeneratingImage: false,
+            isGeneratingVideo: false,
+            generatingImages: [],
+          }),
+          ...state,
+        },
+      },
+    }));
+  },
+
+  clearGenerationState: (sceneIndex) => {
+    set((currentState) => {
+      const newStates = { ...currentState.generationStates };
+      delete newStates[sceneIndex];
+      return { generationStates: newStates };
+    });
+  },
+
+  updateGeneratingImages: (sceneIndex, images) => {
+    set((currentState) => ({
+      generationStates: {
+        ...currentState.generationStates,
+        [sceneIndex]: {
+          ...(currentState.generationStates[sceneIndex] || {
+            isGeneratingImage: false,
+            isGeneratingVideo: false,
+            generatingImages: [],
+          }),
+          generatingImages: images,
+        },
+      },
+    }));
   },
 });
 

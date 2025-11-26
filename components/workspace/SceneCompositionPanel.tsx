@@ -466,8 +466,43 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
       );
 
       if (response.success && response.image) {
-        // Add the composite image to generated images
+        // Add the composite image to generated images (Zustand store)
+        console.log('[SceneComposition] Adding composite to generated images:', {
+          sceneIndex,
+          imageId: response.image.id,
+          imageUrl: response.image.url,
+        });
         addGeneratedImage(sceneIndex, response.image);
+
+        // Persist to database
+        const currentScene = project.storyboard[sceneIndex];
+        if (currentScene?.id) {
+          try {
+            console.log('[SceneComposition] Persisting composite to database...');
+            const dbResponse = await fetch(`/api/projects/${project.id}/scenes/${currentScene.id}/images`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                url: response.image.url,
+                s3Key: response.image.s3Key,
+                localPath: response.image.localPath,
+                prompt: response.image.prompt,
+                replicateId: response.image.replicateId,
+                isSelected: false,
+              }),
+            });
+
+            if (!dbResponse.ok) {
+              console.warn('[SceneComposition] Failed to persist composite to database:', await dbResponse.text());
+            } else {
+              console.log('[SceneComposition] Composite persisted to database successfully');
+            }
+          } catch (dbError) {
+            console.warn('[SceneComposition] Error persisting composite to database:', dbError);
+            // Don't throw - the image is still in the store and usable
+          }
+        }
 
         // Update scene to mark this as the composite image
         updateSceneSettings(sceneIndex, {
@@ -476,7 +511,8 @@ export default function SceneCompositionPanel({ sceneIndex }: SceneCompositionPa
 
         // Don't auto-select the composite - let user drag it to video tab in manual mode
 
-        console.log('Composite generated successfully:', response.image);
+        console.log('[SceneComposition] Composite generated successfully and added to Media Drawer:', response.image);
+        alert('✓ Composite generated! Check the "Generated Images" section in the Media Drawer.');
       } else {
         throw new Error(response.error || 'Failed to generate composite');
       }

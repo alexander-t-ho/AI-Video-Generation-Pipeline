@@ -65,12 +65,29 @@ export interface ProjectCoreSlice {
   reset: () => void;
 }
 
+export interface GeneratingImage {
+  predictionId: string;
+  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
+  image?: GeneratedImage;
+}
+
+export interface GenerationState {
+  isGeneratingImage: boolean;
+  isGeneratingVideo: boolean;
+  generatingImages: GeneratingImage[];
+  videoGenerationPredictionId?: string;
+  videoGenerationStatus?: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
+}
+
 export interface SceneSlice {
   scenes: SceneWithState[];
   currentWorkflowStep: WorkflowStep;
   isWorkflowPaused: boolean;
   processingSceneIndex: number | null;
   sceneErrors: Record<number, { message: string; timestamp: string; retryable: boolean }>;
+  
+  // Generation state per scene (persisted across navigation)
+  generationStates: Record<number, GenerationState>;
 
   updateScenePrompt: (sceneIndex: number, imagePrompt: string) => void;
   updateSceneVideoPrompt: (sceneIndex: number, videoPrompt: string) => void;
@@ -119,6 +136,11 @@ export interface SceneSlice {
 
   // Scene duplication
   duplicateScene: (sceneIndex: number) => Promise<Scene>;
+  
+  // Generation state management
+  setGenerationState: (sceneIndex: number, state: Partial<GenerationState>) => void;
+  clearGenerationState: (sceneIndex: number) => void;
+  updateGeneratingImages: (sceneIndex: number, images: GeneratingImage[]) => void;
 }
 
 export interface TimelineSlice {

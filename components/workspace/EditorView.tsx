@@ -10,6 +10,7 @@ import { GeneratedImage, SeedFrame } from '@/lib/types';
 import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 import { getPublicBackgrounds, getPublicBackgroundUrl, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
 import { selectSceneReferenceImages } from '@/lib/state/slices/project-core-slice';
+import type { GeneratingImage } from '@/lib/state/types';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -45,12 +46,6 @@ function ImagePreviewModal({ image, isOpen, onClose }: ImagePreviewModalProps) {
   );
 }
 
-interface GeneratingImage {
-  predictionId: string;
-  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
-  image?: GeneratedImage;
-}
-
 export default function EditorView() {
   const {
     project,
@@ -70,6 +65,9 @@ export default function EditorView() {
     updateSceneVideoPrompt,
     updateSceneSettings,
     duplicateScene,
+    generationStates,
+    setGenerationState,
+    updateGeneratingImages,
   } = useSceneStore();
 
   const {
@@ -81,9 +79,15 @@ export default function EditorView() {
     updateMediaDrawer,
   } = useUIStore();
   
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [generatingImages, setGeneratingImages] = useState<GeneratingImage[]>([]);
+  // Get generation state from Zustand store (persisted across navigation)
+  const generationState = generationStates[currentSceneIndex] || {
+    isGeneratingImage: false,
+    isGeneratingVideo: false,
+    generatingImages: [],
+  };
+  const isGeneratingImage = generationState.isGeneratingImage;
+  const isGeneratingVideo = generationState.isGeneratingVideo;
+  const generatingImages = generationState.generatingImages;
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
   const [isExtractingFrames, setIsExtractingFrames] = useState(false);
@@ -439,8 +443,11 @@ export default function EditorView() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    setIsGeneratingImage(true);
-    setGeneratingImages([]);
+    // Update generation state in Zustand store
+    setGenerationState(currentSceneIndex, {
+      isGeneratingImage: true,
+      generatingImages: [],
+    });
 
     // Check for selected image BEFORE clearing it (for use as seed)
     const currentSelectedImageBeforeClear = selectedImage || (sceneState?.selectedImageId
@@ -458,7 +465,7 @@ export default function EditorView() {
       predictionId: '',
       status: 'starting',
     }));
-    setGeneratingImages(initialGenerating);
+    updateGeneratingImages(currentSceneIndex, initialGenerating);
 
     try {
       setSceneStatus(currentSceneIndex, 'generating_image');
@@ -647,14 +654,13 @@ export default function EditorView() {
 
             // Update generating state only if not cancelled
             if (!abortController.signal.aborted && imageGenerationRequestIdRef.current === requestId) {
-              setGeneratingImages(prev => {
-                const updated = [...prev];
-                updated[index] = {
-                  predictionId: response.predictionId || '',
-                  status: response.status || 'starting',
-                };
-                return updated;
-              });
+              const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+              const updated = [...currentGenState.generatingImages];
+              updated[index] = {
+                predictionId: response.predictionId || '',
+                status: response.status || 'starting',
+              };
+              updateGeneratingImages(currentSceneIndex, updated);
             }
 
             // Poll for completion
@@ -668,14 +674,13 @@ export default function EditorView() {
                 onProgress: (status) => {
                   // Only update if not cancelled and still the current request
                   if (!abortController.signal.aborted && imageGenerationRequestIdRef.current === requestId) {
-                    setGeneratingImages(prev => {
-                      const updated = [...prev];
-                      updated[index] = {
-                        ...updated[index],
-                        status: status.status === 'canceled' ? 'failed' : status.status,
-                      };
-                      return updated;
-                    });
+                    const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+                    const updated = [...currentGenState.generatingImages];
+                    updated[index] = {
+                      ...updated[index],
+                      status: status.status === 'canceled' ? 'failed' : status.status,
+                    };
+                    updateGeneratingImages(currentSceneIndex, updated);
                   }
                 },
               }
@@ -697,15 +702,14 @@ export default function EditorView() {
                 setSelectedImageId(currentSelectedImageBeforeClear.id);
               }
 
-              setGeneratingImages(prev => {
-                const updated = [...prev];
-                updated[index] = {
-                  ...updated[index],
-                  status: 'succeeded',
-                  image: statusResponse.image,
-                };
-                return updated;
-              });
+              const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+              const updated = [...currentGenState.generatingImages];
+              updated[index] = {
+                ...updated[index],
+                status: 'succeeded',
+                image: statusResponse.image,
+              };
+              updateGeneratingImages(currentSceneIndex, updated);
 
               // Success - exit retry loop
               return;
@@ -744,14 +748,13 @@ export default function EditorView() {
           }
 
           console.error(`[EditorView] Failed to generate image ${index + 1}:`, error);
-          setGeneratingImages(prev => {
-            const updated = [...prev];
-            updated[index] = {
-              ...updated[index],
-              status: 'failed',
-            };
-            return updated;
-          });
+          const currentGenState = generationStates[currentSceneIndex] || { isGeneratingImage: true, isGeneratingVideo: false, generatingImages: [] };
+          const updated = [...currentGenState.generatingImages];
+          updated[index] = {
+            ...updated[index],
+            status: 'failed',
+          };
+          updateGeneratingImages(currentSceneIndex, updated);
         }
       });
 
@@ -772,7 +775,7 @@ export default function EditorView() {
     } finally {
       // Only clear loading state if this is still the current request
       if (imageGenerationRequestIdRef.current === requestId) {
-        setIsGeneratingImage(false);
+        setGenerationState(currentSceneIndex, { isGeneratingImage: false });
         abortControllerRef.current = null;
       }
     }
@@ -804,7 +807,7 @@ export default function EditorView() {
       return;
     }
 
-    setIsGeneratingVideo(true);
+    setGenerationState(currentSceneIndex, { isGeneratingVideo: true });
 
     // Set debounce timeout to prevent rapid re-clicks
     videoGenerationTimeoutRef.current = setTimeout(() => {
@@ -1100,7 +1103,7 @@ export default function EditorView() {
         type: 'error',
       });
     } finally {
-      setIsGeneratingVideo(false);
+      setGenerationState(currentSceneIndex, { isGeneratingVideo: false });
     }
   };
 
