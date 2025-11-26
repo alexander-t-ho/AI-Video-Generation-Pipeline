@@ -33,6 +33,7 @@ export interface ProjectCoreSlice {
   setStoryboard: (scenes: Scene[]) => void;
   updateScene: (sceneId: string, updates: Partial<Scene>) => void;
   reorderScenes: (scenes: Scene[]) => void;
+  moveScene: (sceneIndex: number, direction: 'up' | 'down') => void;
   loadProject: (projectId: string) => Promise<void>;
   
   // Character reference management

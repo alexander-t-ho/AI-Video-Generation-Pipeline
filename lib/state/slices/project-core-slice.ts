@@ -501,6 +501,54 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     });
   },
 
+  moveScene: (sceneIndex, direction) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard) return state;
+
+      const storyboard = state.project.storyboard;
+      const scenes = state.scenes;
+
+      // Validate bounds
+      if (direction === 'up' && sceneIndex === 0) return state;
+      if (direction === 'down' && sceneIndex === storyboard.length - 1) return state;
+
+      // Calculate swap indices
+      const targetIndex = direction === 'up' ? sceneIndex - 1 : sceneIndex + 1;
+
+      // Create new arrays with swapped scenes
+      const newStoryboard = [...storyboard];
+      const newScenes = [...scenes];
+
+      // Swap in storyboard
+      [newStoryboard[sceneIndex], newStoryboard[targetIndex]] = 
+        [newStoryboard[targetIndex], newStoryboard[sceneIndex]];
+
+      // Swap in scenes
+      [newScenes[sceneIndex], newScenes[targetIndex]] = 
+        [newScenes[targetIndex], newScenes[sceneIndex]];
+
+      // Renumber ALL scenes sequentially (0, 1, 2, 3...)
+      newStoryboard.forEach((scene, idx) => {
+        scene.order = idx;
+      });
+
+      newScenes.forEach((scene, idx) => {
+        scene.order = idx;
+      });
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: newStoryboard,
+        },
+        scenes: newScenes,
+      };
+    });
+
+    // Rebuild timeline with new scene order
+    get().initializeTimelineClips();
+  },
+
   loadProject: async (projectId) => {
     try {
       const { loadProject: loadProjectAPI } = await import('@/lib/api-client');

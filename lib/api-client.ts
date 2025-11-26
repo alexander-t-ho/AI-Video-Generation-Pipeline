@@ -180,6 +180,8 @@ export async function generateStoryboard(
   prompt: string,
   targetDuration: number = 15,
   referenceImageUrls?: string[],
+  assetDescription?: string,
+  color?: string,
 ): Promise<StoryboardResponse> {
   const url = `${API_BASE_URL}/api/storyboard`;
   return retryRequest(
@@ -195,6 +197,8 @@ export async function generateStoryboard(
           prompt,
           targetDuration,
           referenceImageUrls,
+          assetDescription,
+          color,
         } as StoryboardRequest),
       });
 

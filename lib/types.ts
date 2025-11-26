@@ -34,6 +34,8 @@ export interface StoryboardRequest {
   prompt: string;
   targetDuration?: number;   // Default: 15
   referenceImageUrls?: string[]; // Optional: URLs of uploaded reference images
+  assetDescription?: string; // Optional: Description of asset (e.g., "Porsche 911 Carrera (2010)")
+  color?: string; // Optional: Hex color code (e.g., "#FF5733")
 }
 
 export interface StoryboardResponse {

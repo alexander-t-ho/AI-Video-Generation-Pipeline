@@ -88,6 +88,7 @@ export default function StoryboardView() {
                 key={scene.id}
                 scene={scene}
                 sceneIndex={index}
+                totalScenes={project.storyboard.length}
                 isSelected={currentSceneIndex === index}
                 status={status}
               />

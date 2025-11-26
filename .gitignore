@@ -254,6 +254,7 @@ yarn-error.log*
 /alexis-docs/
 /test videos/
 memory-bank/
+simple-archive/
 
 # AWS deployment artifacts
 .aws-sam/

@@ -18,7 +18,7 @@ const STYLE_OPTIONS: StyleOption[] = [
     id: 'whimsical',
     label: 'Whimsical',
     videoPath: '/styles/whimsical.gif',
-    prompt: 'Wes Anderson cinematography with static tripod shots flat horizon line, vintage car commercial aesthetic, pastel color palette with burnt orange and seafoam green, film grain texture, shallow focus on car, deliberate staging, whimsical yet melancholic mood, methodical structured camera movement each shot should be a little hazy and vintage',
+    prompt: 'Wes Anderson cinematography with static tripod shots flat horizon line, vintage car commercial aesthetic, pastel color palette with burnt orange and seafoam green, film grain texture, shallow focus on car, deliberate staging, whimsical yet melancholic mood, methodical structured camera movement each shot should be a little hazy and vintage. CRITICAL REQUIREMENTS: Every imagePrompt MUST include the exact phrases "Wes Anderson style" and "whimsical". Every videoPrompt MUST include the exact phrases "Wes Anderson style shot" and "whimsical". Any human characters must be described as eccentrically dressed in Wes Anderson style with distinctive vintage clothing, bold color coordination, and quirky accessories.',
   },
   {
     id: 'luxury',
@@ -90,9 +90,22 @@ export default function StyleSelection() {
       // Initialize project first
       createProject('My Video Project', initialPrompt, targetDuration);
 
-      // Generate storyboard in background
+      // Get asset description and color from project store
+      const project = useProjectStore.getState().project;
+      const assetDescription = project?.assetDescription;
+      const color = project?.selectedColor;
+
+      console.log('[StyleSelection] Asset context:', { assetDescription, color });
+
+      // Generate storyboard in background with asset context
       console.log('[StyleSelection] Calling generateStoryboard API...');
-      const response = await generateStoryboard(fullPrompt, targetDuration);
+      const response = await generateStoryboard(
+        fullPrompt,
+        targetDuration,
+        undefined, // referenceImageUrls
+        assetDescription, // Pass asset description
+        color // Pass color
+      );
       console.log('[StyleSelection] API response received:', { success: response.success, sceneCount: response.scenes?.length });
 
       if (response.success && response.scenes) {
