@@ -30,7 +30,7 @@ export interface ProjectCoreSlice {
     finalVideoS3Key?: string;
     targetDuration?: number;
   }) => Promise<void>;
-  setStoryboard: (scenes: Scene[]) => void;
+  setStoryboard: (scenes: Scene[]) => Promise<void>;
   updateScene: (sceneId: string, updates: Partial<Scene>) => void;
   reorderScenes: (scenes: Scene[]) => void;
   moveScene: (sceneIndex: number, direction: 'up' | 'down') => void;

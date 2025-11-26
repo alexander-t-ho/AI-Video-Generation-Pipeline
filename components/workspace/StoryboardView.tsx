@@ -29,7 +29,7 @@ export default function StoryboardView() {
       const response = await generateStoryboard(project.prompt, project.targetDuration);
 
       if (response.success && response.scenes) {
-        setStoryboard(response.scenes);
+        await setStoryboard(response.scenes);
         const sceneCount = response.scenes.length;
         addChatMessage({
           role: 'agent',
@@ -85,7 +85,7 @@ export default function StoryboardView() {
             
             return (
               <SceneCard
-                key={scene.id}
+                key={`scene-${index}-${scene.id || index}`}
                 scene={scene}
                 sceneIndex={index}
                 totalScenes={project.storyboard.length}

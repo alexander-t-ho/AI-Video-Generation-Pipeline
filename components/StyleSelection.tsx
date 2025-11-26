@@ -109,7 +109,7 @@ export default function StyleSelection() {
       console.log('[StyleSelection] API response received:', { success: response.success, sceneCount: response.scenes?.length });
 
       if (response.success && response.scenes) {
-        setStoryboard(response.scenes);
+        await setStoryboard(response.scenes);
         console.log('[StyleSelection] Storyboard generated in background:', response.scenes.length, 'scenes');
       } else {
         console.error('[StyleSelection] Storyboard generation failed:', response.error || 'No error message');

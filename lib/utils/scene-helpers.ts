@@ -14,7 +14,7 @@ import { getPublicUrl, FileReference } from '@/lib/storage/url-manager';
 // ============================================================================
 
 export const SCENE_CONSTANTS = {
-  INITIAL_VISIBLE_CARDS: 3,
+  INITIAL_VISIBLE_CARDS: 10, // Increased to 10 to support up to 10 scenes without lazy loading
   LAZY_LOAD_MARGIN: '50px',
   LAZY_LOAD_THRESHOLD: 0.01,
   MAX_REFERENCE_IMAGES: 3,
@@ -44,18 +44,35 @@ export interface ImageSearchContext {
 
 /**
  * Formats an image object to a serveable URL
- * Uses the centralized getPublicUrl utility for consistency
+ * Always proxies through API for consistent access (S3 URLs may not be publicly accessible)
  */
 export function formatImageUrl(image: ImageSource | FileReference): string {
   // Handle objects with url/localPath/s3Key
   if ('url' in image || 'localPath' in image || 's3Key' in image) {
-    return getPublicUrl({
-      s3Key: image.s3Key,
-      localPath: image.localPath,
-      url: image.url,
-    });
+    // Priority: localPath > url > s3Key
+    if (image.localPath) {
+      // Use local path through API
+      return `/api/serve-image?path=${encodeURIComponent(image.localPath)}`;
+    } else if (image.url) {
+      // Check if it's already an API URL
+      if (image.url.startsWith('/api')) {
+        return image.url;
+      }
+      // Check if it's a remote URL (S3, Replicate, etc.)
+      if (image.url.startsWith('http://') || image.url.startsWith('https://')) {
+        // Proxy through API using 'url' parameter for remote URLs
+        return `/api/serve-image?url=${encodeURIComponent(image.url)}`;
+      }
+      // Relative path - treat as local file
+      return `/api/serve-image?path=${encodeURIComponent(image.url)}`;
+    } else if (image.s3Key) {
+      // Convert S3 key to full S3 URL and proxy through API
+      const s3Url = `https://${process.env.AWS_S3_BUCKET || 'ai-video-pipeline-outputs'}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${image.s3Key}`;
+      return `/api/serve-image?url=${encodeURIComponent(s3Url)}`;
+    }
   }
 
+  console.warn('[formatImageUrl] Could not format image URL - no valid url/localPath/s3Key found:', image);
   return '';
 }
 

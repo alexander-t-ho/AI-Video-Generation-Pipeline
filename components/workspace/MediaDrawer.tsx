@@ -169,14 +169,17 @@ export default function MediaDrawer() {
         // S3 URLs may not be publicly accessible, so we proxy through our API
         let imageUrl: string;
         if (img.localPath) {
+          // Use local path if available
           imageUrl = `/api/serve-image?path=${encodeURIComponent(img.localPath)}`;
         } else if (img.url.startsWith('/api')) {
+          // Already an API URL
           imageUrl = img.url;
-        } else if (!img.url.startsWith('http://') && !img.url.startsWith('https://')) {
-          imageUrl = `/api/serve-image?path=${encodeURIComponent(img.url)}`;
+        } else if (img.url.startsWith('http://') || img.url.startsWith('https://')) {
+          // Remote URL (S3, Replicate, etc.) - proxy through our API using 'url' parameter
+          imageUrl = `/api/serve-image?url=${encodeURIComponent(img.url)}`;
         } else {
-          // For external URLs (including S3), still try to use localPath if available
-          imageUrl = `/api/serve-image?path=${encodeURIComponent(img.localPath || img.url)}`;
+          // Relative path - treat as local file
+          imageUrl = `/api/serve-image?path=${encodeURIComponent(img.url)}`;
         }
 
         allImages.push({
@@ -195,7 +198,13 @@ export default function MediaDrawer() {
     });
     console.log('[MediaDrawer] Generated images loaded:', {
       totalImages: allImages.length,
-      byScene: scenes.map((s, i) => ({ scene: i, count: s.generatedImages?.length || 0 })),
+      totalScenes: scenes.length,
+      byScene: scenes.map((s, i) => ({ 
+        scene: i, 
+        count: s.generatedImages?.length || 0,
+        images: s.generatedImages?.map(img => ({ id: img.id, url: img.url?.substring(0, 80) })) || []
+      })),
+      allImagesDetails: allImages.map(img => ({ id: img.id, sceneIndex: img.sceneIndex, url: img.url?.substring(0, 80) }))
     });
     return allImages;
   }, [scenes]);
