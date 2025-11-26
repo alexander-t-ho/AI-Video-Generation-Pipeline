@@ -136,6 +136,11 @@ export async function createVideoPrediction(
   referenceImages?: string[],
   modelParameters?: Record<string, any>
 ): Promise<string> {
+  // Validate inputs - imageUrl is optional if modelParameters.last_frame is provided
+  if (imageUrl && (typeof imageUrl !== 'string' || imageUrl.trim() === '')) {
+    throw new Error('Image URL must be a non-empty string if provided');
+  }
+
   // Validate prompt (required always)
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
     throw new Error('Prompt is required and must be a non-empty string');
@@ -257,7 +262,8 @@ export async function createVideoPrediction(
   const input: ReplicateInput = {
     // Gen-4 Aleph uses 'video', others use 'image'
     // IMPORTANT: For Google Veo in reference images mode, we should NOT include the image parameter
-    ...(isGen4Aleph ? {
+    // Only include image/video if inputImageUrl is provided
+    ...(inputImageUrl ? (isGen4Aleph ? {
       video: inputImageUrl, // For Gen-4 Aleph, this should be a video URL
     } : useReferenceImagesMode ? {
       // Reference images mode: NO image parameter, only reference_images
@@ -597,7 +603,7 @@ async function downloadVideoWithRetry(
  * @throws Error if video generation fails, times out, or download fails
  */
 export async function generateVideo(
-  imageUrl: string,
+  imageUrl: string | undefined,
   prompt: string,
   seedFrame: string | undefined,
   projectId: string,
@@ -605,9 +611,8 @@ export async function generateVideo(
   sceneId?: string
 ): Promise<{ localPath: string; s3Url: string; s3Key?: string; storedFile: StoredFile }> {
   // Validate inputs
-  if (!imageUrl) {
-    throw new Error('Image URL is required');
-  }
+  // Note: imageUrl is optional when using reference images mode or last_frame only mode
+  // The createVideoPrediction function will validate based on the actual mode
 
   if (!prompt) {
     throw new Error('Prompt is required');
