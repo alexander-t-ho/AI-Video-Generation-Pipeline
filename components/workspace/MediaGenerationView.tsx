@@ -168,7 +168,11 @@ export default function MediaGenerationView() {
         : [];
       setCustomImageFiles([]);
       setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      setCustomImagePreviews(
+        imageInputs
+          .filter((url): url is string => url !== null && url !== undefined)
+          .map(url => ({ url, source: 'media' as const }))
+      );
     }
   }, [currentSceneIndex]);
 
@@ -284,7 +288,9 @@ export default function MediaGenerationView() {
         console.log(`[MediaGenerationView] Scene ${currentSceneIndex}: Using selected image as seed image`);
       } else {
         const customImageInputs = currentScene.customImageInput
-          ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+          ? (Array.isArray(currentScene.customImageInput) 
+              ? currentScene.customImageInput.filter((url): url is string => url !== null && url !== undefined)
+              : [currentScene.customImageInput].filter((url): url is string => url !== null && url !== undefined))
           : [];
 
         if (customImageInputs.length > 0) {
@@ -512,7 +518,11 @@ export default function MediaGenerationView() {
         : [];
       setCustomImageFiles([]);
       setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      setCustomImagePreviews(
+        imageInputs
+          .filter((url): url is string => url !== null && url !== undefined)
+          .map(url => ({ url, source: 'media' as const }))
+      );
       setIsEditingPrompt(true);
       setIsPromptExpanded(true);
     } else {

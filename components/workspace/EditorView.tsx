@@ -335,7 +335,11 @@ export default function EditorView() {
           : [];
 
         if (imageInputs.length > 0) {
-          setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+          setCustomImagePreviews(
+            imageInputs
+              .filter((url): url is string => url !== null && url !== undefined)
+              .map(url => ({ url, source: 'media' as const }))
+          );
         } else {
           setCustomImagePreviews([]);
         }
@@ -557,7 +561,9 @@ export default function EditorView() {
       } else {
         // Handle custom image inputs (can be single string or array)
         const customImageInputs = currentScene.customImageInput
-          ? (Array.isArray(currentScene.customImageInput) ? currentScene.customImageInput : [currentScene.customImageInput])
+          ? (Array.isArray(currentScene.customImageInput) 
+              ? currentScene.customImageInput.filter((url): url is string => url !== null && url !== undefined)
+              : [currentScene.customImageInput].filter((url): url is string => url !== null && url !== undefined))
           : [];
 
         if (customImageInputs.length > 0) {
@@ -1187,7 +1193,11 @@ export default function EditorView() {
         : [];
       setCustomImageFiles([]);
       setDroppedImageUrls([]);
-      setCustomImagePreviews(imageInputs.map(url => ({ url, source: 'media' as const })));
+      setCustomImagePreviews(
+        imageInputs
+          .filter((url): url is string => url !== null && url !== undefined)
+          .map(url => ({ url, source: 'media' as const }))
+      );
       setIsEditingPrompt(true);
       setIsPromptExpanded(true);
     } else {
@@ -1782,9 +1792,11 @@ export default function EditorView() {
       : [];
     setCustomImageFiles([]);
     setDroppedImageUrls([]);
-    setCustomImagePreviews(imageInputs.map(url =>
-      url ? { url, source: 'media' as const } : null
-    ) as any);
+    setCustomImagePreviews(
+      imageInputs
+        .filter((url): url is string => url !== null && url !== undefined)
+        .map(url => ({ url, source: 'media' as const }))
+    );
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';

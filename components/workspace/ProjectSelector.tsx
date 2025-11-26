@@ -61,7 +61,7 @@ export default function ProjectSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-80 bg-black/80 rounded-lg shadow-lg border border-white/20 py-2 z-50 backdrop-blur-sm max-h-96 overflow-y-auto">
+        <div className="absolute left-0 mt-2 w-80 bg-black rounded-lg shadow-lg border border-white/20 py-2 z-50 max-h-96 overflow-y-auto">
           {/* Header with save button */}
           <div className="px-3 py-2 border-b border-white/20 flex items-center justify-between">
             <h3 className="text-sm font-medium text-white">Your Projects</h3>

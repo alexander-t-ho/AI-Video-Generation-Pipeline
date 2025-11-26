@@ -1020,6 +1020,32 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     });
   },
 
+  updateScenePrompts: (updates) => {
+    set((state) => {
+      if (!state.project || !state.project.storyboard) return {};
+
+      const updatedStoryboard = state.project.storyboard.map(scene => {
+        const update = updates.find(u => u.sceneId === scene.id);
+        if (update) {
+          console.log(`[ProjectStore] Updating prompts for scene ${scene.id}`);
+          return {
+            ...scene,
+            imagePrompt: update.imagePrompt,
+            videoPrompt: update.videoPrompt,
+          };
+        }
+        return scene;
+      });
+
+      return {
+        project: {
+          ...state.project,
+          storyboard: updatedStoryboard,
+        },
+      };
+    });
+  },
+
   reset: () => {
     // This should ideally reset other slices too. 
     // Since all slices share `set`, we can pass the global initial state here if we had it,

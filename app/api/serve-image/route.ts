@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { generateThumbnail, type ThumbnailSize } from '@/lib/storage/thumbnail-service';
+import { imageCache } from '@/lib/storage/cache';
 
 // Force dynamic rendering since we use request.url
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         { error: 'Missing path or url parameter' },
         { status: 400 }
       );
+    }
+
+    // Create cache key
+    const cacheKey = `${filePath || remoteUrl}-${thumbSize || 'full'}-${format || 'original'}`;
+
+    // CHECK CACHE FIRST (for non-remote or already-processed)
+    if (filePath && !thumbSize) { // Only cache simple local file requests
+      const cached = imageCache.get(cacheKey);
+      if (cached) {
+        return new NextResponse(Buffer.from(cached.buffer), {
+          status: 200,
+          headers: {
+            'Content-Type': cached.contentType,
+            'Cache-Control': 'public, max-age=31536000',
+            'X-Cache': 'HIT',
+          },
+        });
+      }
     }
 
     let sourcePath: string;
@@ -180,12 +199,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     };
     const contentType = contentTypeMap[ext] || 'application/octet-stream';
 
+    // CACHE IT
+    if (filePath && !thumbSize) {
+      imageCache.set(cacheKey, fileBuffer, contentType);
+    }
+
     // Return image
     return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=31536000',
+        'X-Cache': 'MISS',
       },
     });
   } catch (error) {
