@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { uploadToS3, getS3Url } from './s3-uploader';
+import { convertWebpIfNeeded } from '@/lib/utils/image-converter';
 import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 
 // ============================================================================
@@ -57,10 +58,10 @@ function calculateImageHash(buffer: Buffer): string {
  * Check if an image with the given hash already exists in S3
  */
 async function findExistingImageInS3(imageHash: string, projectId: string): Promise<UploadedImage | null> {
-  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  const bucket = process.env.AWS_S3_BUCKET;
 
   if (!bucket) {
-    console.warn('[ImageStorage] AWS_S3_BUCKET_NAME not configured, skipping duplicate check');
+    console.warn('[ImageStorage] AWS_S3_BUCKET not configured, skipping duplicate check');
     return null;
   }
 
@@ -200,8 +201,16 @@ export async function saveUploadedImage(
     throw new Error(`Unsupported image type: ${mimeType}. Allowed types: ${allowedTypes.join(', ')}`);
   }
 
-  // Calculate image hash for duplicate detection
-  const imageHash = calculateImageHash(buffer);
+  // Convert webp to PNG if needed
+  const converted = await convertWebpIfNeeded(buffer, mimeType, originalName);
+  
+  // Use converted values for the rest of the process
+  const finalBuffer = converted.buffer;
+  const finalMimeType = converted.mimeType;
+  const finalFilename = converted.filename;
+
+  // Calculate image hash for duplicate detection (using converted buffer)
+  const imageHash = calculateImageHash(finalBuffer);
 
   // Check for existing image in S3 if S3 is enabled
   if (useS3) {
@@ -212,17 +221,17 @@ export async function saveUploadedImage(
       console.log(`[ImageStorage] Found existing image in S3, returning duplicate info`);
       return {
         ...existingImage,
-        originalName, // Keep the new filename for reference
+        originalName: finalFilename, // Keep the new filename for reference
       };
     }
   }
   
   // Generate filename using hash for consistent duplicate detection
-  const ext = path.extname(originalName) || (mimeType.includes('png') ? '.png' : '.jpg');
+  const ext = path.extname(finalFilename) || (finalMimeType.includes('png') ? '.png' : '.jpg');
   const filename = `${imageHash}${ext}`;
   
   // Save to local storage
-  const localPath = await saveImageLocally(buffer, projectId, filename);
+  const localPath = await saveImageLocally(finalBuffer, projectId, filename);
   
   // Upload to S3 if enabled (future)
   let s3Key: string | undefined;
@@ -244,9 +253,9 @@ export async function saveUploadedImage(
     url,
     localPath,
     s3Key,
-    originalName,
-    size: buffer.length,
-    mimeType,
+    originalName: finalFilename,
+    size: finalBuffer.length,
+    mimeType: finalMimeType,
     createdAt: new Date().toISOString(),
   };
 }

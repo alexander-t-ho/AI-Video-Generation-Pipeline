@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
 import { getStorageService } from '@/lib/storage/storage-service';
+import { convertWebpIfNeeded } from '@/lib/utils/image-converter';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
@@ -52,20 +53,26 @@ export async function POST(request: NextRequest) {
     const tempDir = path.join('/tmp', 'projects', projectId, 'captures');
     await fs.mkdir(tempDir, { recursive: true });
 
-    // Generate unique filename
-    const filename = `frame-${uuidv4()}.png`;
+    // Convert base64 to buffer
+    const buffer = Buffer.from(imageData, 'base64');
+    
+    // Check if this is a webp image and convert if needed
+    // Note: Base64 images are typically PNG, but check mime type if available
+    const converted = await convertWebpIfNeeded(buffer, 'image/png', 'frame.png');
+    
+    // Generate unique filename with correct extension
+    const filename = `frame-${uuidv4()}.${converted.extension}`;
     tempFilePath = path.join(tempDir, filename);
 
-    // Convert base64 to buffer and write to temporary file
-    const buffer = Buffer.from(imageData, 'base64');
-    await fs.writeFile(tempFilePath, buffer);
+    // Write converted buffer to temporary file
+    await fs.writeFile(tempFilePath, converted.buffer);
 
     console.log('[API] Temporary frame file created:', tempFilePath);
 
     // Try to upload to S3, fallback to ngrok/public URL if S3 not configured
     try {
       const s3Key = await uploadToS3(tempFilePath, projectId, {
-        contentType: 'image/png',
+        contentType: converted.mimeType,
         metadata: {
           'upload-type': 'video-frame-capture',
         },

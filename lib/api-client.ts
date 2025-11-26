@@ -395,12 +395,12 @@ export async function pollImageStatus(
 ): Promise<ImageStatusResponse> {
   const {
     interval = 2000,
-    timeout = 300000,
+    timeout = 600000,
     projectId,
     sceneIndex,
     prompt,
     onProgress,
-  } = options; // 5 min default timeout
+  } = options; // 10 min default timeout
   const startTime = Date.now();
   let consecutiveErrors = 0;
   const MAX_CONSECUTIVE_ERRORS = 3;
@@ -611,11 +611,11 @@ export async function pollVideoStatus(
 }> {
   const {
     interval = 5000,
-    timeout = 600000,
+    timeout = 1200000,
     onProgress,
     projectId,
     sceneIndex,
-  } = options; // 10 min default timeout
+  } = options; // 20 min default timeout
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -1445,7 +1445,7 @@ export async function pollMusicStatus(
     onProgress?: (status: MusicStatusResponse) => void;
   } = {},
 ): Promise<MusicStatusResponse> {
-  const { interval = 3000, timeout = 180000, projectId, onProgress } = options;
+  const { interval = 3000, timeout = 360000, projectId, onProgress } = options;
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {

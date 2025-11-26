@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/auth-utils';
 import { uploadBufferToS3 } from '@/lib/storage/s3-uploader';
+import { convertWebpIfNeeded } from '@/lib/utils/image-converter';
 
 // GET /api/companies/[id]/assets - List company assets
 export async function GET(
@@ -81,15 +82,19 @@ export async function POST(
 
     if (file) {
       // Upload file to S3
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const s3Key = `companies/${id}/assets/${type.toLowerCase()}s/${Date.now()}-${file.name}`;
+      const originalBuffer = Buffer.from(await file.arrayBuffer());
+      
+      // Convert webp to PNG if needed
+      const converted = await convertWebpIfNeeded(originalBuffer, file.type, file.name);
+      
+      const s3Key = `companies/${id}/assets/${type.toLowerCase()}s/${Date.now()}-${converted.filename}`;
 
-      await uploadBufferToS3(buffer, s3Key, file.type);
+      await uploadBufferToS3(converted.buffer, s3Key, converted.mimeType);
 
       assetCreateData.s3Key = s3Key;
-      assetCreateData.filename = file.name;
-      assetCreateData.mimeType = file.type;
-      assetCreateData.size = file.size;
+      assetCreateData.filename = converted.filename;
+      assetCreateData.mimeType = converted.mimeType;
+      assetCreateData.size = converted.buffer.length;
     }
 
     if (value) {

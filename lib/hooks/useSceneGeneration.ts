@@ -156,7 +156,7 @@ export function useSceneGeneration(
       // Poll for completion
       const status = await pollImageStatus(response.predictionId, {
         interval: 2000,
-        timeout: 300000,
+        timeout: 600000,
         onProgress: (progress) => {
           if (progress.progress) {
             addChatMessage({

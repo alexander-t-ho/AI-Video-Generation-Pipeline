@@ -347,7 +347,7 @@ export const IMAGE_CONFIG = {
   
   // Polling configuration
   pollInterval: 2000, // 2 seconds
-  pollTimeout: 300000, // 5 minutes
+  pollTimeout: 600000, // 10 minutes
   maxRetries: 3,
 } as const;
 
@@ -419,8 +419,8 @@ export const VIDEO_CONFIG = {
   
   // Polling configuration
   pollInterval: 2000, // 2 seconds
-  pollTimeout: 600000, // 10 minutes (videos take longer)
-  maxPollAttempts: 300, // 10 minutes total (300 * 2s)
+  pollTimeout: 1200000, // 20 minutes (videos take longer)
+  maxPollAttempts: 600, // 20 minutes total (600 * 2s)
   maxRetries: 2,
   
   // Download configuration

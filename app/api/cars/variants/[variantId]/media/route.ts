@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/auth-utils';
 import { uploadBufferToS3 } from '@/lib/storage/s3-uploader';
+import { convertWebpIfNeeded } from '@/lib/utils/image-converter';
 
 // GET /api/cars/variants/[variantId]/media - List variant media
 export async function GET(
@@ -88,19 +89,23 @@ export async function POST(
     }
 
     // Upload to S3
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const originalBuffer = Buffer.from(await file.arrayBuffer());
+    
+    // Convert webp to PNG if needed
+    const converted = await convertWebpIfNeeded(originalBuffer, file.type, file.name);
+    
     const typeFolder = type.toLowerCase().replace('_', '-');
-    const s3Key = `companies/${variant.model.companyId}/cars/${variant.modelId}/${variantId}/${typeFolder}/${Date.now()}-${file.name}`;
+    const s3Key = `companies/${variant.model.companyId}/cars/${variant.modelId}/${variantId}/${typeFolder}/${Date.now()}-${converted.filename}`;
 
-    await uploadBufferToS3(buffer, s3Key, file.type);
+    await uploadBufferToS3(converted.buffer, s3Key, converted.mimeType);
 
     const media = await prisma.carMedia.create({
       data: {
         type: type as 'EXTERIOR' | 'INTERIOR' | 'SOUND' | 'THREE_D_MODEL',
         s3Key,
-        filename: file.name,
-        mimeType: file.type,
-        size: file.size,
+        filename: converted.filename,
+        mimeType: converted.mimeType,
+        size: converted.buffer.length,
         variantId,
       },
     });

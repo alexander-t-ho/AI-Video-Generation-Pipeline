@@ -5,7 +5,8 @@
  * Supports uploading final video files to S3 for sharing and storage.
  */
 
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -373,10 +374,10 @@ export function getS3Url(s3Key: string): string {
 export async function findBackgroundRemovedVersion(
   originalS3Key: string
 ): Promise<string | null> {
-  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  const bucket = process.env.AWS_S3_BUCKET;
   
   if (!bucket) {
-    console.warn('[S3] AWS_S3_BUCKET_NAME not configured');
+    console.warn('[S3] AWS_S3_BUCKET not configured');
     return null;
   }
 
@@ -436,10 +437,10 @@ export async function uploadProcessedImageToS3(
   originalS3Key: string
 ): Promise<string> {
   const logPrefix = '[S3]';
-  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  const bucket = process.env.AWS_S3_BUCKET;
   
   if (!bucket) {
-    throw new Error('AWS_S3_BUCKET_NAME not configured');
+    throw new Error('AWS_S3_BUCKET not configured');
   }
 
   try {
@@ -497,6 +498,37 @@ export async function uploadProcessedImageToS3(
 }
 
 /**
+ * Generate a presigned URL for an S3 object
+ * @param s3Key - The S3 key of the file
+ * @param expiresIn - Expiration time in seconds (default: 1 hour)
+ * @returns Presigned URL that provides temporary access to the file
+ */
+export async function getPresignedUrl(s3Key: string, expiresIn: number = 3600): Promise<string> {
+  if (!s3Key) {
+    throw new Error('S3 key is required');
+  }
+
+  try {
+    const client = createS3Client();
+    const bucket = getBucketName();
+
+    // Use GetObjectCommand for downloading (not HeadObjectCommand)
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+    });
+
+    // Generate presigned URL
+    const presignedUrl = await getSignedUrl(client, command, { expiresIn });
+    return presignedUrl;
+  } catch (error: any) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[S3] Failed to generate presigned URL for ${s3Key}:`, errorMessage);
+    throw new Error(`Failed to generate presigned URL: ${errorMessage}`);
+  }
+}
+
+/**
  * Delete a file from S3
  * @param s3Key - The S3 key of the file to delete
  * @returns Promise that resolves when deletion is complete
@@ -531,6 +563,7 @@ export async function deleteFromS3(s3Key: string): Promise<void> {
 export default {
   uploadToS3,
   getS3Url,
+  getPresignedUrl,
   findBackgroundRemovedVersion,
   uploadProcessedImageToS3,
   deleteFromS3,

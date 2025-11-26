@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth/auth-options';
 import prisma from '@/lib/db/prisma';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
+import { convertWebpIfNeeded } from '@/lib/utils/image-converter';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,9 +73,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const fileExt = file.name.split('.').pop() || 'png';
-    const s3Key = `companies/${session.user.companyId}/assets/${uuidv4()}.${fileExt}`;
+    const originalBuffer = Buffer.from(await file.arrayBuffer());
+    
+    // Convert webp to PNG if needed
+    const converted = await convertWebpIfNeeded(originalBuffer, file.type, file.name);
+    
+    const s3Key = `companies/${session.user.companyId}/assets/${uuidv4()}.${converted.extension}`;
 
     const s3Client = createS3Client();
     const bucket = process.env.AWS_S3_BUCKET || 'ai-video-pipeline-outputs';
@@ -83,8 +87,8 @@ export async function POST(request: NextRequest) {
       new PutObjectCommand({
         Bucket: bucket,
         Key: s3Key,
-        Body: buffer,
-        ContentType: file.type,
+        Body: converted.buffer,
+        ContentType: converted.mimeType,
       })
     );
 
@@ -92,9 +96,9 @@ export async function POST(request: NextRequest) {
       data: {
         type: 'OTHER',
         s3Key,
-        filename: file.name,
-        mimeType: file.type,
-        size: buffer.length,
+        filename: converted.filename,
+        mimeType: converted.mimeType,
+        size: converted.buffer.length,
         companyId: session.user.companyId,
       },
     });
