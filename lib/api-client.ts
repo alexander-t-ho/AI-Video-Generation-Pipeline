@@ -1628,6 +1628,32 @@ export async function getNarrationServiceStatus(): Promise<NarrationServiceStatu
 }
 
 /**
+ * Create scenes in the database for a project
+ */
+export async function createScenes(
+  projectId: string,
+  scenes: any[]
+): Promise<{ success: boolean; scenes: any[] }> {
+  return retryRequest(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/scenes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(scenes),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to create scenes' }));
+      throw new Error(error.error || 'Failed to create scenes');
+    }
+
+    return response.json();
+  });
+}
+
+/**
  * Update scene settings (including referenceImageUrls)
  */
 export async function updateScene(

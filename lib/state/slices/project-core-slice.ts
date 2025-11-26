@@ -312,11 +312,54 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     }
   },
 
-  setStoryboard: (scenes) => {
-    set((state) => {
-      if (!state.project) return state;
+  setStoryboard: async (scenes) => {
+    const state = get();
+    if (!state.project) return;
 
-      const scenesWithState: SceneWithState[] = scenes.map((scene) => ({
+    // Check if scenes need to be created in the database (they don't have IDs)
+    const needsDatabaseCreation = scenes.length > 0 && !scenes[0].id;
+    let scenesWithIds = scenes;
+
+    if (needsDatabaseCreation && state.project.id) {
+      console.log('[setStoryboard] Creating', scenes.length, 'scenes in database for project', state.project.id);
+      
+      try {
+        // Prepare scene data for database
+        const sceneData = scenes.map((scene, index) => ({
+          sceneNumber: index + 1,
+          sceneTitle: scene.description || `Scene ${index + 1}`,
+          sceneSummary: scene.description || '',
+          imagePrompt: scene.imagePrompt || '',
+          videoPrompt: scene.videoPrompt || scene.imagePrompt || '',
+          suggestedDuration: scene.suggestedDuration || 4,
+          negativePrompt: scene.negativePrompt,
+          customDuration: scene.customDuration,
+          customImageInput: scene.customImageInput,
+          useSeedFrame: scene.useSeedFrame || false,
+        }));
+
+        // Create scenes in database
+        const { createScenes } = await import('@/lib/api-client');
+        const response = await createScenes(state.project.id, sceneData);
+        
+        if (response.scenes) {
+          console.log('[setStoryboard] ✅ Created', response.scenes.length, 'scenes in database');
+          // Merge database IDs back into the scenes
+          scenesWithIds = scenes.map((scene, index) => ({
+            ...scene,
+            id: response.scenes[index]?.id || scene.id,
+          }));
+        }
+      } catch (error) {
+        console.error('[setStoryboard] ❌ Failed to create scenes in database:', error);
+        // Continue with scenes without IDs - they'll be created later when needed
+      }
+    }
+
+    set((currentState) => {
+      if (!currentState.project) return currentState;
+
+      const scenesWithState: SceneWithState[] = scenesWithIds.map((scene) => ({
         ...scene,
         generatedImages: [],
         status: 'pending',
@@ -324,8 +367,8 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
 
       return {
         project: {
-          ...state.project,
-          storyboard: scenes,
+          ...currentState.project,
+          storyboard: scenesWithIds,
           status: 'SCENE_GENERATION',
         },
         scenes: scenesWithState,
@@ -333,17 +376,17 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
     });
 
     // Automatically analyze and assign reference images to all scenes
-    const state = get();
-    const uploadedImages = state.project?.uploadedImages;
+    const updatedState = get();
+    const uploadedImages = updatedState.project?.uploadedImages;
 
     if (uploadedImages && uploadedImages.length > 0) {
       console.log('[setStoryboard] Auto-analyzing all scenes for reference images');
-      console.log('[setStoryboard] Total scenes to analyze:', scenes.length);
+      console.log('[setStoryboard] Total scenes to analyze:', scenesWithIds.length);
       console.log('[setStoryboard] Available reference images:', uploadedImages.length);
 
       // Analyze each scene asynchronously - use Promise.all to ensure all complete
       Promise.all(
-        scenes.map(async (scene, index) => {
+        scenesWithIds.map(async (scene, index) => {
           const scenePrompt = scene.videoPrompt || scene.imagePrompt || scene.description || '';
           console.log(`[setStoryboard] Scene ${index + 1}: Starting AI analysis with prompt:`, scenePrompt.substring(0, 100));
 
@@ -390,6 +433,8 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
                       console.error(`[setStoryboard] ❌ Failed to persist references for scene ${index + 1}:`, error);
                     });
                 });
+              } else {
+                console.warn(`[setStoryboard] Scene ${index + 1}: No ID - skipping database persistence`);
               }
             } else {
               console.error(`[setStoryboard] ❌ Scene ${index + 1}: Cannot update - scene not found in storyboard`);
@@ -561,6 +606,16 @@ export const createProjectCoreSlice: StateCreator<ProjectStore, [], [], ProjectC
         seedFrames: scene.seedFrames || [],
         status: 'image_ready' as const,
       }));
+
+      console.log('[loadProject] Loaded project with scenes:', {
+        totalScenes: scenesWithState.length,
+        scenes: scenesWithState.map((s, i) => ({
+          index: i,
+          id: s.id,
+          imageCount: s.generatedImages?.length || 0,
+          videoCount: s.generatedVideos?.length || 0,
+        })),
+      });
 
       set({
         project: {

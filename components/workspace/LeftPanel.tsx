@@ -110,9 +110,10 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       /generate\s+image|create\s+image|make\s+image/i.test(lowerMessage) ||
       /image\s+for\s+scene/i.test(lowerMessage)
     ) {
+      const totalScenes = scenes.length;
       return {
         type: 'generate_image',
-        sceneIndex: sceneIndex >= 0 && sceneIndex < 5 ? sceneIndex : currentSceneIndex,
+        sceneIndex: sceneIndex >= 0 && sceneIndex < totalScenes ? sceneIndex : currentSceneIndex,
         customPrompt,
       };
     }
@@ -120,9 +121,10 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     if (
       /regenerate\s+image|redo\s+image|new\s+image|different\s+image/i.test(lowerMessage)
     ) {
+      const totalScenes = scenes.length;
       return {
         type: 'regenerate_image',
-        sceneIndex: sceneIndex >= 0 && sceneIndex < 5 ? sceneIndex : currentSceneIndex,
+        sceneIndex: sceneIndex >= 0 && sceneIndex < totalScenes ? sceneIndex : currentSceneIndex,
         customPrompt,
       };
     }
@@ -131,19 +133,21 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       /generate\s+video|create\s+video|make\s+video/i.test(lowerMessage) ||
       /video\s+for\s+scene/i.test(lowerMessage)
     ) {
+      const totalScenes = scenes.length;
       return {
         type: 'generate_video',
-        sceneIndex: sceneIndex >= 0 && sceneIndex < 5 ? sceneIndex : currentSceneIndex,
+        sceneIndex: sceneIndex >= 0 && sceneIndex < totalScenes ? sceneIndex : currentSceneIndex,
       };
     }
 
     if (
       /select\s+seed\s+frame|choose\s+frame|pick\s+frame|use\s+frame/i.test(lowerMessage)
     ) {
+      const totalScenes = scenes.length;
       return {
         type: 'select_seed_frame',
-        sceneIndex: sceneIndex >= 0 && sceneIndex < 5 ? sceneIndex : currentSceneIndex,
-        frameIndex: frameIndex !== undefined && frameIndex >= 0 && frameIndex < 5 ? frameIndex : undefined,
+        sceneIndex: sceneIndex >= 0 && sceneIndex < totalScenes ? sceneIndex : currentSceneIndex,
+        frameIndex: frameIndex !== undefined && frameIndex >= 0 ? frameIndex : undefined,
       };
     }
 
@@ -266,7 +270,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     if (!project || !project.storyboard || !project.storyboard[sceneIndex]) {
       addChatMessage({
         role: 'agent',
-        content: '❌ Error: Invalid scene. Please select a valid scene (1-5).',
+        content: `❌ Error: Invalid scene. Please select a valid scene (1-${scenes.length}).`,
         type: 'error',
       });
       return;
@@ -279,7 +283,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       setSceneStatus(sceneIndex, 'generating_image');
       addChatMessage({
         role: 'agent',
-        content: `Generating image for Scene ${sceneIndex + 1}/5...`,
+        content: `Generating image for Scene ${sceneIndex + 1}/${scenes.length}...`,
         type: 'status',
       });
 
@@ -459,7 +463,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     if (!project || !project.storyboard || !project.storyboard[sceneIndex]) {
       addChatMessage({
         role: 'agent',
-        content: '❌ Error: Invalid scene. Please select a valid scene (1-5).',
+        content: `❌ Error: Invalid scene. Please select a valid scene (1-${scenes.length}).`,
         type: 'error',
       });
       return;
@@ -486,7 +490,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       setSceneStatus(sceneIndex, 'generating_video');
       addChatMessage({
         role: 'agent',
-        content: `Generating video for Scene ${sceneIndex + 1}/5...`,
+        content: `Generating video for Scene ${sceneIndex + 1}/${scenes.length}...`,
         type: 'status',
       });
 
@@ -614,10 +618,11 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
    * Handle seed frame selection
    */
   const handleSelectSeedFrame = (sceneIndex: number, frameIndex: number) => {
-    if (sceneIndex < 0 || sceneIndex >= 5) {
+    const totalScenes = scenes.length;
+    if (sceneIndex < 0 || sceneIndex >= totalScenes) {
       addChatMessage({
         role: 'agent',
-        content: '❌ Error: Invalid scene. Please select a valid scene (1-5).',
+        content: `❌ Error: Invalid scene. Please select a valid scene (1-${totalScenes}).`,
         type: 'error',
       });
       return;
@@ -627,7 +632,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
     if (!sceneState?.seedFrames || frameIndex < 0 || frameIndex >= sceneState.seedFrames.length) {
       addChatMessage({
         role: 'agent',
-        content: `❌ Error: Invalid frame. Please select a frame between 1-${sceneState?.seedFrames?.length || 5}.`,
+        content: `❌ Error: Invalid frame. Please select a frame between 1-${sceneState?.seedFrames?.length || 0}.`,
         type: 'error',
       });
       return;
@@ -750,7 +755,7 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       );
 
       if (response.success && response.scenes) {
-        setStoryboard(response.scenes);
+        await setStoryboard(response.scenes);
         addChatMessage({
           role: 'agent',
           content: '✓ Storyboard regenerated successfully!',

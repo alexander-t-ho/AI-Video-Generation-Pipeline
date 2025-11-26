@@ -195,7 +195,7 @@ export default function SceneCard({
       setSceneStatus(sceneIndex, 'generating_image');
       addChatMessage({
         role: 'agent',
-        content: `Generating image for Scene ${sceneIndex + 1}/5...`,
+        content: `Generating image for Scene ${sceneIndex + 1}/${totalScenes}...`,
         type: 'status',
       });
 
@@ -570,7 +570,7 @@ export default function SceneCard({
       setSceneStatus(sceneIndex, 'generating_video');
       addChatMessage({
         role: 'agent',
-        content: `Generating video for Scene ${sceneIndex + 1}/5...`,
+        content: `Generating video for Scene ${sceneIndex + 1}/${totalScenes}...`,
         type: 'status',
       });
 
@@ -785,8 +785,17 @@ export default function SceneCard({
           return null;
         }
 
-        const imageUrl = formatImageUrl(sceneState.generatedImages[0]);
-        console.log(`[SceneCard ${sceneIndex}] Image URL:`, imageUrl);
+        const firstImage = sceneState.generatedImages[0];
+        console.log(`[SceneCard ${sceneIndex}] First image object:`, { id: firstImage.id, url: firstImage.url?.substring(0, 80), localPath: firstImage.localPath?.substring(0, 80), s3Key: firstImage.s3Key?.substring(0, 80) });
+        
+        const imageUrl = formatImageUrl(firstImage);
+        console.log(`[SceneCard ${sceneIndex}] Formatted image URL:`, imageUrl);
+
+        // Don't render if formatImageUrl returned empty string
+        if (!imageUrl) {
+          console.error(`[SceneCard ${sceneIndex}] formatImageUrl returned empty string for image:`, firstImage);
+          return null;
+        }
 
         return (
           <div className="mt-2 rounded overflow-hidden border border-white/20">

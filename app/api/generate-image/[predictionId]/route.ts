@@ -212,7 +212,7 @@ export async function GET(
               image: {
                 id: uuidv4(),
                 url: imageUrl,
-                localPath: imageUrl, // Use Replicate URL as localPath for display
+                // Don't set localPath for remote URLs - formatImageUrl will handle it correctly
                 prompt: prompt || '',
                 replicateId: predictionId,
                 createdAt: new Date().toISOString(),
@@ -231,7 +231,7 @@ export async function GET(
             image: {
               id: uuidv4(),
               url: imageUrl,
-              localPath: imageUrl, // Use Replicate URL as localPath for display
+              // Don't set localPath for remote URLs - formatImageUrl will handle it correctly
               prompt: prompt || '',
               replicateId: predictionId,
               createdAt: new Date().toISOString(),
