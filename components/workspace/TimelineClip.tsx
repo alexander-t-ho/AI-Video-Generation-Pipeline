@@ -14,6 +14,12 @@ interface TimelineClipProps {
   onCrop: (clipId: string, trimStart: number, trimEnd: number) => void;
   onSelect?: () => void;
   isSelected?: boolean;
+  onDragStart?: (clipId: string) => void;
+  onDragEnd?: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
 }
 
 export default function TimelineClip({
@@ -25,6 +31,12 @@ export default function TimelineClip({
   onCrop,
   onSelect,
   isSelected = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging = false,
+  isDragOver = false,
 }: TimelineClipProps) {
   const [showControls, setShowControls] = useState(false);
   const [showCropDialog, setShowCropDialog] = useState(false);
@@ -32,9 +44,11 @@ export default function TimelineClip({
   const [cropEnd, setCropEnd] = useState(clip.trimEnd || clip.sourceDuration);
   const [splitTime, setSplitTime] = useState(clip.startTime + clip.duration / 2);
 
-  // Apply zoom to width and position calculations
-  const widthPercent = (clip.duration / totalDuration) * 100 * zoomLevel;
-  const leftPercent = (clip.startTime / totalDuration) * 100 * zoomLevel;
+  // Calculate width and position based on duration and start time
+  // Width is proportional to clip duration
+  const widthPercent = totalDuration > 0 ? (clip.duration / totalDuration) * 100 : 0;
+  // Position is based on start time
+  const leftPercent = totalDuration > 0 ? (clip.startTime / totalDuration) * 100 : 0;
 
   const handleSplit = () => {
     onSplit(clip.id, splitTime);
@@ -63,12 +77,27 @@ export default function TimelineClip({
   return (
     <>
       <div
-        className={`absolute top-10 h-20 rounded-md border transition-all cursor-pointer group ${borderColor}`}
+        className={`absolute top-10 h-20 rounded-md border transition-all cursor-move group ${borderColor} ${isDragging ? 'opacity-50 scale-95' : ''} ${isDragOver ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-gray-900' : ''}`}
         style={{
           left: `${leftPercent}%`,
           width: `${Math.max(widthPercent, 2)}%`,
         }}
         data-clip="true"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', clip.id);
+          onDragStart?.(clip.id);
+        }}
+        onDragEnd={() => {
+          onDragEnd?.();
+        }}
+        onDragOver={(e) => {
+          onDragOver?.(e);
+        }}
+        onDrop={(e) => {
+          onDrop?.(e);
+        }}
         onClick={(e) => {
           // Don't stop propagation - let timeline track also handle click for seeking
           onSelect?.();

@@ -8,10 +8,10 @@ import { Prisma } from '@prisma/client';
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { sceneId: string } }
+  { params }: { params: Promise<{ sceneId: string }> }
 ) {
   try {
-    const { sceneId } = params;
+    const { sceneId } = await params;
     const updates = await req.json();
 
     // Convert referenceImageUrls array to JSON if present

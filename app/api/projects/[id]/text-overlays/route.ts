@@ -9,7 +9,7 @@ import { authOptions } from '@/lib/auth/auth-options';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -20,7 +20,7 @@ export async function GET(
       );
     }
 
-    const projectId = params.id;
+    const { id: projectId } = await params;
 
     // Verify user has access to this project
     const project = await prisma.project.findFirst({
@@ -65,7 +65,7 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -76,7 +76,7 @@ export async function POST(
       );
     }
 
-    const projectId = params.id;
+    const { id: projectId } = await params;
     const body = await request.json();
 
     // Verify user has access to this project
@@ -147,7 +147,7 @@ export async function POST(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -158,7 +158,7 @@ export async function PATCH(
       );
     }
 
-    const projectId = params.id;
+    const { id: projectId } = await params;
     const body = await request.json();
     const { overlayId, ...updates } = body;
 
@@ -212,7 +212,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -223,7 +223,7 @@ export async function DELETE(
       );
     }
 
-    const projectId = params.id;
+    const { id: projectId } = await params;
     const { searchParams } = new URL(request.url);
     const overlayId = searchParams.get('overlayId');
 
