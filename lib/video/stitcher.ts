@@ -1,9 +1,11 @@
 /**
- * Video Stitcher - FFmpeg Integration with Automatic Transition Smoothing
+ * Video Stitcher - FFmpeg Integration with Fast Video Stitching
  * 
  * This module handles concatenating multiple video clips into a single MP4 file
- * with automatic smooth transitions based on video similarity analysis.
- * Uses FFmpeg's filter_complex with xfade transitions for smooth clip blending.
+ * with simple fade transitions for optimal processing speed.
+ * Uses FFmpeg's filter_complex with xfade transitions for clip blending.
+ * 
+ * OPTIMIZED: Removed motion interpolation and scene analysis for faster stitching.
  */
 
 import { exec } from 'child_process';
@@ -21,14 +23,13 @@ const execAsync = promisify(exec);
 
 const CONCAT_FILE_NAME = 'concat.txt';
 const OUTPUT_FILENAME = 'output.mp4';
-const DEFAULT_TRANSITION_DURATION = 0.2; // seconds - reduced for more subtle transitions
-const MIN_TRANSITION_DURATION = 0.15; // reduced for more subtle transitions
-const MAX_TRANSITION_DURATION = 0.3; // reduced for more subtle transitions
+const DEFAULT_TRANSITION_DURATION = 0.2; // seconds - default fade transition
 
-// Transition thresholds based on similarity (0-1 scale)
-const HIGH_SIMILARITY_THRESHOLD = 0.8; // Use subtle fade
-const MEDIUM_SIMILARITY_THRESHOLD = 0.5; // Use crossfade
-// Below 0.5: Use more pronounced transition
+// DISABLED: Similarity thresholds (no longer used for performance optimization)
+// const MIN_TRANSITION_DURATION = 0.15;
+// const MAX_TRANSITION_DURATION = 0.3;
+// const HIGH_SIMILARITY_THRESHOLD = 0.8;
+// const MEDIUM_SIMILARITY_THRESHOLD = 0.5;
 
 // ============================================================================
 // Types
@@ -118,10 +119,20 @@ async function extractFrame(
   }
 }
 
+// ============================================================================
+// DISABLED FOR PERFORMANCE OPTIMIZATION
+// The following functions are commented out to speed up video stitching.
+// They were used for automatic transition selection based on scene similarity.
+// ============================================================================
+
 /**
- * Compare two frames using FFmpeg's SSIM filter
+ * DISABLED: Compare two frames using FFmpeg's SSIM filter
  * Returns similarity score between 0 (completely different) and 1 (identical)
+ * 
+ * Note: This function is no longer used to improve stitching performance.
+ * We now use simple fade transitions instead of analyzing scene similarity.
  */
+/*
 async function compareFramesWithSSIM(
   frame1Path: string,
   frame2Path: string
@@ -152,11 +163,16 @@ async function compareFramesWithSSIM(
     return 0.5; // Default to medium similarity on error
   }
 }
+*/
 
 /**
- * Analyze similarity between two videos by comparing their boundary frames
+ * DISABLED: Analyze similarity between two videos by comparing their boundary frames
  * Compares last frame of video1 with first frame of video2
+ * 
+ * Note: This function is no longer used to improve stitching performance.
+ * We now use simple fade transitions instead of analyzing scene similarity.
  */
+/*
 async function analyzeVideoSimilarity(
   video1Path: string,
   video2Path: string,
@@ -193,14 +209,15 @@ async function analyzeVideoSimilarity(
     return 0.5; // Default to medium similarity on error
   }
 }
+*/
 
 /**
- * Select appropriate transition type and duration based on similarity score
+ * DISABLED: Select appropriate transition type and duration based on similarity score
  * 
- * Note: FFmpeg's xfade filter supports: fade, fadeblack, fadewhite, distance, 
- * wipeleft, wiperight, wipeup, wipedown, slideleft, slideright, slideup, slidedown, etc.
- * "crossfade" and "dissolve" are not valid - using "fade" and "distance" instead.
+ * Note: This function is no longer used to improve stitching performance.
+ * We now use simple fade transitions instead of analyzing scene similarity.
  */
+/*
 function selectTransition(similarity: number): TransitionConfig {
   if (similarity >= HIGH_SIMILARITY_THRESHOLD) {
     // Very similar videos - use subtle fade
@@ -223,6 +240,7 @@ function selectTransition(similarity: number): TransitionConfig {
     };
   }
 }
+*/
 
 /**
  * Create a video segment from an image (for logo display)
@@ -352,8 +370,8 @@ function buildTransitionFilter(
   const anyHasAudio = hasAudioStreams.some(has => has);
 
   // Step 1: Normalize each video (don't trim - xfade handles overlap)
-  // Normalize frame rate to 30fps with motion interpolation for smooth playback
-  // Scale to common resolution for xfade compatibility
+  // Normalize frame rate to 30fps and scale to common resolution for xfade compatibility
+  // OPTIMIZED: Removed motion interpolation (minterpolate) for faster processing
   for (let i = 0; i < videoCount; i++) {
     const hasAudio = hasAudioStreams[i];
     const videoDuration = videoDurations[i];
@@ -364,17 +382,11 @@ function buildTransitionFilter(
 
     // Don't trim videos - use full duration
     // xfade will handle the overlap automatically
-    // Use minterpolate for smooth frame interpolation, normalize frame rate to 30fps
-    // minterpolate creates intermediate frames for smoother motion, reducing stuttering
-    // mi_mode=mci: motion-compensated interpolation for smooth transitions
-    // mc_mode=aobmc: adaptive overlapped block motion compensation
-    // me_mode=bidir: bidirectional motion estimation for better accuracy
-    // vsbmc=1: variable-size block motion compensation enabled
+    // Use simple fps filter instead of minterpolate for faster processing
     // Scale to 1920x1080 (or maintain aspect ratio)
     // xfade requires inputs to have the same resolution and frame rate
-    // Note: If minterpolate fails, fallback to fps filter (handled by FFmpeg error handling)
     filters.push(
-      `[${i}:v]setpts=PTS-STARTPTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1:scd=none,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[v${i}]`
+      `[${i}:v]setpts=PTS-STARTPTS,fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[v${i}]`
     );
     
     // Only process audio if this video has an audio stream
@@ -758,10 +770,10 @@ function buildTextOverlaysFilter(
 // ============================================================================
 
 /**
- * Stitch multiple video clips into a single MP4 file with automatic smooth transitions
+ * Stitch multiple video clips into a single MP4 file with fast fade transitions
  *
- * Automatically analyzes similarity between consecutive videos and applies appropriate
- * transitions (fade, crossfade, dissolve) based on visual similarity.
+ * OPTIMIZED: Uses simple fade transitions without similarity analysis for faster processing.
+ * Removed motion interpolation to significantly speed up stitching time.
  *
  * @param videoPaths - Array of paths to video files to stitch (in order)
  * @param projectId - Project ID for organizing output files
@@ -832,42 +844,37 @@ export async function stitchVideos(
       const command = `ffmpeg -i "${allVideoPaths[0]}" -c copy -y "${outputPath}"`;
       await execAsync(command);
     } else {
-      // Analyze similarity between consecutive video pairs
-      console.log('[VideoStitcher] Analyzing video similarity for transition selection...');
-      const similarities: number[] = [];
+      // OPTIMIZED: Use default transitions without similarity analysis for faster processing
+      console.log('[VideoStitcher] Using default transitions (skipping similarity analysis for speed)...');
       const transitions: TransitionConfig[] = [];
 
       for (let i = 0; i < allVideoPaths.length - 1; i++) {
-        let similarity: number;
         let transition: TransitionConfig;
 
         // If this is the transition to the logo (last transition), use a fade
         if (logoVideoPath && i === allVideoPaths.length - 2) {
           console.log('[VideoStitcher] Adding fade transition to company logo...');
-          similarity = 0; // Force fade transition
           transition = {
             type: 'fade',
             duration: LOGO_FADE_DURATION,
           };
         } else {
-          similarity = await analyzeVideoSimilarity(
-            allVideoPaths[i],
-            allVideoPaths[i + 1],
-            tempDir
-          );
-          transition = selectTransition(similarity);
+          // Use default fade transition for all scene transitions
+          transition = {
+            type: 'fade',
+            duration: DEFAULT_TRANSITION_DURATION,
+          };
         }
 
-        similarities.push(similarity);
         transitions.push(transition);
 
         console.log(
-          `[VideoStitcher] Videos ${i}→${i + 1}: similarity=${similarity.toFixed(3)}, transition=${transition.type} (${transition.duration}s)`
+          `[VideoStitcher] Videos ${i}→${i + 1}: transition=${transition.type} (${transition.duration}s)`
         );
       }
 
       // Stitch videos with transitions
-      console.log('[VideoStitcher] Stitching videos with smooth transitions...');
+      console.log('[VideoStitcher] Stitching videos with transitions...');
       await stitchVideosWithTransitions(
         allVideoPaths,
         outputPath,
