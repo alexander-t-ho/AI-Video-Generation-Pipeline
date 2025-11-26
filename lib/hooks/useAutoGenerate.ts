@@ -35,6 +35,7 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
     setVideoPath,
     setSeedFrames,
     selectSeedFrame,
+    setGenerationState,
   } = useSceneStore();
   const { addChatMessage } = useUIStore();
 
@@ -397,6 +398,7 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
     }, null, 2));
     console.log('='.repeat(80));
     setSceneStatus(sceneIndex, 'generating_image');
+    setGenerationState(sceneIndex, { isGeneratingImage: true });
 
     // Get seed frame from previous scene if available
     let seedFrameUrl: string | undefined;
@@ -471,6 +473,7 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
     addGeneratedImage(sceneIndex, imageStatus.image);
     selectImage(sceneIndex, imageStatus.image.id);
     setSceneStatus(sceneIndex, 'image_ready');
+    setGenerationState(sceneIndex, { isGeneratingImage: false });
 
     console.log(`[useAutoGenerate] Image generated for scene ${sceneIndex}`);
 
@@ -499,6 +502,7 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
 
     console.log(`[useAutoGenerate] Generating video for scene ${sceneIndex}`);
     setSceneStatus(sceneIndex, 'generating_video');
+    setGenerationState(sceneIndex, { isGeneratingVideo: true });
 
     const videoResponse = await generateVideo(
       selectedImage.url,
@@ -522,6 +526,7 @@ export function useAutoGenerate(options: UseAutoGenerateOptions = {}) {
     // Update store with video path
     setVideoPath(sceneIndex, completedVideo.videoPath, completedVideo.actualDuration || scene.suggestedDuration);
     setSceneStatus(sceneIndex, 'video_ready');
+    setGenerationState(sceneIndex, { isGeneratingVideo: false });
 
     console.log(`[useAutoGenerate] Video generated for scene ${sceneIndex}`);
   };
