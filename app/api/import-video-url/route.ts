@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       url,
       {
         projectId,
-        category: 'uploaded-videos',
+        category: 'uploads',
         mimeType: 'video/mp4',
         customFilename: `${videoId}.mp4`,
       },

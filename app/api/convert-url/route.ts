@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertToPublicUrl } from '@/lib/utils/url-converter';
 
-// Increase body size limit to handle large data URLs in response
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '100mb',
-    },
-  },
-};
+// Route segment config for Next.js 14 App Router
+export const maxDuration = 60; // Maximum execution time in seconds
+export const dynamic = 'force-dynamic'; // Always run dynamically
 
 /**
  * POST /api/convert-url

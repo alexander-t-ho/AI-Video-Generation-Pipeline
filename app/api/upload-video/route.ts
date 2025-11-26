@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       buffer,
       {
         projectId,
-        category: 'uploaded-videos',
+        category: 'uploads',
         mimeType: file.type,
       },
       {
