@@ -100,6 +100,63 @@ async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
 }
 
 /**
+ * Get video frame rate
+ */
+async function getVideoFrameRate(videoPath: string): Promise<number> {
+  try {
+    const command = `ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of json "${videoPath}"`;
+    const { stdout } = await execAsync(command);
+    const info = JSON.parse(stdout);
+    const frameRate = info.streams?.[0]?.r_frame_rate;
+    if (frameRate) {
+      const [num, den] = frameRate.split('/').map(Number);
+      // Validate numbers to prevent division by zero or NaN
+      if (den && den > 0 && !isNaN(num) && !isNaN(den)) {
+        return num / den;
+      }
+    }
+    return 30; // Default fallback
+  } catch {
+    return 30; // Default fallback
+  }
+}
+
+// Cache for hardware encoder detection to avoid repeated checks
+let cachedEncoder: string | null = null;
+
+/**
+ * Detect available hardware encoder with fallback to software encoding
+ * Result is cached after first detection for performance
+ */
+async function detectHardwareEncoder(): Promise<string> {
+  // Return cached result if available
+  if (cachedEncoder) {
+    return cachedEncoder;
+  }
+  
+  // Try VideoToolbox (macOS)
+  try {
+    await execAsync(`ffmpeg -hide_banner -encoders 2>&1 | grep h264_videotoolbox`);
+    console.log('[VideoStitcher] Using VideoToolbox hardware acceleration');
+    cachedEncoder = 'h264_videotoolbox -b:v 5M';
+    return cachedEncoder;
+  } catch {}
+  
+  // Try NVENC (NVIDIA)
+  try {
+    await execAsync(`ffmpeg -hide_banner -encoders 2>&1 | grep h264_nvenc`);
+    console.log('[VideoStitcher] Using NVENC hardware acceleration');
+    cachedEncoder = 'h264_nvenc -preset p4 -cq 23';
+    return cachedEncoder;
+  } catch {}
+  
+  // Fallback to software encoding
+  console.log('[VideoStitcher] Using software encoding (no hardware acceleration available)');
+  cachedEncoder = 'libx264 -preset faster -crf 23';
+  return cachedEncoder;
+}
+
+/**
  * Extract a single frame from a video at a specific timestamp
  */
 async function extractFrame(
@@ -359,34 +416,49 @@ function calculateTransitionOffsets(
  * Build FFmpeg filter_complex string for video transitions
  * Returns the filter complex string and output labels
  */
-function buildTransitionFilter(
+async function buildTransitionFilter(
   videoCount: number,
+  videoPaths: string[],
   videoDurations: number[],
   transitions: TransitionConfig[],
   offsets: TransitionOffset[],
   hasAudioStreams: boolean[] // Array indicating which videos have audio
-): { filterComplex: string; videoOutputLabel: string; audioOutputLabel: string | null } {
+): Promise<{ filterComplex: string; videoOutputLabel: string; audioOutputLabel: string | null }> {
   const filters: string[] = [];
   const anyHasAudio = hasAudioStreams.some(has => has);
 
+  // Pre-fetch all video frame rates in parallel for better performance
+  console.log('[VideoStitcher] Detecting frame rates for all videos...');
+  const videoFrameRates = await Promise.all(
+    videoPaths.map(vp => getVideoFrameRate(vp))
+  );
+
   // Step 1: Normalize each video (don't trim - xfade handles overlap)
-  // Normalize frame rate to 30fps and scale to common resolution for xfade compatibility
-  // OPTIMIZED: Removed motion interpolation (minterpolate) for faster processing
+  // Normalize frame rate to 30fps with conditional interpolation based on source fps
+  // Scale to common resolution for xfade compatibility
+  // OPTIMIZED: Use fast fps filter for 30fps videos, minterpolate only for other frame rates
   for (let i = 0; i < videoCount; i++) {
     const hasAudio = hasAudioStreams[i];
     const videoDuration = videoDurations[i];
 
+    // Use pre-fetched frame rate
+    const videoFps = videoFrameRates[i];
+    const fpsFilter = (videoFps >= 28 && videoFps <= 32)
+      ? 'fps=30'  // Fast filter for videos already at 30fps
+      : 'minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1:scd=none';  // Smooth interpolation for other frame rates
+
     console.log(
-      `[VideoStitcher] Video ${i}: using full duration ${videoDuration.toFixed(2)}s (no trimming)`
+      `[VideoStitcher] Video ${i}: detected ${videoFps.toFixed(2)}fps, using ${(videoFps >= 28 && videoFps <= 32) ? 'fast fps' : 'minterpolate'} filter, full duration ${videoDuration.toFixed(2)}s (no trimming)`
     );
 
     // Don't trim videos - use full duration
     // xfade will handle the overlap automatically
-    // Use simple fps filter instead of minterpolate for faster processing
+    // Use conditional fps/minterpolate filter based on source frame rate
+    // Use bilinear scaling for faster processing (instead of default bicubic)
     // Scale to 1920x1080 (or maintain aspect ratio)
     // xfade requires inputs to have the same resolution and frame rate
     filters.push(
-      `[${i}:v]setpts=PTS-STARTPTS,fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[v${i}]`
+      `[${i}:v]setpts=PTS-STARTPTS,${fpsFilter},scale=1920:1080:force_original_aspect_ratio=decrease:flags=bilinear,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[v${i}]`
     );
     
     // Only process audio if this video has an audio stream
@@ -561,9 +633,13 @@ async function stitchVideosWithTransitions(
     // Calculate transition offsets
     const offsets = calculateTransitionOffsets(videoDurations, transitions);
 
+    // Detect hardware encoder (with fallback to software encoding)
+    const encoderSettings = await detectHardwareEncoder();
+
     // Build filter complex
-    let { filterComplex, videoOutputLabel, audioOutputLabel } = buildTransitionFilter(
+    let { filterComplex, videoOutputLabel, audioOutputLabel } = await buildTransitionFilter(
       videoPaths.length,
+      videoPaths,
       videoDurations,
       transitions,
       offsets,
@@ -612,7 +688,10 @@ async function stitchVideosWithTransitions(
 
     // FFmpeg command with filter_complex
     // Note: Do NOT use -shortest here - it will truncate the output to the shortest stream
-    // The filter_complex with xfade already handles timing correctly
+    // The filter_complex already handles timing correctly
+    // OPTIMIZED: Use -threads 0 for automatic optimal thread count
+    // OPTIMIZED: Use -filter_complex_threads 0 for parallel filter processing
+    // OPTIMIZED: Use hardware acceleration (detected above) with fallback to software
     // Use -fps_mode cfr (constant frame rate) to prevent stuttering (replaces deprecated -vsync)
     // Use -async 1 to sync audio properly (only if we have audio)
     // Use -r 30 to ensure output is exactly 30fps
@@ -621,9 +700,10 @@ async function stitchVideosWithTransitions(
       ? `-map "[${videoOutputLabel}]" -map "[${audioOutputLabel}]" -c:a aac -b:a 192k -async 1`
       : `-map "[${videoOutputLabel}]" -an`; // -an means no audio
 
-    const command = `ffmpeg ${inputArgs} -filter_complex "${filterComplex}" ${mapArgs} -c:v libx264 -preset medium -crf 23 -r 30 -fps_mode cfr -y "${outputPath}"`;
+    const command = `ffmpeg -threads 0 ${inputArgs} -filter_complex "${filterComplex}" -filter_complex_threads 0 ${mapArgs} -c:v ${encoderSettings} -r 30 -fps_mode cfr -y "${outputPath}"`;
 
     console.log(`[VideoStitcher] Stitching ${videoPaths.length} videos with transitions...`);
+    console.log(`[VideoStitcher] Encoder: ${encoderSettings}`);
     console.log(`[VideoStitcher] Full filter complex: ${filterComplex}`);
     console.log(`[VideoStitcher] Full FFmpeg command: ${command}`);
     await execAsync(command);

@@ -1,7 +1,7 @@
 'use client';
 
 import { Scene } from '@/lib/types';
-import { CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, Video, Copy, ArrowUp, ArrowDown } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, Video, Copy, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useProjectStore } from '@/lib/state/project-store';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus } from '@/lib/api-client';
 import { ImageGenerationRequest } from '@/lib/types';
@@ -680,24 +680,6 @@ export default function SceneCard({
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 text-sm font-semibold text-white/90 border border-white/20">
             {formatSceneNumber(scene.order)}
           </span>
-          {/* Move up button - appears on hover */}
-          <button
-            onClick={(e) => handleMoveScene(e, 'up')}
-            disabled={isGenerating || sceneIndex === 0}
-            className="absolute -top-1 -left-7 w-5 h-5 rounded-full bg-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-white/20 shadow-sm"
-            title="Move scene up"
-          >
-            <ArrowUp className="w-3 h-3" />
-          </button>
-          {/* Move down button - appears on hover */}
-          <button
-            onClick={(e) => handleMoveScene(e, 'down')}
-            disabled={isGenerating || sceneIndex === totalScenes - 1}
-            className="absolute top-6 -left-7 w-5 h-5 rounded-full bg-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-white/20 shadow-sm"
-            title="Move scene down"
-          >
-            <ArrowDown className="w-3 h-3" />
-          </button>
           {/* Duplicate button - appears on hover */}
           <button
             onClick={handleDuplicateScene}
@@ -774,6 +756,26 @@ export default function SceneCard({
           </button>
         </div>
       )}
+      
+      {/* Scene Reorder Buttons - Bottom Center */}
+      <div className="mt-2 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={(e) => handleMoveScene(e, 'up')}
+          disabled={isGenerating || sceneIndex === 0}
+          className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-white/20 shadow-sm"
+          title="Move scene left"
+        >
+          <ArrowLeft className="w-3 h-3" />
+        </button>
+        <button
+          onClick={(e) => handleMoveScene(e, 'down')}
+          disabled={isGenerating || sceneIndex === totalScenes - 1}
+          className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-white/20 shadow-sm"
+          title="Move scene right"
+        >
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
       
       {/* Thumbnail Preview */}
       {(() => {
