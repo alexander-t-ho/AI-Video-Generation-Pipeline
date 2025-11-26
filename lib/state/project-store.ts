@@ -55,11 +55,11 @@ const initialState = {
   selectedClipId: null as string | null,
 };
 
-export const useProjectStore = create<ProjectStore>((set, get, store) => ({
-  ...createProjectCoreSlice(set, get, store),
-  ...createSceneSlice(set, get, store),
-  ...createTimelineSlice(set, get, store),
-  ...createUISlice(set, get, store),
+export const useProjectStore = create<ProjectStore>((set, get) => ({
+  ...createProjectCoreSlice(set, get),
+  ...createSceneSlice(set, get),
+  ...createTimelineSlice(set, get),
+  ...createUISlice(set, get),
 
   // Override reset to handle global reset
   reset: () => {
