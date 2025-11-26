@@ -1,10 +1,6 @@
 /**
  * Image Generation API Route
- * 
  * POST /api/generate-image
- * 
- * Initiates image generation using Replicate Flux-dev model with IP-Adapter support.
- * Returns immediately with a prediction ID for polling.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,478 +12,171 @@ import {
   setRuntimeImageModel,
 } from '@/lib/ai/image-generator';
 import { ImageGenerationRequest, ImageGenerationResponse } from '@/lib/types';
-import { uploadToS3, getS3Url } from '@/lib/storage/s3-uploader';
-import path from 'path';
+import { validateRequest, createErrorResponse, parseRequestBody, checkEnvVars, commonRules } from '@/lib/api/middleware';
+import { convertUrlsToPublic, formatUrlForLogging } from '@/lib/api/url-converter';
 
 // ============================================================================
-// Module-level Constants
+// Validation Rules
 // ============================================================================
 
-const NGROK_URL = process.env.NGROK_URL || 'http://localhost:3000';
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Gets MIME type from file extension
- * OPTIMIZATION: Centralized function instead of inline conditionals
- */
-function getContentType(url: string): string {
-  const ext = path.extname(url).toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-  };
-  return mimeTypes[ext] || 'image/png';
-}
-
-/**
- * Converts local paths to public URLs (S3 or ngrok)
- * OPTIMIZATION: Extracted from handler to avoid recreation on every request
- */
-async function convertToPublicUrl(url: string, projectId: string): Promise<string> {
-  // S3 URLs may not be publicly accessible (403 errors)
-  // Download and convert to base64 data URL for Replicate
-  if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
-    try {
-      console.log(`[Image Generation API] Downloading S3 image for base64 conversion: ${url.substring(0, 80)}...`);
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.warn(`[Image Generation API] Failed to download S3 image (${response.status}), will try ngrok fallback`);
-        // Fallback to ngrok URL if available
-        return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const base64Image = buffer.toString('base64');
-      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      const dataUrl = `data:${mimeType};base64,${base64Image}`;
-      console.log(`[Image Generation API] Successfully converted S3 image to base64 (${(base64Image.length / 1024).toFixed(2)} KB)`);
-      return dataUrl;
-    } catch (error: any) {
-      console.error(`[Image Generation API] Failed to convert S3 URL to base64:`, error.message);
-      // Last resort: try ngrok URL
-      return `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
-    }
-  }
-  
-  // If it's already a public URL (external, non-S3), use it as-is
-  if (url.startsWith('https://') || (url.startsWith('http://') && !url.includes('localhost'))) {
-    return url;
-  }
-  
-  // If it's a local path, try to upload to S3 first, then convert to base64
-  if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
-    try {
-      // Read file and convert to base64 directly
-      const fs = await import('fs/promises');
-      const fileBuffer = await fs.readFile(url);
-      const base64Image = fileBuffer.toString('base64');
-      const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      const dataUrl = `data:${mimeType};base64,${base64Image}`;
-      console.log(`[Image Generation API] Converted local path to base64: ${url.substring(0, 50)}... (${(base64Image.length / 1024).toFixed(2)} KB)`);
-      return dataUrl;
-    } catch (localError: any) {
-      console.warn(`[Image Generation API] Failed to read local file, trying S3 upload: ${localError.message}`);
-      
-      // Fallback: try S3 upload
-      try {
-        const s3Key = await uploadToS3(url, projectId, {
-          contentType: getContentType(url),
-        });
-        const s3Url = getS3Url(s3Key);
-        console.log(`[Image Generation API] Uploaded to S3: ${url.substring(0, 50)}... -> ${s3Url.substring(0, 80)}...`);
-        
-        // Now convert the S3 URL to base64 (recursive call)
-        return convertToPublicUrl(s3Url, projectId);
-      } catch (s3Error: any) {
-        const publicUrl = `${NGROK_URL}/api/serve-image?path=${encodeURIComponent(url)}`;
-        console.warn(`[Image Generation API] S3 upload failed, using fallback URL: ${s3Error.message}`);
-        return publicUrl;
-      }
-    }
-  }
-  
-  // If it's already a relative API path, make it absolute
-  if (url.startsWith('/api/')) {
-    const publicUrl = `${NGROK_URL}${url}`;
-    if (publicUrl.includes('localhost')) {
-      console.warn(`[Image Generation API] WARNING: Using localhost URL - Replicate may not be able to access it: ${publicUrl}`);
-    }
-    return publicUrl;
-  }
-  
-  return url;
-}
-
-// ============================================================================
-// Request Validation
-// ============================================================================
-
-/**
- * Validates the image generation request
- * @param body Request body
- * @returns Validation error message or null if valid
- */
-function validateRequest(body: any): string | null {
-  if (!body || typeof body !== 'object') {
-    return 'Request body is required';
-  }
-
-  if (!body.prompt || typeof body.prompt !== 'string' || body.prompt.trim() === '') {
-    return 'Missing required field: prompt';
-  }
-
-  if (!body.projectId || typeof body.projectId !== 'string' || body.projectId.trim() === '') {
-    return 'Missing required field: projectId';
-  }
-
-  if (typeof body.sceneIndex !== 'number') {
-    return 'Missing or invalid field: sceneIndex (must be a number)';
-  }
-
-  if (body.sceneIndex < 0) {
-    return 'sceneIndex must be 0 or greater';
-  }
-
-  if (body.seedImage !== undefined && typeof body.seedImage !== 'string') {
-    return 'seedImage must be a string if provided';
-  }
-
-  return null;
-}
+const IMAGE_GEN_RULES = [
+  commonRules.prompt,
+  commonRules.projectId,
+  commonRules.sceneIndex,
+  {
+    field: 'seedImage',
+    type: 'string' as const,
+    required: false,
+  },
+];
 
 // ============================================================================
 // API Route Handler
 // ============================================================================
 
-/**
- * POST /api/generate-image
- * 
- * Creates an image generation prediction on Replicate.
- * Returns immediately with a prediction ID for polling.
- * 
- * Request Body:
- * {
- *   prompt: string;        // Required: Image generation prompt
- *   projectId: string;     // Required: Project ID for file organization
- *   sceneIndex: number;    // Required: Scene index (0-4)
- *   seedImage?: string;     // Optional: URL to seed image for image-to-image
- * }
- * 
- * Response:
- * {
- *   success: true;
- *   predictionId: string;
- *   status: 'starting' | 'processing';
- * }
- * 
- * Error Responses:
- * - 400: Invalid request
- * - 500: Prediction creation failed
- * - 503: Rate limit or service unavailable
- */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Check for runtime model override in headers
-    const runtimeT2IModel = request.headers.get('X-Model-T2I');
-    const runtimeI2IModel = request.headers.get('X-Model-I2I');
-
-    // Use T2I or I2I model based on whether we have reference images
-    // We'll check this after parsing the body
-
-    // Parse request body
-    let body: ImageGenerationRequest;
-    try {
-      body = await request.json();
-      
-      // Log received API request
-      console.log('========================================');
-      console.log('[API Route] Received Image Generation Request');
-      console.log('========================================');
-      console.log('Scene Index:', body.sceneIndex);
-      console.log('Project ID:', body.projectId);
-      console.log('Prompt:', body.prompt?.substring(0, 100) + (body.prompt?.length > 100 ? '...' : ''));
-      console.log('Seed Image (purple):', body.seedImage ? `${body.seedImage.substring(0, 80)}...` : 'none');
-      console.log('Reference Images (yellow):', body.referenceImageUrls?.length || 0);
-      if (body.referenceImageUrls && body.referenceImageUrls.length > 0) {
-        body.referenceImageUrls.forEach((url, idx) => {
-          console.log(`  [${idx}]: ${url.substring(0, 80)}...`);
-        });
-      }
-      console.log('Seed Frame:', body.seedFrame ? `${body.seedFrame.substring(0, 80)}...` : 'none');
-      console.log('Negative Prompt:', body.negativePrompt || 'none');
-      console.log('Full Request Body:', JSON.stringify(body, null, 2));
-      console.log('========================================');
-    } catch (parseError) {
-      console.error('[Image Generation API] Failed to parse request body:', parseError);
+    // Check environment
+    const envError = checkEnvVars(['REPLICATE_API_TOKEN']);
+    if (envError) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid JSON in request body',
-          code: 'INVALID_REQUEST',
-        } as ImageGenerationResponse,
-        { status: 400 }
-      );
-    }
-
-    // Extract scene index for scene-based model selection
-    const sceneIndex = body.sceneIndex;
-
-    // Scene-based model selection
-    // When reference images are provided: Use Nano Banana Pro (default) for ALL scenes for maximum object consistency
-    // When no reference images: Use T2I model
-    const hasReferenceImages = body.referenceImageUrls && body.referenceImageUrls.length > 0;
-    let selectedModel = hasReferenceImages ? runtimeI2IModel : runtimeT2IModel;
-
-    if (!selectedModel) {
-      if (hasReferenceImages) {
-        // With reference images: Use Nano Banana Pro (default I2I model from config)
-        selectedModel = null; // Will use default from IMAGE_CONFIG (google/nano-banana-pro)
-        console.log(`[Image Generation API] Scene ${sceneIndex}: Using Nano Banana Pro (default) for object consistency with ${body.referenceImageUrls?.length || 0} reference image(s)`);
-      } else {
-        // No reference images: Use T2I model
-        selectedModel = runtimeT2IModel;
-        console.log(`[Image Generation API] Scene ${sceneIndex}: Using T2I model (no reference images)`);
-      }
-    }
-
-    if (selectedModel) {
-      setRuntimeImageModel(selectedModel);
-      console.log(`[Image Generation API] Using runtime model: ${selectedModel} (${hasReferenceImages ? 'I2I' : 'T2I'})`);
-    }
-
-    // Validate request
-    const validationError = validateRequest(body);
-    if (validationError) {
-      console.error('[Image Generation API] Validation error:', validationError);
-      return NextResponse.json(
-        {
-          success: false,
-          error: validationError,
-          code: 'INVALID_REQUEST',
-        } as ImageGenerationResponse,
-        { status: 400 }
-      );
-    }
-
-    // Extract and prepare parameters
-    // sceneIndex already extracted above
-    const projectId = body.projectId.trim();
-    let prompt = body.prompt.trim();
-    let referenceImageUrls = body.referenceImageUrls || [];
-    const seedFrame = body.seedFrame?.trim();
-    let seedImage = body.seedImage?.trim();
-
-    // Store original URLs for logging
-    const originalSeedImage = seedImage;
-    const originalReferenceUrls = [...referenceImageUrls];
-    const originalSeedFrame = seedFrame;
-
-    // OPTIMIZATION: Convert ALL URLs in parallel (not sequential)
-    const urlsToConvert: string[] = [
-      ...referenceImageUrls,
-      ...(seedImage ? [seedImage] : []),
-      ...(seedFrame ? [seedFrame] : []),
-    ];
-
-    const convertedUrls = await Promise.all(
-      urlsToConvert.map(url => convertToPublicUrl(url, projectId))
-    );
-
-    // Split converted URLs back to their respective variables
-    const refImageCount = referenceImageUrls.length;
-    referenceImageUrls = convertedUrls.slice(0, refImageCount);
-    
-    let currentIndex = refImageCount;
-    if (seedImage) {
-      seedImage = convertedUrls[currentIndex++];
-    }
-    
-    let seedFrameUrl: string | undefined;
-    if (seedFrame) {
-      seedFrameUrl = convertedUrls[currentIndex++];
-    }
-
-    // Log URL verification
-    console.log('========================================');
-    console.log('[API Route] URL Conversion (for Replicate)');
-    console.log('========================================');
-    console.log('Original URLs (from Media Drawer):');
-    console.log('  Seed Image (purple):', originalSeedImage ? `${originalSeedImage.substring(0, 80)}...` : 'none');
-    if (originalReferenceUrls.length > 0) {
-      console.log('  Reference Images (yellow):');
-      originalReferenceUrls.forEach((url, idx) => {
-        console.log(`    [${idx}]: ${url.substring(0, 80)}...`);
-      });
-    }
-    console.log('  Seed Frame:', originalSeedFrame ? `${originalSeedFrame.substring(0, 80)}...` : 'none');
-    console.log('');
-    console.log('Converted URLs (for Replicate API):');
-    console.log('  Seed Image:', seedImage ? (seedImage.startsWith('data:') ? `[base64 data, ${(seedImage.length / 1024).toFixed(2)} KB]` : `${seedImage.substring(0, 80)}...`) : 'none');
-    if (referenceImageUrls.length > 0) {
-      console.log('  Reference Images:');
-      referenceImageUrls.forEach((url, idx) => {
-        const displayUrl = url.startsWith('data:') ? `[base64 data, ${(url.length / 1024).toFixed(2)} KB]` : `${url.substring(0, 80)}...`;
-        console.log(`    [${idx}]: ${displayUrl}`);
-      });
-    }
-    console.log('  Seed Frame:', seedFrameUrl ? (seedFrameUrl.startsWith('data:') ? `[base64 data, ${(seedFrameUrl.length / 1024).toFixed(2)} KB]` : `${seedFrameUrl.substring(0, 80)}...`) : 'none');
-    console.log('========================================');
-    
-    const allUrlsPublic = referenceImageUrls.every(url => 
-      url.startsWith('http://') || url.startsWith('https://')
-    );
-    console.log('[Image Generation API] Reference image URLs:', referenceImageUrls.map(url => url.substring(0, 80) + '...'));
-    console.log('[Image Generation API] Are all URLs public?', allUrlsPublic);
-    if (!allUrlsPublic) {
-      console.warn('[Image Generation API] WARNING: Some reference image URLs are not publicly accessible!');
-    }
-
-    // Prompt adjustment strategy based on runtime config
-    // Pass raw prompt to the API without modification
-    console.log(`[Image Generation API] Scene ${sceneIndex}: Using raw prompt (no modification)`);
-    console.log(`[Image Generation API] Prompt: ${prompt.substring(0, 100)}...`);
-
-    // Strategy: Use seed image for image-to-image generation
-    // For Scene 0: Seed image will be the reference image (if available)
-    // For Scenes 1-4: Seed image will be the seed frame from the previous scene
-    // Also use IP-Adapter with reference images for object consistency
-    const strategy = seedImage
-      ? `Image-to-image with seed image + IP-Adapter (reference images for object consistency)`
-      : referenceImageUrls.length > 0
-      ? `Text-to-image with IP-Adapter (reference images for object consistency)`
-      : `Text-to-image only`;
-
-    const timestamp = new Date().toISOString();
-    console.log('[Image Generation API] ========================================');
-    console.log('[Image Generation API] Request received');
-    console.log('[Image Generation API] Timestamp:', timestamp);
-    console.log('[Image Generation API] Model Type:', hasReferenceImages ? 'I2I' : 'T2I');
-    console.log('[Image Generation API] Selected Model:', selectedModel || 'default');
-    console.log('[Image Generation API] Project ID:', projectId);
-    console.log('[Image Generation API] Scene Index:', sceneIndex);
-    console.log('[Image Generation API] Prompt:', prompt);
-    console.log('[Image Generation API] Strategy:', strategy);
-    console.log('[Image Generation API] Inputs:');
-    console.log('[Image Generation API]   - Seed Image:', seedImage || 'none');
-    console.log('[Image Generation API]   - Seed Frame:', seedFrameUrl || 'none');
-    console.log('[Image Generation API]   - Reference Images:', referenceImageUrls.length);
-    if (referenceImageUrls.length > 0) {
-      referenceImageUrls.forEach((url, idx) => {
-        // Only log first 30 chars of URL to avoid flooding console with base64 data
-        const urlPreview = url.startsWith('data:') ? `${url.substring(0, 30)}... [base64 data]` : url;
-        console.log(`[Image Generation API]     [${idx + 1}] ${urlPreview}`);
-      });
-    }
-    console.log('[Image Generation API]   - All URLs Public:', allUrlsPublic);
-    console.log('[Image Generation API] ========================================');
-
-    // Check for API key
-    if (!process.env.REPLICATE_API_TOKEN) {
-      console.error('[Image Generation API] REPLICATE_API_TOKEN not configured');
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Replicate API token not configured',
-          code: 'PREDICTION_FAILED',
-        } as ImageGenerationResponse,
+        { success: false, error: envError, code: 'PREDICTION_FAILED' } as ImageGenerationResponse,
         { status: 500 }
       );
     }
 
-    // Build IP-Adapter images array: reference image (primary) + seed frame (for continuity in scenes 1-4)
-    // IP-Adapter scale: 1.0 for maximum reference image influence (let reference image define the object)
+    // Parse request body
+    const { body, error: parseError } = await parseRequestBody<ImageGenerationRequest>(request);
+    if (parseError) return parseError;
+
+    // Log request
+    console.log('========================================');
+    console.log('[API] Image Generation Request');
+    console.log('========================================');
+    console.log('Scene:', body.sceneIndex);
+    console.log('Project:', body.projectId);
+    console.log('Prompt:', body.prompt?.substring(0, 100) + (body.prompt?.length > 100 ? '...' : ''));
+    console.log('Seed Image:', body.seedImage ? formatUrlForLogging(body.seedImage) : 'none');
+    console.log('Reference Images:', body.referenceImageUrls?.length || 0);
+    console.log('========================================');
+
+    // Validate request
+    const validationError = validateRequest(body, IMAGE_GEN_RULES);
+    if (validationError) {
+      return NextResponse.json(
+        { success: false, error: validationError, code: 'INVALID_REQUEST' } as ImageGenerationResponse,
+        { status: 400 }
+      );
+    }
+
+    // Handle runtime model override
+    const runtimeT2IModel = request.headers.get('X-Model-T2I');
+    const runtimeI2IModel = request.headers.get('X-Model-I2I');
+    const hasReferenceImages = body.referenceImageUrls && body.referenceImageUrls.length > 0;
+    const selectedModel = hasReferenceImages ? runtimeI2IModel : runtimeT2IModel;
+
+    if (selectedModel) {
+      setRuntimeImageModel(selectedModel);
+      console.log(`[API] Using runtime model: ${selectedModel} (${hasReferenceImages ? 'I2I' : 'T2I'})`);
+    } else if (hasReferenceImages) {
+      console.log(`[API] Scene ${body.sceneIndex}: Using Nano Banana Pro (default) with ${body.referenceImageUrls?.length} reference image(s)`);
+    }
+
+    // Convert URLs to public format in parallel
+    const urlsToConvert = [
+      ...(body.referenceImageUrls || []),
+      ...(body.seedImage ? [body.seedImage] : []),
+      ...(body.seedFrame ? [body.seedFrame] : []),
+    ];
+
+    const convertedUrls = await convertUrlsToPublic(urlsToConvert, body.projectId);
+
+    // Split converted URLs back
+    const refImageCount = body.referenceImageUrls?.length || 0;
+    const referenceImageUrls = convertedUrls.slice(0, refImageCount);
+    let currentIndex = refImageCount;
+    const seedImage = body.seedImage ? convertedUrls[currentIndex++] : undefined;
+    const seedFrameUrl = body.seedFrame ? convertedUrls[currentIndex++] : undefined;
+
+    // Log URL conversion
+    console.log('========================================');
+    console.log('[API] URL Conversion');
+    console.log('========================================');
+    console.log('Seed Image:', seedImage ? formatUrlForLogging(seedImage) : 'none');
+    console.log('Reference Images:', referenceImageUrls.length);
+    referenceImageUrls.forEach((url, idx) => {
+      console.log(`  [${idx}]: ${formatUrlForLogging(url)}`);
+    });
+    console.log('Seed Frame:', seedFrameUrl ? formatUrlForLogging(seedFrameUrl) : 'none');
+    console.log('========================================');
+
+    // Build IP-Adapter images array
     const ipAdapterScale = 1.0;
     const ipAdapterImages: string[] = [];
-
-    // When using last frame mode (seed frame without reference images), use seed frame as the reference via IP-Adapter
-    const isLastFrameMode = sceneIndex > 0 && seedFrameUrl && referenceImageUrls.length === 0;
+    const isLastFrameMode = body.sceneIndex > 0 && seedFrameUrl && referenceImageUrls.length === 0;
 
     if (isLastFrameMode && seedFrameUrl) {
-      // Last frame mode: Use seed frame as the sole reference image
       ipAdapterImages.push(seedFrameUrl);
-      console.log(`[Image Generation API] Scene ${sceneIndex}: Last frame mode - Using seed frame as sole reference via IP-Adapter`);
+      console.log(`[API] Scene ${body.sceneIndex}: Last frame mode - using seed frame as reference`);
     } else {
-      // Standard mode: Include reference images for object consistency (primary driver)
       if (referenceImageUrls.length > 0) {
         ipAdapterImages.push(...referenceImageUrls);
       }
-
-      // For Scenes 1-4: Add seed frame for visual continuity (secondary)
-      if (sceneIndex > 0 && seedFrameUrl) {
+      if (body.sceneIndex > 0 && seedFrameUrl) {
         ipAdapterImages.push(seedFrameUrl);
-        console.log(`[Image Generation API] Scene ${sceneIndex}: Using seed frame via IP-Adapter for visual continuity`);
+        console.log(`[API] Scene ${body.sceneIndex}: Using seed frame for visual continuity`);
       }
     }
 
     const useIpAdapter = ipAdapterImages.length > 0;
-    
+
+    // Create prediction
     const predictionId = await createImagePredictionWithRetry(
-      prompt,
-      seedImage, // Reference image as seed (PRIMARY driver for object consistency)
-      useIpAdapter ? ipAdapterImages : undefined, // Reference image + seed frame via IP-Adapter
+      body.prompt,
+      seedImage,
+      useIpAdapter ? ipAdapterImages : undefined,
       useIpAdapter ? ipAdapterScale : undefined
     );
 
     const duration = Date.now() - startTime;
-    console.log(`[Image Generation API] Prediction created in ${duration}ms: ${predictionId}`);
+    console.log(`[API] Prediction created in ${duration}ms: ${predictionId}`);
 
-    // Return success response
-    const response: ImageGenerationResponse = {
-      success: true,
-      predictionId,
-      status: 'starting', // Initial status
-    };
-
-    return NextResponse.json(response, { status: 200 });
+    return NextResponse.json(
+      {
+        success: true,
+        predictionId,
+        status: 'starting',
+      } as ImageGenerationResponse,
+      { status: 200 }
+    );
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`[Image Generation API] Error after ${duration}ms:`, error);
+    console.error(`[API] Error after ${duration}ms:`, error);
 
-    // Use enhanced error handling
     const userFriendlyMessage = getUserFriendlyErrorMessage(error);
     const code = getErrorCode(error);
     const retryable = isRetryableError(error);
 
-    // Determine HTTP status code
     let statusCode = 500;
-    if (code === 'INVALID_REQUEST') {
-      statusCode = 400;
-    } else if (code === 'RATE_LIMIT') {
-      statusCode = 503;
-    } else if (code === 'AUTHENTICATION_FAILED') {
-      statusCode = 500;
-    } else if (retryable) {
-      statusCode = 503; // Service unavailable for retryable errors
-    }
+    if (code === 'INVALID_REQUEST') statusCode = 400;
+    else if (code === 'RATE_LIMIT') statusCode = 503;
+    else if (code === 'AUTHENTICATION_FAILED') statusCode = 500;
+    else if (retryable) statusCode = 503;
 
-    const errorResponse: ImageGenerationResponse = {
-      success: false,
-      error: userFriendlyMessage,
-      code,
-      retryable,
-    };
-
-    return NextResponse.json(errorResponse, { status: statusCode });
+    return NextResponse.json(
+      {
+        success: false,
+        error: userFriendlyMessage,
+        code,
+        retryable,
+      } as ImageGenerationResponse,
+      { status: statusCode }
+    );
   }
 }
 
-// ============================================================================
-// Health Check (Optional)
-// ============================================================================
-
-/**
- * GET /api/generate-image
- * 
- * Health check endpoint to verify the API is working.
- */
 export async function GET() {
   return NextResponse.json(
     {
@@ -499,4 +188,3 @@ export async function GET() {
     { status: 200 }
   );
 }
-

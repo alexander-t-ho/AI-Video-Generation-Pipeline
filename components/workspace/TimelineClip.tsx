@@ -3,7 +3,7 @@
 import { TimelineClip as TimelineClipType } from '@/lib/types';
 import { Scissors, Trash2, Crop, X, Image as ImageIcon, Film } from 'lucide-react';
 import { useState } from 'react';
-import { summarizeSceneDescription } from '@/lib/utils/text-utils';
+import { summarizeSceneDescription } from '@/lib/utils/prompt-utils';
 
 interface TimelineClipProps {
   clip: TimelineClipType;

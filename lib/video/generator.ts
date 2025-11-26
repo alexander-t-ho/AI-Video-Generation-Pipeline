@@ -12,7 +12,7 @@ import https from 'https';
 import http from 'http';
 
 import { VIDEO_CONFIG } from '@/lib/config/ai-models';
-import { enhanceVideoPrompt } from '@/lib/utils/video-prompt-enhancer';
+import { enhanceVideoPrompt } from '@/lib/utils/prompt-utils';
 import { getStorageService, type StoredFile } from '@/lib/storage/storage-service';
 
 // ============================================================================

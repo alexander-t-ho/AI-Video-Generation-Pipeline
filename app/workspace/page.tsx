@@ -8,10 +8,10 @@ import { useAutoGenerate } from '@/lib/hooks/useAutoGenerate';
 import LeftPanel from '@/components/workspace/LeftPanel';
 import MiddlePanel from '@/components/workspace/MiddlePanel';
 import RightPanel from '@/components/workspace/RightPanel';
-import CollapsedLeftPanel from '@/components/workspace/CollapsedLeftPanel';
-import CollapsedRightPanel from '@/components/workspace/CollapsedRightPanel';
+import CollapsedPanel from '@/components/workspace/CollapsedPanel';
 import WorkspaceHeader from '@/components/workspace/WorkspaceHeader';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { Image, MessageCircle } from 'lucide-react';
 
 function WorkspaceContent() {
   // Enable auto-save for project metadata
@@ -160,7 +160,12 @@ function WorkspaceContent() {
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Panel - Media Drawer (swapped from right) */}
         {leftPanelCollapsed ? (
-          <CollapsedLeftPanel onClick={() => setLeftPanelCollapsed(false)} />
+          <CollapsedPanel 
+            onClick={() => setLeftPanelCollapsed(false)} 
+            side="left" 
+            icon={Image} 
+            title="Expand Media Drawer" 
+          />
         ) : (
           <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-r border-white/20 h-full">
             <RightPanel onCollapse={() => setLeftPanelCollapsed(true)} />
@@ -176,7 +181,12 @@ function WorkspaceContent() {
 
         {/* Right Panel - Agent Chat (swapped from left) */}
         {rightPanelCollapsed ? (
-          <CollapsedRightPanel onClick={() => setRightPanelCollapsed(false)} />
+          <CollapsedPanel 
+            onClick={() => setRightPanelCollapsed(false)} 
+            side="right" 
+            icon={MessageCircle} 
+            title="Expand Agent Panel" 
+          />
         ) : (
           <div className="hidden lg:flex lg:w-80 transition-all duration-300 ease-in-out flex-shrink-0 border-l border-white/20 h-full">
             <LeftPanel onCollapse={() => setRightPanelCollapsed(true)} />

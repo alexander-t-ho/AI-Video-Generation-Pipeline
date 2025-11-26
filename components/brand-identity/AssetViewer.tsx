@@ -6,7 +6,7 @@ import { CarVariant, CustomAsset, CarReferenceImage } from './types';
 import ColorPicker from './ColorPicker';
 import AngleSelectionModal from './AngleSelectionModal';
 import { useProjectStore } from '@/lib/state/project-store';
-import { buildAssetPrompt, parseAssetRequest, validateAssetContext } from '@/lib/utils/asset-prompt-builder';
+import { buildAssetPrompt, validateAssetContext, parseAssetRequest } from '@/lib/utils/prompt-utils';
 import { generateImage, pollImageStatus } from '@/lib/api-client';
 import { generateAssetAngles } from '@/lib/services/asset-generation';
 import type { AngleType } from '@/lib/types';

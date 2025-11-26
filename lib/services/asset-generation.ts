@@ -6,7 +6,7 @@
  */
 
 import { generateImage, pollImageStatus } from '../api-client';
-import { buildAssetPrompt } from '../utils/asset-prompt-builder';
+import { buildAssetPrompt } from '../utils/prompt-utils';
 import type { AngleType } from '@/lib/types';
 import { ANGLE_DEFINITIONS } from '@/lib/constants';
 
