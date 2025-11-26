@@ -16,26 +16,28 @@ export interface RateLimitConfig {
  */
 export const IMAGE_RATE_LIMITS: Record<string, RateLimitConfig> = {
   // FLUX models - Generally support high concurrency
+  // OPTIMIZED: Increased limits for faster parallel generation
   'black-forest-labs/flux-1.1-pro': {
-    maxConcurrent: 10,
+    maxConcurrent: 15, // OPTIMIZED: 10 → 15
   },
   'black-forest-labs/flux-dev': {
-    maxConcurrent: 10,
+    maxConcurrent: 15, // OPTIMIZED: 10 → 15
   },
   'black-forest-labs/flux-schnell': {
-    maxConcurrent: 15, // Fast model, can handle more
+    maxConcurrent: 20, // OPTIMIZED: 15 → 20 (fast model)
   },
   'black-forest-labs/flux-pro': {
-    maxConcurrent: 10,
+    maxConcurrent: 15, // OPTIMIZED: 10 → 15
   },
 
   // Runway Gen-4 models - More conservative limits
+  // OPTIMIZED: Increased concurrency and reduced delays
   'runwayml/gen4-image': {
-    maxConcurrent: 5,
-    minDelayBetweenRequests: 500,
+    maxConcurrent: 8, // OPTIMIZED: 5 → 8
+    minDelayBetweenRequests: 250, // OPTIMIZED: 500 → 250
   },
   'runwayml/gen4-image-turbo': {
-    maxConcurrent: 8,
+    maxConcurrent: 12, // OPTIMIZED: 8 → 12
   },
 
   // Stability AI models
@@ -65,30 +67,33 @@ export const IMAGE_RATE_LIMITS: Record<string, RateLimitConfig> = {
  */
 export const VIDEO_RATE_LIMITS: Record<string, RateLimitConfig> = {
   // WAN models - Fast and cheap, can handle more concurrency
+  // OPTIMIZED: Increased limits for faster parallel generation
   'wan-video/wan-2.2-i2v-fast': {
-    maxConcurrent: 10,
+    maxConcurrent: 15, // OPTIMIZED: 10 → 15
   },
   'wan-video/wan-2.5-i2v-fast': {
-    maxConcurrent: 10,
+    maxConcurrent: 15, // OPTIMIZED: 10 → 15
   },
 
   // Google Veo - High quality, moderate concurrency
+  // OPTIMIZED: Increased concurrency and reduced delays
   'google/veo-3.1': {
-    maxConcurrent: 5,
-    minDelayBetweenRequests: 1000,
+    maxConcurrent: 8, // OPTIMIZED: 5 → 8
+    minDelayBetweenRequests: 500, // OPTIMIZED: 1000 → 500
   },
   'google/veo-3.1-fast': {
-    maxConcurrent: 8,
+    maxConcurrent: 12, // OPTIMIZED: 8 → 12
   },
 
   // Runway Gen-4 - Premium model, conservative limits
+  // OPTIMIZED: Increased concurrency and reduced delays
   'runwayml/gen4-turbo': {
-    maxConcurrent: 5,
-    minDelayBetweenRequests: 1000,
+    maxConcurrent: 8, // OPTIMIZED: 5 → 8
+    minDelayBetweenRequests: 500, // OPTIMIZED: 1000 → 500
   },
   'runwayml/gen4-aleph': {
-    maxConcurrent: 3,
-    minDelayBetweenRequests: 1500,
+    maxConcurrent: 5, // OPTIMIZED: 3 → 5
+    minDelayBetweenRequests: 1000, // OPTIMIZED: 1500 → 1000
   },
 
   // Luma Ray - High quality, limited concurrency

@@ -394,7 +394,7 @@ export async function pollImageStatus(
   } = {},
 ): Promise<ImageStatusResponse> {
   const {
-    interval = 2000,
+    interval = 1000, // OPTIMIZED: 2000ms → 1000ms for faster detection
     timeout = 600000,
     projectId,
     sceneIndex,
@@ -610,7 +610,7 @@ export async function pollVideoStatus(
   error?: string;
 }> {
   const {
-    interval = 5000,
+    interval = 3000, // OPTIMIZED: 5000ms → 3000ms for faster detection
     timeout = 1200000,
     onProgress,
     projectId,

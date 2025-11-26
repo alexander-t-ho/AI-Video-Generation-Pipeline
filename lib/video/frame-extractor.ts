@@ -20,7 +20,7 @@ const execAsync = promisify(exec);
 // ============================================================================
 
 const FRAME_COUNT = 1;
-const FRAME_QUALITY = 2; // High quality (1-31, lower is better)
+const FRAME_QUALITY = 5; // OPTIMIZED: Good quality (1-31, lower is better) - 5 is faster than 2 with minimal quality loss
 const MAX_RETRIES = 1;
 const FRAME_TIMESTAMPS = [0.0]; // Last frame (0.0 seconds from end)
 
@@ -94,15 +94,15 @@ async function extractFramesWithFFmpeg(
     const framePath = path.join(outputDir, `frame_${i + 1}.png`);
     
     // Extract single frame at specific timestamp
-    // Use output seeking (-ss after -i) for more accurate frame extraction
-    // Input seeking (-ss before -i) is faster but less accurate
-    // Output seeking is slower but ensures we get the exact frame at the timestamp
+    // OPTIMIZED: Use input seeking (-ss before -i) for faster extraction
+    // Input seeking is 2-3x faster than output seeking
+    // Trade-off: May be off by 1-2 frames, but acceptable for seed frames
+    // -ss: seek to specific time (input seeking for speed)
     // -i: input file
-    // -ss: seek to specific time (output seeking for accuracy)
     // -vframes 1: extract only 1 frame
-    // -q:v: quality (2 = high quality)
+    // -q:v: quality (5 = good quality, faster than 2)
     // -y: overwrite output file
-    const command = `ffmpeg -i "${videoPath}" -ss ${absoluteTimestamp} -vframes 1 -q:v ${FRAME_QUALITY} -y "${framePath}"`;
+    const command = `ffmpeg -ss ${absoluteTimestamp} -i "${videoPath}" -vframes 1 -q:v ${FRAME_QUALITY} -y "${framePath}"`;
 
     try {
       await execAsync(command);
