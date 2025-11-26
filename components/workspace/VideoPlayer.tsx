@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, Download } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -12,15 +12,22 @@ interface VideoPlayerProps {
   onDownload?: () => void;
 }
 
-export default function VideoPlayer({
-  src,
-  poster,
-  onTimeUpdate,
-  className = '',
-  showDownload = false,
-  onDownload,
-}: VideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
+  function VideoPlayer(
+    {
+      src,
+      poster,
+      onTimeUpdate,
+      className = '',
+      showDownload = false,
+      onDownload,
+    },
+    ref
+  ) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    // Expose the video element to parent components
+    useImperativeHandle(ref, () => videoRef.current!);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -215,5 +222,6 @@ export default function VideoPlayer({
       </div>
     </div>
   );
-}
+});
 
+export default VideoPlayer;

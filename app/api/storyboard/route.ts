@@ -123,11 +123,15 @@ export async function POST(request: NextRequest) {
     const prompt = body.prompt.trim();
     const targetDuration = body.targetDuration || 30;
     const referenceImageUrls = body.referenceImageUrls || [];
+    const assetDescription = body.assetDescription;
+    const color = body.color;
 
     console.log('[Storyboard API] Request received:', {
       prompt: prompt.substring(0, 50) + '...',
       targetDuration,
       referenceImageCount: referenceImageUrls.length,
+      assetDescription,
+      color,
     });
 
     // Check for API key (either OpenAI or OpenRouter)
@@ -145,7 +149,7 @@ export async function POST(request: NextRequest) {
     console.log('[Storyboard API] Using', process.env.OPENAI_API_KEY ? 'OpenAI' : 'OpenRouter');
 
     // Generate storyboard
-    const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls);
+    const scenes = await generateStoryboard(prompt, targetDuration, referenceImageUrls, assetDescription, color);
 
     const duration = Date.now() - startTime;
     console.log(`[Storyboard API] Successfully generated storyboard in ${duration}ms`);

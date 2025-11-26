@@ -2,7 +2,7 @@
  * Storyboard Generator - OpenRouter Integration
  * 
  * This module handles storyboard generation using OpenAI GPT-4o via OpenRouter API.
- * Generates exactly 5 scenes with descriptions, image prompts, and durations.
+ * Generates dynamic scene count based on target duration (30s=3 scenes, 60s=7 scenes).
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -36,8 +36,13 @@ export function setRuntimeTextModel(model: string) {
 /**
  * Generates system prompt based on target duration and scene count
  */
-function generateSystemPrompt(targetDuration: number, sceneCount: number): string {
+function generateSystemPrompt(targetDuration: number, sceneCount: number, assetDescription?: string): string {
   const durationPerScene = Math.round(targetDuration / sceneCount);
+
+  // Add asset requirement if provided
+  const assetRequirement = assetDescription 
+    ? `\n\nCRITICAL ASSET REQUIREMENT: This is an advertisement featuring "${assetDescription}". You MUST include this exact asset description in EVERY scene's imagePrompt and videoPrompt. For example, in imagePrompts use "${assetDescription}" as the subject, and in videoPrompts describe actions/movements of "${assetDescription}".`
+    : '';
 
   return `You are a professional video storyboard creator specializing in performance-focused advertising,
 with particular strength in product and automotive commercials.
@@ -49,7 +54,7 @@ For each scene:
 - Clear visual focus and logical progression from the previous scene
 - Keep the scene description SHORT and CONCISE - 3-6 words maximum
 - Provide a detailed imagePrompt for visual generation (static image description)
-- Provide a detailed videoPrompt for video generation (motion/action description)
+- Provide a detailed videoPrompt for video generation (motion/action description)${assetRequirement}
 
 Scene description examples:
 "driver close-up", "wide car approach", "interior cockpit"
@@ -74,7 +79,9 @@ Output strictly valid JSON in this format:
   ]
 }
 
-Keep imagePrompt focused on the opening frame composition. Keep videoPrompt front-loaded with key elements for Veo 3.1 optimization.`;
+Keep imagePrompt focused on the opening frame composition. Keep videoPrompt front-loaded with key elements for Veo 3.1 optimization.
+
+STYLE-SPECIFIC REQUIREMENTS: If the user's brief specifies "Wes Anderson style" or "whimsical", you MUST include those exact phrases in every imagePrompt (use "Wes Anderson style" and "whimsical") and in every videoPrompt (use "Wes Anderson style shot" and "whimsical"). Any human characters in Wes Anderson/whimsical scenes must be described as eccentrically dressed with distinctive vintage clothing and quirky accessories.`;
 }
 
 // ============================================================================
@@ -140,16 +147,34 @@ function getSceneCountForDuration(targetDuration: number): number {
 }
 
 /**
+ * Helper function to convert hex color to description
+ */
+function colorToDescription(hexColor: string): string {
+  const colorNames: Record<string, string> = {
+    '#000000': 'black', '#FFFFFF': 'white', '#FF0000': 'red', '#00FF00': 'green',
+    '#0000FF': 'blue', '#FFFF00': 'yellow', '#FF00FF': 'magenta', '#00FFFF': 'cyan',
+    '#C0C0C0': 'silver', '#808080': 'gray', '#800000': 'maroon', '#808000': 'olive',
+    '#008000': 'dark green', '#800080': 'purple', '#008080': 'teal', '#000080': 'navy',
+    '#FFA500': 'orange', '#FFC0CB': 'pink', '#A52A2A': 'brown', '#FFD700': 'gold',
+  };
+  return colorNames[hexColor.toUpperCase()] || `${hexColor} color`;
+}
+
+/**
  * Calls OpenRouter API to generate storyboard
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 30)
  * @param referenceImageUrls Optional array of reference image URLs
+ * @param assetDescription Optional asset description (e.g., "Porsche 911 Carrera (2010)")
+ * @param color Optional hex color code (e.g., "#FF5733")
  * @returns Raw JSON response from OpenRouter
  */
 async function callOpenRouterAPI(
   prompt: string,
   targetDuration: number = 30,
-  referenceImageUrls?: string[]
+  referenceImageUrls?: string[],
+  assetDescription?: string,
+  color?: string
 ): Promise<OpenRouterResponse> {
   const apiKey = USE_OPENAI_DIRECT ? process.env.OPENAI_API_KEY : process.env.OPENROUTER_API_KEY;
 
@@ -163,7 +188,23 @@ async function callOpenRouterAPI(
 
   const sceneCount = getSceneCountForDuration(targetDuration);
   console.log(`[Storyboard] Target duration: ${targetDuration}s → Scene count: ${sceneCount}`);
-  const userPrompt = `You are creating a performance-focused advertising storyboard (with strong support for product and automotive spots) for a ${targetDuration}-second video ad.
+  
+  // Build advertisement header if asset description is provided
+  let advertisementHeader = '';
+  if (assetDescription) {
+    advertisementHeader = `Advertisement for a ${assetDescription}`;
+    
+    // Add color description if provided
+    if (color) {
+      const colorDesc = colorToDescription(color);
+      advertisementHeader += ` in ${colorDesc}`;
+    }
+    
+    advertisementHeader += '\n\n';
+    console.log(`[Storyboard] Advertisement header: ${advertisementHeader.trim()}`);
+  }
+  
+  const userPrompt = `${advertisementHeader}You are creating a performance-focused advertising storyboard (with strong support for product and automotive spots) for a ${targetDuration}-second video ad.
 
 Creative brief from the user:
 ${prompt}
@@ -238,7 +279,7 @@ Ensure the total duration of all scenes equals ${targetDuration} seconds (±2 se
   }
 
   const modelToUse = USE_OPENAI_DIRECT ? OPENAI_MODEL : OPENROUTER_MODEL;
-  const systemPrompt = generateSystemPrompt(targetDuration, sceneCount);
+  const systemPrompt = generateSystemPrompt(targetDuration, sceneCount, assetDescription);
   const requestBody: OpenRouterRequest = {
     model: modelToUse,
     messages: [
@@ -480,12 +521,16 @@ async function retryWithBackoff<T>(
  * @param prompt User's product/ad description
  * @param targetDuration Target video duration in seconds (default: 30)
  * @param referenceImageUrls Optional array of reference image URLs for visual context
+ * @param assetDescription Optional asset description (e.g., "Porsche 911 Carrera (2010)")
+ * @param color Optional hex color code (e.g., "#FF5733")
  * @returns Array of validated scenes with UUIDs (3 scenes for 30s, 7 scenes for 60s)
  */
 export async function generateStoryboard(
   prompt: string,
   targetDuration: number = 30,
-  referenceImageUrls?: string[]
+  referenceImageUrls?: string[],
+  assetDescription?: string,
+  color?: string
 ): Promise<Scene[]> {
   // Validate inputs
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -504,12 +549,18 @@ export async function generateStoryboard(
   console.log(`${logPrefix} Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
   console.log(`${logPrefix} Target duration: ${targetDuration}s`);
   console.log(`${logPrefix} Scene count: ${sceneCount}`);
+  if (assetDescription) {
+    console.log(`${logPrefix} Asset description: "${assetDescription}"`);
+  }
+  if (color) {
+    console.log(`${logPrefix} Color: ${color} (${colorToDescription(color)})`);
+  }
   console.log(`${logPrefix} Timestamp: ${new Date().toISOString()}`);
 
   // Retry logic with exponential backoff
   const scenes = await retryWithBackoff(async () => {
     // Call OpenRouter API
-    const apiResponse = await callOpenRouterAPI(prompt, targetDuration, referenceImageUrls);
+    const apiResponse = await callOpenRouterAPI(prompt, targetDuration, referenceImageUrls, assetDescription, color);
 
     // Extract JSON content from response
     const content = apiResponse.choices[0]?.message?.content;

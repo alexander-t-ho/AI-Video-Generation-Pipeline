@@ -11,6 +11,8 @@ import { useMediaDragDrop } from '@/lib/hooks/useMediaDragDrop';
 import { getPublicBackgrounds, getPublicBackgroundUrl, PublicBackground } from '@/lib/backgrounds/public-backgrounds';
 import { selectSceneReferenceImages } from '@/lib/state/slices/project-core-slice';
 import type { GeneratingImage } from '@/lib/state/types';
+import { captureVideoFrame, uploadFrameToS3 } from '@/lib/utils/video-frame-capture';
+import { v4 as uuidv4 } from 'uuid';
 
 interface ImagePreviewModalProps {
   image: GeneratedImage;
@@ -112,6 +114,7 @@ export default function EditorView() {
   const [publicBackgrounds, setPublicBackgrounds] = useState<PublicBackground[]>([]);
   const imageGenerationRequestIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const videoPlayerRef = useRef<HTMLVideoElement>(null);
 
   const handleDuplicateScene = async () => {
     if (!project || isDuplicating) return;
@@ -1893,63 +1896,45 @@ export default function EditorView() {
                 </div>
               </div>
 
-              {/* Save Last Frame Button */}
+              {/* Save Current Frame Button */}
               {sceneHasVideo && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={async () => {
-                      if (!project?.id || !sceneState?.videoLocalPath) return;
+                      if (!project?.id || !videoPlayerRef.current) return;
 
                       setIsExtractingFrames(true);
                       try {
-                        const videoPath = sceneState.videoLocalPath;
+                        // Capture current frame from video player using canvas
+                        const frameBlob = await captureVideoFrame(videoPlayerRef.current);
 
-                        // Check if video path is a URL or local path
-                        if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
-                          addChatMessage({
-                            role: 'agent',
-                            content: '❌ Cannot extract frame from URL. Please wait for video to download.',
-                            type: 'error',
-                          });
-                          return;
-                        }
+                        // Upload to S3
+                        const { s3Url, s3Key, preSignedUrl } = await uploadFrameToS3(frameBlob, project.id);
 
-                        // Extract frames
-                        const response = await extractFrames(
-                          videoPath,
-                          project.id,
-                          currentSceneIndex
-                        );
+                        // Create seed frame object
+                        const capturedFrame: SeedFrame = {
+                          id: uuidv4(),
+                          url: s3Url,
+                          localPath: s3Url,
+                          s3Key,
+                          timestamp: videoPlayerRef.current.currentTime,
+                        };
 
-                        if (response.frames && response.frames.length > 0) {
-                          // Get the last frame
-                          const lastFrame = response.frames[response.frames.length - 1];
+                        // Add to seed frames (prepend to existing)
+                        setSeedFrames(currentSceneIndex, [capturedFrame, ...(seedFrames || [])]);
 
-                          // Upload to S3
-                          const { s3Url } = await uploadImageToS3(lastFrame.url, project.id);
-
-                          const uploadedFrame = {
-                            ...lastFrame,
-                            url: s3Url,
-                            localPath: lastFrame.url,
-                          };
-
-                          // Add to seed frames (prepend to existing)
-                          setSeedFrames(currentSceneIndex, [uploadedFrame, ...(seedFrames || [])]);
-
-                          addChatMessage({
-                            role: 'agent',
-                            content: '✓ Last frame saved to seed frames',
-                            type: 'status',
-                          });
-                        }
-                      } catch (error) {
-                        console.error('Error saving last frame:', error);
                         addChatMessage({
                           role: 'agent',
-                          content: '❌ Failed to save last frame',
+                          content: '✓ Current frame saved to seed frames',
+                          type: 'status',
+                        });
+                      } catch (error) {
+                        console.error('Error saving current frame:', error);
+                        addChatMessage({
+                          role: 'agent',
+                          content: '❌ Failed to save current frame',
                           type: 'error',
-                          });
+                        });
                       } finally {
                         setIsExtractingFrames(false);
                       }
@@ -1965,7 +1950,7 @@ export default function EditorView() {
                     ) : (
                       <>
                         <Save className="w-4 h-4" />
-                        Save last frame
+                        Save current frame
                       </>
                     )}
                   </button>
@@ -2344,6 +2329,7 @@ export default function EditorView() {
               {/* Video Preview */}
               <div className="relative">
                 <VideoPlayer
+                  ref={videoPlayerRef}
                   src={sceneState?.videoLocalPath ? (
                     sceneState.videoLocalPath.startsWith('http://') || sceneState.videoLocalPath.startsWith('https://')
                       ? sceneState.videoLocalPath

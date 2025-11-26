@@ -674,10 +674,10 @@ export default function LeftPanel({ onCollapse }: LeftPanelProps) {
       return;
     }
 
-    if (videoPaths.length < 5) {
+    if (videoPaths.length < scenes.length) {
       addChatMessage({
         role: 'agent',
-        content: `⚠️ Warning: Only ${videoPaths.length} of 5 scenes have videos. Stitching available videos...`,
+        content: `⚠️ Warning: Only ${videoPaths.length} of ${scenes.length} scenes have videos. Stitching available videos...`,
         type: 'suggestion',
       });
     }
