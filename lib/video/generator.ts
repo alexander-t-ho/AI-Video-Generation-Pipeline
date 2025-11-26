@@ -136,11 +136,7 @@ export async function createVideoPrediction(
   referenceImages?: string[],
   modelParameters?: Record<string, any>
 ): Promise<string> {
-  // Validate inputs
-  if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
-    throw new Error('Image URL is required and must be a non-empty string');
-  }
-
+  // Validate prompt (required always)
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
     throw new Error('Prompt is required and must be a non-empty string');
   }
@@ -169,8 +165,23 @@ export async function createVideoPrediction(
   // Determine if using Veo model (need this early for logging)
   const isVeo = REPLICATE_MODEL.includes('veo-3.1') || REPLICATE_MODEL.includes('veo') || REPLICATE_MODEL.includes('google/veo');
 
+  // Determine if we're using reference images mode (for Google Veo)
+  // This is explicitly controlled by the UI toggle via modelParameters.useReferenceMode
+  const isVeoModel = isVeo;
+  const useReferenceImagesMode = isVeoModel && modelParameters?.useReferenceMode === true && referenceImages && referenceImages.length > 0;
+
+  // Validate imageUrl - only required when NOT in reference-only mode
+  if (!useReferenceImagesMode) {
+    if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
+      throw new Error('Image URL is required and must be a non-empty string');
+    }
+  }
+
   console.log(`${logPrefix} Inputs:`);
-  if (seedFrame) {
+  if (useReferenceImagesMode) {
+    console.log(`${logPrefix}   - Mode: Reference Images Only (no first frame)`);
+    console.log(`${logPrefix}   - Reference Images: ${referenceImages.length}`);
+  } else if (seedFrame) {
     console.log(`${logPrefix}   - Using Seed Frame as Starting Image: ${seedFrame}`);
     console.log(`${logPrefix}   - Generated Image (not used): ${imageUrl}`);
     console.log(`${logPrefix}   - Mode: Seed frame from previous scene → video`);
@@ -221,7 +232,6 @@ export async function createVideoPrediction(
   //      - Model generates transition video between the two frames
   //      - Note: reference_images and last_frame are MUTUALLY EXCLUSIVE
   // For other models: Use seedFrame as main image if provided (Scene 1-4), otherwise use imageUrl (Scene 0)
-  const isVeoModel = isVeo; // Already defined above for duration
   const inputImageUrl = seedFrame || imageUrl; // Use seed frame if available, otherwise generated image
 
   // Model-specific parameter handling
@@ -241,9 +251,6 @@ export async function createVideoPrediction(
   // Start with model-specific parameters (user-provided)
   // Check if we're using last_frame (interpolation mode)
   const hasLastFrame = modelParameters?.last_frame !== undefined;
-  
-  // Check if we're using reference images mode (for Google Veo)
-  const useReferenceImagesMode = isVeoModel && !hasLastFrame && referenceImages && referenceImages.length > 0;
 
   const input: ReplicateInput = {
     // Gen-4 Aleph uses 'video', others use 'image'

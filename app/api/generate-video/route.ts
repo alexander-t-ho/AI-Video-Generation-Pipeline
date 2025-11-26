@@ -12,7 +12,12 @@ import { validateRequest, createErrorResponse, parseRequestBody, checkEnvVars, c
 // ============================================================================
 
 const VIDEO_GEN_RULES = [
-  commonRules.imageUrl,
+  // imageUrl is conditionally required - validated in handler based on useReferenceMode
+  {
+    field: 'imageUrl',
+    type: 'string' as const,
+    required: false, // Changed from required: true to support reference-only mode
+  },
   commonRules.prompt,
   commonRules.sceneIndex,
   commonRules.projectId,
@@ -65,6 +70,27 @@ export async function POST(request: NextRequest) {
     }
 
     const { imageUrl, prompt, seedFrame, sceneIndex, projectId, duration, referenceImageUrls, modelParameters } = body;
+
+    // Additional validation: imageUrl is required unless in reference-only mode
+    const isReferenceMode = modelParameters?.useReferenceMode === true;
+    const hasReferenceImages = referenceImageUrls && referenceImageUrls.length > 0;
+    
+    if (!isReferenceMode || !hasReferenceImages) {
+      // Standard mode or frame mode: imageUrl is required
+      if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
+        return NextResponse.json(
+          { success: false, error: 'Missing required field: imageUrl (required unless in reference-only mode with reference images)' },
+          { status: 400 }
+        );
+      }
+      // Validate it's a proper URL
+      if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+        return NextResponse.json(
+          { success: false, error: 'imageUrl must be a valid HTTP/HTTPS URL' },
+          { status: 400 }
+        );
+      }
+    }
 
     // Handle runtime model override
     const runtimeVideoModel = request.headers.get('X-Model-Video');

@@ -13,17 +13,19 @@ interface SeedFrameSelectorProps {
 
 // Helper to get serveable URL for a frame
 function getFrameUrl(frame: SeedFrame): string {
-  // Always serve through API using localPath for consistent access
-  if (frame.localPath) {
-    return `/api/serve-image?path=${encodeURIComponent(frame.localPath)}`;
-  } else if (frame.url.startsWith('/api')) {
+  // If it's already an S3 URL or any HTTP(S) URL, use it directly
+  if (frame.url.startsWith('http://') || frame.url.startsWith('https://')) {
     return frame.url;
-  } else if (!frame.url.startsWith('http://') && !frame.url.startsWith('https://')) {
-    return `/api/serve-image?path=${encodeURIComponent(frame.url)}`;
-  } else {
-    // For S3 URLs, use localPath if available
-    return `/api/serve-image?path=${encodeURIComponent(frame.localPath || frame.url)}`;
   }
+  
+  // If it's already an API path, use it directly
+  if (frame.url.startsWith('/api')) {
+    return frame.url;
+  }
+  
+  // For local paths, proxy through serve-image
+  const pathToServe = frame.localPath || frame.url;
+  return `/api/serve-image?path=${encodeURIComponent(pathToServe)}`;
 }
 
 export default function SeedFrameSelector({

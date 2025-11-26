@@ -2,7 +2,6 @@
 
 import { useProjectStore, useSceneStore, useUIStore } from '@/lib/state/project-store';
 import VideoPlayer from './VideoPlayer';
-import SeedFrameSelector from './SeedFrameSelector';
 import { Loader2, Image as ImageIcon, Video, CheckCircle2, X, Edit2, Save, X as XIcon, Upload, XCircle, ChevronUp, ChevronDown, Trash2, Copy, Sparkles } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateImage, pollImageStatus, generateVideo, pollVideoStatus, uploadImageToS3, extractFrames, uploadImages, deleteGeneratedImage, enhancePrompt } from '@/lib/api-client';
@@ -820,50 +819,65 @@ export default function EditorView() {
     try {
       setSceneStatus(currentSceneIndex, 'generating_video');
 
+      // In reference images mode (for Google Veo), first frame is not required
+      // The model will generate video using only the reference images
+      const isReferenceMode = imageInputMode === 'reference';
+      
       // Use the First Frame slot (customImagePreviews[0]) for video generation
       // This allows users to manually drag in the image they want to use
       const firstFramePreview = customImagePreviews[0];
-      if (!firstFramePreview) {
+      if (!firstFramePreview && !isReferenceMode) {
         throw new Error('Please drag an image to the First Frame slot to generate video');
       }
 
       let imageToUse: string;
-      if (firstFramePreview.source === 'file') {
-        // If it's a file, we need to find it in customImageFiles
-        const fileIndex = customImagePreviews.slice(0, 1).filter(p => p?.source === 'file').length - 1;
-        const file = customImageFiles[fileIndex];
-        if (!file) {
-          throw new Error('First Frame file not found. Please try uploading again.');
-        }
-        // Upload the file first
-        const uploadResult = await uploadImages([file], project.id, false);
-        if (!uploadResult.images || uploadResult.images.length === 0) {
-          throw new Error('Failed to upload First Frame image');
-        }
-        imageToUse = uploadResult.images[0].url;
-      } else if (firstFramePreview.url.startsWith('http://') || firstFramePreview.url.startsWith('https://')) {
-        imageToUse = firstFramePreview.url;
-      } else if (firstFramePreview.url.startsWith('/api/serve-image')) {
-        // Extract the local path
-        imageToUse = decodeURIComponent(firstFramePreview.url.split('path=')[1]);
-      } else {
-        imageToUse = firstFramePreview.url;
-      }
-
-      console.log(`[EditorView] Scene ${currentSceneIndex}: Using First Frame slot for video generation`);
-      console.log('[EditorView] First Frame path:', imageToUse.substring(0, 100) + (imageToUse.length > 100 ? '...' : ''));
-
-      // Upload image to S3 if it's a local path, otherwise use the URL directly
       let s3Url: string;
-      if (imageToUse.startsWith('http://') || imageToUse.startsWith('https://')) {
-        // Already a public URL, use it directly
-        s3Url = imageToUse;
-        console.log('[EditorView] Image is already a public URL, using directly:', s3Url.substring(0, 80) + '...');
+
+      if (isReferenceMode && !firstFramePreview) {
+        // Reference-only mode: No first frame needed
+        s3Url = ''; // Empty string, will not be used by generator
+        console.log('[EditorView] Reference Images Mode: No first frame required');
+      } else if (firstFramePreview) {
+        // Standard/Frame mode: Process first frame
+        if (firstFramePreview.source === 'file') {
+          // If it's a file, we need to find it in customImageFiles
+          const fileIndex = customImagePreviews.slice(0, 1).filter(p => p?.source === 'file').length - 1;
+          const file = customImageFiles[fileIndex];
+          if (!file) {
+            throw new Error('First Frame file not found. Please try uploading again.');
+          }
+          // Upload the file first
+          const uploadResult = await uploadImages([file], project.id, false);
+          if (!uploadResult.images || uploadResult.images.length === 0) {
+            throw new Error('Failed to upload First Frame image');
+          }
+          imageToUse = uploadResult.images[0].url;
+        } else if (firstFramePreview.url.startsWith('http://') || firstFramePreview.url.startsWith('https://')) {
+          imageToUse = firstFramePreview.url;
+        } else if (firstFramePreview.url.startsWith('/api/serve-image')) {
+          // Extract the local path
+          imageToUse = decodeURIComponent(firstFramePreview.url.split('path=')[1]);
+        } else {
+          imageToUse = firstFramePreview.url;
+        }
+
+        console.log(`[EditorView] Scene ${currentSceneIndex}: Using First Frame slot for video generation`);
+        console.log('[EditorView] First Frame path:', imageToUse.substring(0, 100) + (imageToUse.length > 100 ? '...' : ''));
+
+        // Upload image to S3 if it's a local path, otherwise use the URL directly
+        if (imageToUse.startsWith('http://') || imageToUse.startsWith('https://')) {
+          // Already a public URL, use it directly
+          s3Url = imageToUse;
+          console.log('[EditorView] Image is already a public URL, using directly:', s3Url.substring(0, 80) + '...');
+        } else {
+          // Local path, upload to S3
+          const uploadResult = await uploadImageToS3(imageToUse, project.id);
+          s3Url = uploadResult.s3Url;
+          console.log('[EditorView] Uploaded image to S3:', s3Url.substring(0, 80) + '...');
+        }
       } else {
-        // Local path, upload to S3
-        const uploadResult = await uploadImageToS3(imageToUse, project.id);
-        s3Url = uploadResult.s3Url;
-        console.log('[EditorView] Uploaded image to S3:', s3Url.substring(0, 80) + '...');
+        // Should not reach here
+        s3Url = '';
       }
 
       // Handle two mutually exclusive modes:
@@ -970,10 +984,11 @@ export default function EditorView() {
 
       // Generate video
       // Get model parameters from current scene and add last_frame if provided
-      // NOTE: last_frame and reference images are mutually exclusive
+      // Add useReferenceMode flag when in reference mode (for Google Veo)
       const modelParameters = {
         ...(currentScene.modelParameters || {}),
         ...(lastFrameUrl ? { last_frame: lastFrameUrl } : {}),
+        ...(isReferenceMode ? { useReferenceMode: true } : {}),
       };
 
       console.log('[EditorView] Video generation mode:',
@@ -1915,7 +1930,7 @@ export default function EditorView() {
                         const capturedFrame: SeedFrame = {
                           id: uuidv4(),
                           url: s3Url,
-                          localPath: s3Url,
+                          localPath: '', // No local path - frame is only on S3
                           s3Key,
                           timestamp: videoPlayerRef.current.currentTime,
                         };
@@ -2356,17 +2371,6 @@ export default function EditorView() {
                   )}
                 </button>
               </div>
-
-              {/* Seed Frame Selection */}
-              {seedFrames.length > 0 && currentSceneIndex < 4 && (
-                <div className="p-4 bg-white/5 rounded-lg border border-white/20">
-                  <SeedFrameSelector
-                    frames={seedFrames}
-                    selectedFrameIndex={sceneState?.selectedSeedFrameIndex}
-                    onSelectFrame={handleSelectSeedFrame}
-                  />
-                </div>
-              )}
 
               {/* Continue Button */}
               <button
