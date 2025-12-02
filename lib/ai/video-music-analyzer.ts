@@ -223,7 +223,17 @@ async function extractFramesForAnalysis(videoPath: string, frameCount: number = 
  * Convert image file to base64 with size check
  */
 async function imageToBase64(imagePath: string): Promise<string> {
-  const imageBuffer = await fs.readFile(imagePath);
+  const { imageCache } = await import('@/lib/storage/cache');
+
+  // Check cache first
+  let imageBuffer: Buffer;
+  const cached = imageCache.get(imagePath);
+  if (cached) {
+    imageBuffer = cached.buffer;
+  } else {
+    imageBuffer = await fs.readFile(imagePath);
+    imageCache.set(imagePath, imageBuffer, 'image/jpeg');
+  }
 
   // Warn if image is very large (>500KB base64 ≈ 375KB file)
   if (imageBuffer.length > 375000) {

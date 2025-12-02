@@ -171,8 +171,8 @@ export default function APIPreviewPanel({ sceneIndex, generationType }: APIPrevi
       // Check for custom image inputs from video generation UI (slots 0-4)
       const customInputs = scene.customImageInput
         ? (Array.isArray(scene.customImageInput)
-            ? scene.customImageInput
-            : [scene.customImageInput])
+            ? scene.customImageInput.filter((url): url is string => url !== null && url !== undefined)
+            : [scene.customImageInput].filter((url): url is string => url !== null && url !== undefined))
         : [];
 
       // Slot 0 is seed image, slots 1-3 are reference images, slot 4 is last frame

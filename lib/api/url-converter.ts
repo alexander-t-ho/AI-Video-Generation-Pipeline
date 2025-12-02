@@ -109,7 +109,19 @@ export async function convertToPublicUrl(url: string, projectId: string): Promis
   if (url.startsWith('/tmp') || url.startsWith('./') || (!url.startsWith('/api') && !url.startsWith('http'))) {
     try {
       const fs = await import('fs/promises');
-      const fileBuffer = await fs.readFile(url);
+      const { imageCache } = await import('@/lib/storage/cache');
+
+      // Check cache first
+      let fileBuffer: Buffer;
+      const cached = imageCache.get(url);
+      if (cached) {
+        fileBuffer = cached.buffer;
+      } else {
+        fileBuffer = await fs.readFile(url);
+        const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        imageCache.set(url, fileBuffer, mimeType);
+      }
+
       const base64Image = fileBuffer.toString('base64');
       const mimeType = url.endsWith('.png') ? 'image/png' : 'image/jpeg';
       const dataUrl = `data:${mimeType};base64,${base64Image}`;

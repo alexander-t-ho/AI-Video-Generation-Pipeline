@@ -27,6 +27,9 @@ RUN cp -r public .next/standalone/ && \
 # Prune dev dependencies to keep image size down
 RUN npm prune --production
 
+# Create required directories for media serving
+RUN mkdir -p /tmp/projects /tmp/thumbnails /tmp/temp-downloads /tmp/s3-thumbnails /tmp/edge-cleanup /tmp/music-analysis
+
 EXPOSE 3000
 
 ENV NODE_ENV=production

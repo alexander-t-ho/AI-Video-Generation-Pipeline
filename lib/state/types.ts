@@ -63,6 +63,9 @@ export interface ProjectCoreSlice {
   addSavedImage: (savedImage: import('@/lib/types').SavedImage) => void;
   removeSavedImage: (imageId: string) => void;
 
+  // Prompt updates
+  updateScenePrompts: (updates: Array<{ sceneId: string; imagePrompt: string; videoPrompt: string }>) => void;
+
   reset: () => void;
 }
 
@@ -97,7 +100,7 @@ export interface SceneSlice {
     videoPrompt?: string;
     negativePrompt?: string;
     customDuration?: number;
-    customImageInput?: string | string[];
+    customImageInput?: string | (string | null)[] | null;
     useSeedFrame?: boolean;
     modelParameters?: Record<string, any>;
     referenceImageId?: string;

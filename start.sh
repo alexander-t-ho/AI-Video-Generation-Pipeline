@@ -4,6 +4,20 @@ set -e
 echo "Starting deployment script..."
 echo "Current directory: $(pwd)"
 
+# Ensure required directories exist
+echo "📁 Setting up required directories..."
+mkdir -p /tmp/projects /tmp/thumbnails /tmp/temp-downloads /tmp/s3-thumbnails /tmp/edge-cleanup /tmp/music-analysis ./video\ testing ./tmp
+
+if [ $? -eq 0 ]; then
+    echo "✅ Directory setup complete!"
+    echo "   Created: /tmp/projects, /tmp/thumbnails, /tmp/temp-downloads,"
+    echo "           /tmp/s3-thumbnails, /tmp/edge-cleanup, /tmp/music-analysis,"
+    echo "           ./video testing, ./tmp"
+else
+    echo "❌ Directory setup failed!"
+    exit 1
+fi
+
 # Run migrations
 echo "🔄 Running database migrations..."
 if npx prisma migrate deploy; then

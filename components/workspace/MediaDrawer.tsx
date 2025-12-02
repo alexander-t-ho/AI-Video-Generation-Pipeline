@@ -197,16 +197,6 @@ export default function MediaDrawer() {
         });
       });
     });
-    console.log('[MediaDrawer] Generated images loaded:', {
-      totalImages: allImages.length,
-      totalScenes: scenes.length,
-      byScene: scenes.map((s, i) => ({ 
-        scene: i, 
-        count: s.generatedImages?.length || 0,
-        images: s.generatedImages?.map(img => ({ id: img.id, url: img.url?.substring(0, 80) })) || []
-      })),
-      allImagesDetails: allImages.map(img => ({ id: img.id, sceneIndex: img.sceneIndex, url: img.url?.substring(0, 80) }))
-    });
     return allImages;
   }, [scenes]);
 

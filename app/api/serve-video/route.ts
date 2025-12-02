@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import path from 'path';
+import { videoCache } from '@/lib/storage/cache';
 
 /**
  * GET /api/serve-video
@@ -109,30 +110,29 @@ export async function GET(request: NextRequest) {
     }
 
     // No range header - return full file
-    // For large files, consider streaming instead of loading entire file
-    if (fileSize > 50 * 1024 * 1024) { // > 50MB
-      // Stream large files
-      const buffer = await fs.readFile(absolutePath);
+    // CHECK CACHE FIRST
+    let fileBuffer = videoCache.get(absolutePath);
+    let fromCache = false;
 
-      return new NextResponse(buffer, {
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(fileSize),
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'public, max-age=3600',
-        },
-      });
+    if (!fileBuffer) {
+      // Not in cache - read from disk
+      fileBuffer = await fs.readFile(absolutePath);
+      
+      // Cache for next time (only if reasonably sized)
+      if (fileSize <= 100 * 1024 * 1024) { // Only cache files ≤ 100MB
+        videoCache.set(absolutePath, fileBuffer);
+      }
+    } else {
+      fromCache = true;
     }
 
-    // Small files - read entirely
-    const fileBuffer = await fs.readFile(absolutePath);
-
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(Buffer.from(fileBuffer), {
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(fileSize),
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600',
+        'X-Cache': fromCache ? 'HIT' : 'MISS', // Debug header
       },
     });
   } catch (error: any) {

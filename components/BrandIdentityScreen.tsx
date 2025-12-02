@@ -9,6 +9,7 @@ import CarSelector, { SuggestedCarInfo } from './brand-identity/CarSelector';
 import AssetViewer from './brand-identity/AssetViewer';
 import { useProjectStore } from '@/lib/state/project-store';
 import { fetchCarDatabase } from '@/lib/services/car-service';
+import { buildAssetDescription, parseAssetInfo } from '@/lib/ai/prompt-updater';
 
 export default function BrandIdentityScreen() {
   const [selectedCar, setSelectedCar] = useState<CarVariant | CustomAsset | null>(null);
@@ -19,6 +20,7 @@ export default function BrandIdentityScreen() {
   const [carDatabase, setCarDatabase] = useState<CarDatabase | null>(null);
   const [isLoadingCars, setIsLoadingCars] = useState(true);
   const [isWaitingForProject, setIsWaitingForProject] = useState(false);
+  const [isUpdatingPrompts, setIsUpdatingPrompts] = useState(false);
   const [selectedAssetHistory, setSelectedAssetHistory] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -217,10 +219,10 @@ export default function BrandIdentityScreen() {
 
     // Extract and store asset description in project state
     const { setAssetDescription } = useProjectStore.getState();
-    const description = 'brand' in car
-      ? car.displayName  // CarVariant
-      : car.name;         // CustomAsset
+    const description = buildAssetDescription(car);
     setAssetDescription(description);
+    
+    console.log('[BrandIdentity] Selected asset:', description);
   };
 
   const handleAssetToggle = (assetId: string) => {
@@ -245,7 +247,61 @@ export default function BrandIdentityScreen() {
     setSelectedAssetIds(new Set());
   };
 
-  const handleContinue = () => {
+  const updatePromptsWithAssetInfo = async () => {
+    if (!selectedCar) {
+      console.warn('[BrandIdentity] No car selected, skipping prompt update');
+      return;
+    }
+
+    const { project } = useProjectStore.getState();
+    if (!project?.id) {
+      console.warn('[BrandIdentity] No project ID, skipping prompt update');
+      return;
+    }
+
+    try {
+      setIsUpdatingPrompts(true);
+      console.log('[BrandIdentity] Updating prompts with asset info...');
+
+      // Build asset info
+      const assetInfo = parseAssetInfo(selectedCar);
+      console.log('[BrandIdentity] Asset info:', assetInfo);
+
+      // Call API to update prompts
+      const response = await fetch(`/api/projects/${project.id}/update-prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(assetInfo),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update prompts');
+      }
+
+      const data = await response.json();
+      console.log('[BrandIdentity] Prompt update complete:', data.stats);
+
+      // Update local state with new prompts
+      const { updateScenePrompts } = useProjectStore.getState();
+      const updates = data.updatedScenes.map((scene: any) => ({
+        sceneId: scene.sceneId,
+        imagePrompt: scene.imagePrompt,
+        videoPrompt: scene.videoPrompt,
+      }));
+      updateScenePrompts(updates);
+
+      console.log(`[BrandIdentity] Updated ${updates.length} scenes locally`);
+    } catch (error) {
+      console.error('[BrandIdentity] Failed to update prompts:', error);
+      // Don't throw - allow navigation to continue even if prompt update fails
+      // User can manually edit prompts in workspace if needed
+    } finally {
+      setIsUpdatingPrompts(false);
+    }
+  };
+
+  const handleContinue = async () => {
     // Build list of selected images to save
     const selectedImages = selectedCar && selectedAssetIds.size > 0
       ? selectedCar.referenceImages
@@ -261,13 +317,17 @@ export default function BrandIdentityScreen() {
           }))
       : [];
 
-    // Helper to save assets and navigate (only call after project exists)
-    const saveAssetsAndNavigate = () => {
+    // Helper to save assets, update prompts, and navigate
+    const saveAssetsUpdatePromptsAndNavigate = async () => {
       if (selectedImages.length > 0) {
         const { setUploadedImages } = useProjectStore.getState();
         setUploadedImages(selectedImages);
         console.log('[BrandIdentity] Saved', selectedImages.length, 'selected images to project store');
       }
+
+      // Update prompts with asset info before navigation
+      await updatePromptsWithAssetInfo();
+
       router.push('/workspace');
     };
 
@@ -275,7 +335,7 @@ export default function BrandIdentityScreen() {
     const { project } = useProjectStore.getState();
     if (project?.storyboard && project.storyboard.length > 0) {
       // Go to workspace - storyboard is ready
-      saveAssetsAndNavigate();
+      await saveAssetsUpdatePromptsAndNavigate();
     } else {
       // Storyboard not ready yet (still generating) - show loading
       console.log('[BrandIdentity] Storyboard not ready yet, waiting...');
@@ -286,7 +346,7 @@ export default function BrandIdentityScreen() {
         if (currentProject?.storyboard && currentProject.storyboard.length > 0) {
           clearInterval(checkProject);
           setIsWaitingForProject(false);
-          saveAssetsAndNavigate();
+          saveAssetsUpdatePromptsAndNavigate();
         }
       }, 500);
       // Timeout after 5 minutes - just log, no popup
@@ -298,7 +358,7 @@ export default function BrandIdentityScreen() {
     }
   };
 
-  const handleAutoGenerate = () => {
+  const handleAutoGenerate = async () => {
     // Build list of selected images to save
     const selectedImages = selectedCar && selectedAssetIds.size > 0
       ? selectedCar.referenceImages
@@ -314,13 +374,17 @@ export default function BrandIdentityScreen() {
           }))
       : [];
 
-    // Helper to save assets and navigate (only call after project exists)
-    const saveAssetsAndNavigate = () => {
+    // Helper to save assets, update prompts, and navigate
+    const saveAssetsUpdatePromptsAndNavigate = async () => {
       if (selectedImages.length > 0) {
         const { setUploadedImages } = useProjectStore.getState();
         setUploadedImages(selectedImages);
         console.log('[BrandIdentity] Saved', selectedImages.length, 'selected images for auto-generation');
       }
+
+      // Update prompts with asset info before navigation
+      await updatePromptsWithAssetInfo();
+
       router.push('/workspace?autoGenerate=true');
     };
 
@@ -328,7 +392,7 @@ export default function BrandIdentityScreen() {
     const { project } = useProjectStore.getState();
     if (project?.storyboard && project.storyboard.length > 0) {
       // Go to workspace - storyboard is ready
-      saveAssetsAndNavigate();
+      await saveAssetsUpdatePromptsAndNavigate();
     } else {
       // Storyboard not ready yet (still generating) - show loading
       console.log('[BrandIdentity] Storyboard not ready yet, waiting for auto-generation...');
@@ -339,7 +403,7 @@ export default function BrandIdentityScreen() {
         if (currentProject?.storyboard && currentProject.storyboard.length > 0) {
           clearInterval(checkProject);
           setIsWaitingForProject(false);
-          saveAssetsAndNavigate();
+          saveAssetsUpdatePromptsAndNavigate();
         }
       }, 500);
       // Timeout after 5 minutes
@@ -658,29 +722,34 @@ export default function BrandIdentityScreen() {
         </button>
         <button
           onClick={handleAutoGenerate}
-          disabled={isWaitingForProject || selectedAssetIds.size === 0}
+          disabled={isWaitingForProject || isUpdatingPrompts || selectedAssetIds.size === 0}
           className={`p-3 rounded-lg border backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group relative ${
-            selectedAssetIds.size > 0 && !isWaitingForProject
+            selectedAssetIds.size > 0 && !isWaitingForProject && !isUpdatingPrompts
               ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent hover:from-purple-600 hover:to-pink-600'
               : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
           }`}
           title="Auto-generate entire video"
         >
-          <Rocket className={`w-5 h-5 ${selectedAssetIds.size > 0 && !isWaitingForProject ? 'text-white' : 'text-white/60'}`} />
+          <Rocket className={`w-5 h-5 ${selectedAssetIds.size > 0 && !isWaitingForProject && !isUpdatingPrompts ? 'text-white' : 'text-white/60'}`} />
           <span className="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-black/90 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
             Auto-generate entire video
           </span>
         </button>
         <button
           onClick={handleContinue}
-          disabled={isWaitingForProject || selectedAssetIds.size === 0}
+          disabled={isWaitingForProject || isUpdatingPrompts || selectedAssetIds.size === 0}
           className={`px-6 py-2 rounded-lg border backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-            selectedAssetIds.size > 0 && !isWaitingForProject
+            selectedAssetIds.size > 0 && !isWaitingForProject && !isUpdatingPrompts
               ? 'bg-white text-black border-white hover:bg-white/90'
               : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
           }`}
         >
-          {isWaitingForProject ? (
+          {isUpdatingPrompts ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Preparing storyboard...</span>
+            </>
+          ) : isWaitingForProject ? (
             <>
               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               <span>Preparing...</span>

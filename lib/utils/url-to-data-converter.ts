@@ -84,7 +84,19 @@ function getMimeType(path: string): string {
  * Convert local file to base64 data URL
  */
 function localFileToBase64(filePath: string): string {
-  const imageBuffer = fs.readFileSync(filePath);
+  const { imageCache } = require('@/lib/storage/cache');
+
+  // Check cache first
+  let imageBuffer: Buffer;
+  const cached = imageCache.get(filePath);
+  if (cached) {
+    imageBuffer = cached.buffer;
+  } else {
+    imageBuffer = fs.readFileSync(filePath);
+    const mimeType = getMimeType(filePath);
+    imageCache.set(filePath, imageBuffer, mimeType);
+  }
+
   const base64Image = imageBuffer.toString('base64');
   const mimeType = getMimeType(filePath);
   return `data:${mimeType};base64,${base64Image}`;
